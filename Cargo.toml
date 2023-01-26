@@ -10,7 +10,6 @@ winit = "0.27.5"
 wgpu = "0.14.2"
 env_logger = "0.10"
 log = "0.4"
-image = "0.24"
 bytemuck = { version = "1.13.0", features = ["derive", "min_const_generics"] }
 pollster = "0.2"
 fastrand = "^1.0"
