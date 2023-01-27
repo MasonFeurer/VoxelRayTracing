@@ -27,6 +27,7 @@ impl ColorBuffer {
             sample_count: 1,
             dimension: TextureDimension::D2,
             format: COLOR_BUFFER_FORMAT,
+            view_formats: &[],
             usage: TextureUsages::COPY_DST
                 | TextureUsages::STORAGE_BINDING
                 | TextureUsages::TEXTURE_BINDING,
@@ -80,6 +81,7 @@ pub struct Shader {
     pub cam_buffer: CamBuffer,
     pub proj_buffer: ProjBuffer,
     pub world_buffer: WorldBuffer,
+    pub rand_floats_buffer: RandFloatsBuffer,
 }
 impl Shader {
     pub fn new(device: &Device, config: &SurfaceConfiguration, size: Vec2<u32>) -> Self {
@@ -87,6 +89,7 @@ impl Shader {
         let proj_buffer = ProjBuffer::new(device);
         let world_buffer = WorldBuffer::new(device);
         let color_buffer = ColorBuffer::new(device, size);
+        let rand_floats_buffer = RandFloatsBuffer::new(device);
 
         let (compute_pipeline, compute_bind_group) = create_compute_pipeline(
             device,
@@ -94,6 +97,7 @@ impl Shader {
             &cam_buffer,
             &proj_buffer,
             &world_buffer,
+            &rand_floats_buffer,
         );
         let (render_pipeline, render_bind_group) =
             create_render_pipeline(device, &color_buffer, config.format);
@@ -109,6 +113,7 @@ impl Shader {
             proj_buffer,
             world_buffer,
             color_buffer,
+            rand_floats_buffer,
         }
     }
 }
@@ -119,6 +124,7 @@ pub fn create_compute_pipeline(
     cam_buffer: &CamBuffer,
     proj_buffer: &ProjBuffer,
     world_buffer: &WorldBuffer,
+    rand_floats_buffer: &RandFloatsBuffer,
 ) -> (ComputePipeline, BindGroup) {
     let shader_module = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("raytracing_pipeline::shader_module"),
@@ -156,6 +162,12 @@ pub fn create_compute_pipeline(
                 ty: storage_binding_type(true),
                 count: None,
             },
+            BindGroupLayoutEntry {
+                binding: 4,
+                visibility: ShaderStages::COMPUTE,
+                ty: storage_binding_type(true),
+                count: None,
+            },
         ],
     });
     let bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -177,6 +189,10 @@ pub fn create_compute_pipeline(
             BindGroupEntry {
                 binding: 3,
                 resource: world_buffer.0.as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 4,
+                resource: rand_floats_buffer.0.as_entire_binding(),
             },
         ],
     });
@@ -372,6 +388,26 @@ impl WorldBuffer {
 
     pub fn update(&self, queue: &Queue, world: &World) {
         let data = WorldData::new(world);
+        queue.write_buffer(&self.0, 0, bytemuck::cast_slice(&[data]));
+    }
+}
+
+pub struct RandFloatsBuffer(pub Buffer);
+impl RandFloatsBuffer {
+    pub fn new(device: &Device) -> Self {
+        Self(device.create_buffer(&BufferDescriptor {
+            label: Some("#rand_floats_buffer"),
+            size: std::mem::size_of::<[f32; 128]>() as u64,
+            usage: BufferUsages::COPY_DST | BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        }))
+    }
+
+    pub fn update(&self, queue: &Queue) {
+        let mut data = [0.0; 128];
+        for f in &mut data {
+            *f = fastrand::f32();
+        }
         queue.write_buffer(&self.0, 0, bytemuck::cast_slice(&[data]));
     }
 }

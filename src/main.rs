@@ -34,9 +34,9 @@ impl State {
         let size = window.inner_size();
         let size = Vec2::new(size.width, size.height);
 
-        let instance = wgpu::Instance::new(wgpu::Backends::all());
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
         // Handle to a presentable surface
-        let surface = unsafe { instance.create_surface(window) };
+        let surface = unsafe { instance.create_surface(window) }.unwrap();
 
         // Handle to the graphics device
         let adapter = instance
@@ -62,14 +62,9 @@ impl State {
             .await
             .unwrap();
 
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface.get_supported_formats(&adapter)[0],
-            width: size.x,
-            height: size.y,
-            present_mode: wgpu::PresentMode::Fifo,
-            alpha_mode: wgpu::CompositeAlphaMode::Auto,
-        };
+        let config = surface
+            .get_default_config(&adapter, size.x, size.y)
+            .unwrap();
         surface.configure(&device, &config);
 
         // Create shader
@@ -108,6 +103,7 @@ impl State {
     fn update(&mut self, input: &InputState) {
         self.cam.update(0.5, input);
         self.shader.cam_buffer.update(&self.queue, &self.cam);
+        self.shader.rand_floats_buffer.update(&self.queue);
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {

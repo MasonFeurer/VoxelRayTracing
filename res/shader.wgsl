@@ -7,8 +7,48 @@ struct Proj {
     size: vec2<u32>,
     inv_mat: mat4x4<f32>,
 }
+struct RandSrc {
+    floats: array<f32, 128>,
+}
 
-var<private> VOXEL_COLORS: array<vec4<f32>, 13> = array<vec4<f32>, 13>(
+const CHUNK_W: u32 = 32u;
+const CHUNK_H: u32 = 32u;
+const CHUNK_VOLUME: u32 = 32768u; // 32 * 32 * 32
+const CHUNK_INT_COUNT: u32 = 8192u; // CHUNK_VOLUME / 4
+
+const WORLD_W: u32 = 6u;
+const WORLD_H: u32 = 6u;
+const WORLD_CHUNKS_COUNT: u32 = 216u; // 6 * 6 * 6
+
+fn voxel_is_solid(voxel: u32) -> bool {
+    return voxel != 0u;
+}
+
+struct Chunk {
+    solid_voxels_count: u32,
+    min: vec3<u32>,
+    max: vec3<u32>,
+    voxels: array<u32, CHUNK_INT_COUNT>,
+}
+struct World {
+	min_chunk_pos: vec3<u32>,
+	chunks: array<Chunk, WORLD_CHUNKS_COUNT>,
+}
+
+struct VoxelChunkPos {
+    chunk: vec3<u32>,
+    in_chunk: vec3<u32>,
+}
+
+@group(0) @binding(0) var color_buffer_: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(1) var<uniform> cam: Cam;
+@group(0) @binding(2) var<uniform> proj: Proj;
+@group(0) @binding(3) var<storage, read> world: World;
+@group(0) @binding(4) var<storage, read> rand_src_: RandSrc;
+
+var<private> rand_float_idx__: i32 = 0;
+
+var<private> voxel_colors__: array<vec4<f32>, 13> = array<vec4<f32>, 13>(
     vec4<f32>(0.0, 0.0, 0.0, 0.0), // AIR
     vec4<f32>(0.4, 0.4, 0.4, 1.0), // STONE
     vec4<f32>(0.4, 0.2, 0.0, 1.0), // DIRT
@@ -23,42 +63,15 @@ var<private> VOXEL_COLORS: array<vec4<f32>, 13> = array<vec4<f32>, 13>(
     vec4<f32>(1.0, 1.0, 1.0, 1.0), // MUD TODO
     vec4<f32>(1.0, 1.0, 1.0, 1.0), // CLAY TODO
 );
-var<private> SUN_POS: vec3<f32> = vec3<f32>(-20.0, 70.0, -20.0);
 
-let CHUNK_W: u32 = 32u;
-let CHUNK_H: u32 = 32u;
-let CHUNK_VOLUME: u32 = 32768u; // 32 * 32 * 32
-let CHUNK_INT_COUNT: u32 = 8192u; // CHUNK_VOLUME / 4
-
-let WORLD_W: u32 = 6u;
-let WORLD_H: u32 = 6u;
-let WORLD_CHUNKS_COUNT: u32 = 216u; // 6 * 6 * 6
-
-fn voxel_is_solid(voxel: u32) -> bool {
-    return voxel != 0u;
+fn rand_float() -> f32 {
+    let f = rand_src_.floats[rand_float_idx__];
+    rand_float_idx__ += 1;
+    if rand_float_idx__ >= 128 {
+        rand_float_idx__ = 0;
+    }
+    return f;
 }
-
-struct Chunk {
-	solid_voxels_count: u32,
-    min: vec3<u32>,
-    max: vec3<u32>,
-	voxels: array<u32, CHUNK_INT_COUNT>,
-}
-
-struct World {
-	min_chunk_pos: vec3<u32>,
-	chunks: array<Chunk, WORLD_CHUNKS_COUNT>,
-}
-
-struct VoxelChunkPos {
-    chunk: vec3<u32>,
-    in_chunk: vec3<u32>,
-}
-
-@group(0) @binding(0) var color_buffer: texture_storage_2d<rgba8unorm, write>;
-@group(0) @binding(1) var<uniform> cam: Cam;
-@group(0) @binding(2) var<uniform> proj: Proj;
-@group(0) @binding(3) var<storage, read> world: World;
 
 fn get_chunk_voxel(chunk_idx: i32, pos: vec3<u32>) -> u32 {
     if pos.x >= CHUNK_W || pos.y >= CHUNK_H || pos.z >= CHUNK_W {
@@ -227,8 +240,8 @@ fn create_ray_from_screen(screen_pos: vec2<i32>) -> Ray {
 	let x = (f32(screen_pos.x) * 2.0) / f32(proj.size.x) - 1.0;
 	let y = (f32(screen_pos.y) * 2.0) / f32(proj.size.y) - 1.0;
 	let clip_coords = vec4<f32>(x, -y, -1.0, 1.0);
-	let eye_coords = clip_coords * proj.inv_mat;
-	let eye_coords = vec4<f32>(eye_coords.xy, -1.0, 0.0);
+	let eye_coords0 = clip_coords * proj.inv_mat;
+	let eye_coords = vec4<f32>(eye_coords0.xy, -1.0, 0.0);
 	let ray_world = normalize((eye_coords * cam.inv_view_mat).xyz);
 	
 	var ray: Ray;
@@ -250,13 +263,10 @@ fn update(@builtin(global_invocation_id) inv_id: vec3<u32>) {
     
     var color: vec4<f32>;
     if result.hit {
-        color = VOXEL_COLORS[i32(result.voxel)];
+        color = voxel_colors__[i32(result.voxel)];
         
         var reflect: Ray;
-        reflect.dir = ray.dir;
-        if result.face.x != 0 { reflect.dir.x *= -1.0; }
-        if result.face.z != 0 { reflect.dir.y *= -1.0; }
-        if result.face.y != 0 { reflect.dir.z *= -1.0; }
+        reflect.dir = ray.dir - 2.0 * result.norm * dot(result.norm, ray.dir);
         reflect.origin = result.exact_pos + reflect.dir * 0.3;
         
         let reflect_hit = cast_ray(reflect, 50.0);
@@ -275,5 +285,5 @@ fn update(@builtin(global_invocation_id) inv_id: vec3<u32>) {
     else {
         color = vec4<f32>(0.0, 0.0, 0.0, 1.0);
     }
-    textureStore(color_buffer, screen_pos, color);
+    textureStore(color_buffer_, screen_pos, color);
 }
