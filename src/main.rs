@@ -1,21 +1,23 @@
 #![allow(dead_code)]
 
+pub mod aabb;
 pub mod cam;
 pub mod input;
 pub mod matrices;
 pub mod open_simplex;
+pub mod player;
 pub mod shader;
 pub mod vectors;
 pub mod world;
 
-use crate::cam::Cam;
-use crate::input::InputState;
+use crate::input::{InputState, Key};
+use crate::player::Player;
 use crate::shader::Shader;
-use crate::vectors::Vec2;
+use crate::vectors::{Vec2, Vec3};
 use crate::world::World;
 use winit::event::*;
 use winit::event_loop::{ControlFlow, EventLoop};
-use winit::window::{CursorGrabMode, Window, WindowBuilder};
+use winit::window::{CursorGrabMode, Fullscreen, Window, WindowBuilder};
 
 struct State {
     surface: wgpu::Surface,
@@ -26,7 +28,7 @@ struct State {
     size_changed: bool,
     shader: Shader,
 
-    cam: Cam,
+    player: Player,
     world: Box<World>,
 }
 impl State {
@@ -72,7 +74,7 @@ impl State {
 
         let mut world = Box::new(World::new());
         world.populate();
-        let cam = Cam::new();
+        let player = Player::new(Vec3::new(50.0, 100.0, 50.0));
 
         shader.world_buffer.update(&queue, &world);
 
@@ -86,7 +88,7 @@ impl State {
             shader,
 
             world,
-            cam,
+            player,
         }
     }
 
@@ -101,8 +103,10 @@ impl State {
     }
 
     fn update(&mut self, input: &InputState) {
-        self.cam.update(1.0, input);
-        self.shader.cam_buffer.update(&self.queue, &self.cam);
+        self.player.update(1.0, input, &self.world);
+        self.shader
+            .cam_buffer
+            .update(&self.queue, &self.player.cam());
         self.shader.rand_floats_buffer.update(&self.queue);
     }
 
@@ -115,7 +119,7 @@ impl State {
         if self.size_changed {
             self.shader
                 .proj_buffer
-                .update(&self.queue, self.size, &self.cam);
+                .update(&self.queue, self.size, &self.player);
             self.size_changed = false;
         }
 
@@ -185,8 +189,20 @@ pub fn main() {
             _ => {}
         },
         Event::RedrawRequested(_) => {
-            window.set_title(&format!("{:?}", state.cam.pos));
+            let title = format!(
+                "{:06} {:06} {:06}",
+                state.player.pos.x, state.player.pos.y, state.player.pos.z
+            );
+            window.set_title(&title);
             state.update(&input);
+
+            if input.key_pressed(Key::F) {
+                window.set_fullscreen(match window.fullscreen() {
+                    Some(_) => None,
+                    None => Some(Fullscreen::Borderless(None)),
+                });
+            }
+
             input.finish_frame();
             match state.render() {
                 Ok(_) => {}

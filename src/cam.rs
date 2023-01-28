@@ -1,6 +1,5 @@
-use crate::input::{InputState, Key};
 use crate::matrices::Mat4;
-use crate::vectors::{Vec2, Vec3};
+use crate::vectors::Vec3;
 
 /// Takes a rotation (the rotation around the X, Y, and Z axis), and
 /// creates a normalized vector ray in the facing direction.<p>
@@ -27,91 +26,10 @@ pub struct Cam {
     pub pos: Vec3<f32>,
     // in degrees
     pub rot: Vec3<f32>,
-    pub fov: f32,
-    pub near: f32,
-    pub far: f32,
 }
 impl Cam {
-    pub fn new() -> Self {
-        Self {
-            pos: Vec3::new(20.0, 100.0, 20.0),
-            rot: Vec3::new(0.0, 0.0, 0.0),
-            fov: 70.0,
-            near: 0.001,
-            far: 1000.0,
-        }
-    }
-
-    #[inline]
-    pub fn dir(&self) -> Vec3<f32> {
-        axis_rot_to_ray(self.rot.map(|e| e.to_radians()))
-    }
-
-    pub fn inv_proj_mat(&self, view_size: Vec2<u32>) -> Mat4 {
-        Mat4::projection(
-            self.fov.to_radians(),
-            (view_size.x as f32, view_size.y as f32),
-            self.near,
-            self.far,
-        )
-        .inverse()
-        .unwrap()
-    }
-    pub fn inv_view_mat(&self) -> Mat4 {
-        assert_eq!(self.rot.z, 0.0);
+    pub fn view_mat(&self) -> Mat4 {
         Mat4::view(self.pos, self.rot.map(f32::to_radians))
-            .inverse()
-            .unwrap()
-    }
-
-    pub fn handle_cursor_movement(&mut self, t_delta: f32, delta: Vec2<f32>) {
-        const SENSITIVITY: f32 = 0.4;
-        let delta = delta * t_delta;
-
-        // in model space, the camera is looking negative along the Z axis, so
-        // moving the cursor up/down corresponds to rotation about the X axis
-        self.rot.x += SENSITIVITY * delta.y;
-        self.rot.x = self.rot.x.clamp(-90.0, 90.0);
-
-        // moving the cursor left/right corresponds to rotation about the Y axis
-        self.rot.y -= SENSITIVITY * delta.x;
-
-        // the camera does not rotate about the Z axis. That would be like tilting your head
-    }
-
-    pub fn update(&mut self, t_delta: f32, input: &InputState) {
-        let dx = self.rot.y.to_radians().sin();
-        let dz = self.rot.y.to_radians().cos();
-
-        if input.cursor_delta != Vec2::all(0.0) {
-            self.handle_cursor_movement(t_delta, input.cursor_delta);
-        }
-        let mut movement = Vec3::all(0.0);
-
-        if input.key_is_pressed(Key::W) {
-            movement.x += -dx;
-            movement.z += -dz;
-        }
-        if input.key_is_pressed(Key::S) {
-            movement.x += dx;
-            movement.z += dz;
-        }
-        if input.key_is_pressed(Key::D) {
-            movement.x += dz;
-            movement.z += -dx;
-        }
-        if input.key_is_pressed(Key::A) {
-            movement.x += -dz;
-            movement.z += dx;
-        }
-
-        if input.key_is_pressed(Key::Space) {
-            movement.y += 0.5;
-        }
-        if input.key_is_pressed(Key::LShift) {
-            movement.y += -0.5;
-        }
-        self.pos += movement * t_delta * 0.5;
     }
 }
 

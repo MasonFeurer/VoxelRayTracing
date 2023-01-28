@@ -8,14 +8,18 @@ pub type MouseButton = winit::event::MouseButton;
 #[derive(Default)]
 pub struct InputState {
     pub pressed_keys: HashSet<Key>,
+    pub down_keys: HashSet<Key>,
     pub pressed_mouse_buttons: HashSet<MouseButton>,
     pub cursor_delta: Vec2<f32>,
     pub cursor_pos: Vec2<f32>,
     pub scroll_delta: Vec2<f32>,
 }
 impl InputState {
-    pub fn key_is_pressed(&self, key: Key) -> bool {
+    pub fn key_pressed(&self, key: Key) -> bool {
         self.pressed_keys.contains(&key)
+    }
+    pub fn key_down(&self, key: Key) -> bool {
+        self.down_keys.contains(&key)
     }
     pub fn left_button_is_down(&self) -> bool {
         self.pressed_mouse_buttons.contains(&MouseButton::Left)
@@ -27,6 +31,7 @@ impl InputState {
     pub fn finish_frame(&mut self) {
         self.cursor_delta = Vec2::all(0.0);
         self.scroll_delta = Vec2::all(0.0);
+        self.pressed_keys.clear();
     }
 
     pub fn update<T>(&mut self, event: &Event<T>) -> bool {
@@ -34,8 +39,13 @@ impl InputState {
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::KeyboardInput { input, .. } => {
                     match (input.virtual_keycode, input.state == ElementState::Pressed) {
-                        (Some(key), true) => self.pressed_keys.insert(key),
-                        (Some(key), false) => self.pressed_keys.remove(&key),
+                        (Some(key), true) => {
+                            self.pressed_keys.insert(key);
+                            self.down_keys.insert(key);
+                        }
+                        (Some(key), false) => {
+                            self.down_keys.remove(&key);
+                        }
                         _ => return false,
                     };
                 }

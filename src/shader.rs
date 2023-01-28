@@ -1,4 +1,5 @@
 use crate::cam::Cam;
+use crate::player::Player;
 use crate::vectors::Vec2;
 use crate::world::{Chunk, World, WORLD_CHUNKS_COUNT};
 use bytemuck::{cast_slice, Pod, Zeroable};
@@ -302,7 +303,7 @@ impl CamData {
             _padding0: 0,
             rot: cam.rot.into(),
             _padding1: 0,
-            inv_view_mat: cam.inv_view_mat().0,
+            inv_view_mat: cam.view_mat().inverse().unwrap().0,
         }
     }
 }
@@ -332,11 +333,11 @@ pub struct ProjData {
     inv_mat: [f32; 16],
 }
 impl ProjData {
-    pub fn new(size: Vec2<u32>, cam: &Cam) -> Self {
+    pub fn new(size: Vec2<u32>, player: &Player) -> Self {
         Self {
             size: size.into(),
             _padding0: [0; 2],
-            inv_mat: cam.inv_proj_mat(size).0,
+            inv_mat: player.inv_proj_mat(size).0,
         }
     }
 }
@@ -352,8 +353,8 @@ impl ProjBuffer {
         }))
     }
 
-    pub fn update(&self, queue: &Queue, size: Vec2<u32>, cam: &Cam) {
-        let data = ProjData::new(size, cam);
+    pub fn update(&self, queue: &Queue, size: Vec2<u32>, player: &Player) {
+        let data = ProjData::new(size, player);
         queue.write_buffer(&self.0, 0, cast_slice(&[data]));
     }
 }

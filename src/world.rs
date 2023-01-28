@@ -1,3 +1,4 @@
+use crate::aabb::Aabb;
 use crate::vectors::{Vec2, Vec3};
 use bytemuck::{Pod, Zeroable};
 
@@ -21,8 +22,8 @@ impl Voxel {
     pub const IRON: Self = Self(13);
 
     #[inline(always)]
-    pub const fn is_empty(self) -> bool {
-        self.0 == 0
+    pub fn is_empty(self) -> bool {
+        self == Self::AIR || self == Self::WATER
     }
 }
 
@@ -147,6 +148,29 @@ impl World {
         let seed = fastrand::i64(..);
         let mut gen = WorldGen::new(seed);
         gen.populate([0, CHUNK_W * WORLD_W], [0, CHUNK_W * WORLD_W], self);
+    }
+
+    pub fn get_collisions_w(&self, aabb: &Aabb) -> Vec<Aabb> {
+        let mut aabbs = Vec::new();
+
+        let from = aabb.from.map(|e| (e.floor() as i32).max(1)) - 1;
+        let to = aabb.to.map(|e| e.ceil() as i32);
+
+        for x in from.x..to.x {
+            for y in from.y..to.y {
+                for z in from.z..to.z {
+                    let pos = Vec3::new(x as u32, y as u32, z as u32);
+                    let voxel = self.get_voxel(pos).unwrap_or(Voxel::AIR);
+
+                    if !voxel.is_empty() {
+                        let min = Vec3::new(x as f32, y as f32, z as f32);
+                        let max = min + 1.0;
+                        aabbs.push(Aabb::new(min, max));
+                    }
+                }
+            }
+        }
+        aabbs
     }
 }
 
