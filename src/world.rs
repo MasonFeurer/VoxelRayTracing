@@ -18,6 +18,7 @@ impl Voxel {
     pub const SAND: Self = Self(10);
     pub const MUD: Self = Self(11);
     pub const CLAY: Self = Self(12);
+    pub const IRON: Self = Self(13);
 
     #[inline(always)]
     pub const fn is_empty(self) -> bool {
@@ -194,14 +195,6 @@ impl WorldGen {
                     y = CHUNK_H * WORLD_H - 2;
                 }
 
-                if y <= 20 {
-                    world.set_voxels(
-                        Vec3::new(x, y, z),
-                        Vec3::new(x + 1, 21, z + 1),
-                        Voxel::WATER,
-                    );
-                }
-
                 // set stone
                 world.set_voxels(
                     Vec3::new(x, 0, z),
@@ -216,8 +209,21 @@ impl WorldGen {
                     Voxel::DIRT,
                 );
 
-                // set grass
-                world.set_voxel(Vec3::new(x, y, z), Voxel::GRASS);
+                let mut surface = Voxel::GRASS;
+                if y < 30 {
+                    world.set_voxels(
+                        Vec3::new(x, y, z),
+                        Vec3::new(x + 1, 31, z + 1),
+                        Voxel::WATER,
+                    );
+                    surface = Voxel::SAND;
+                    if y <= 26 {
+                        surface = Voxel::DIRT;
+                    }
+                }
+
+                // set surface
+                world.set_voxel(Vec3::new(x, y, z), surface);
             }
         }
         for _ in 0..10 {

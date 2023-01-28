@@ -20,6 +20,8 @@ const WORLD_W: u32 = 6u;
 const WORLD_H: u32 = 6u;
 const WORLD_CHUNKS_COUNT: u32 = 216u; // 6 * 6 * 6
 
+const TAU: f32 = 6.283185307;
+
 fn voxel_is_solid(voxel: u32) -> bool {
     return voxel != 0u;
 }
@@ -48,20 +50,41 @@ struct VoxelChunkPos {
 
 var<private> rand_float_idx__: i32 = 0;
 
-var<private> voxel_colors__: array<vec4<f32>, 13> = array<vec4<f32>, 13>(
+const AIR: u32 = 0u;
+const MAGMA: u32 = 5u;
+const WATER: u32 = 6u;
+
+var<private> voxel_colors__: array<vec4<f32>, 14> = array<vec4<f32>, 14>(
     vec4<f32>(0.0, 0.0, 0.0, 0.0), // AIR
     vec4<f32>(0.4, 0.4, 0.4, 1.0), // STONE
     vec4<f32>(0.4, 0.2, 0.0, 1.0), // DIRT
     vec4<f32>(0.1, 0.7, 0.1, 1.0), // GRASS
     vec4<f32>(1.0, 0.9, 0.2, 1.0), // FIRE
     vec4<f32>(0.8, 0.0, 0.0, 1.0), // MAGMA
-    vec4<f32>(0.0, 0.0, 1.0, 1.0), // WATER
+    vec4<f32>(0.0, 0.0, 1.0, 0.2), // WATER
     vec4<f32>(1.0, 1.0, 1.0, 1.0), // WOOD TODO
     vec4<f32>(1.0, 1.0, 1.0, 1.0), // BARK TODO
     vec4<f32>(1.0, 1.0, 1.0, 1.0), // LEAVES TODO
-    vec4<f32>(1.0, 1.0, 1.0, 1.0), // SAND TODO
+    vec4<f32>(0.9, 0.9, 0.5, 1.0), // SAND
     vec4<f32>(1.0, 1.0, 1.0, 1.0), // MUD TODO
     vec4<f32>(1.0, 1.0, 1.0, 1.0), // CLAY TODO
+    vec4<f32>(1.0, 1.0, 1.0, 1.0), // IRON
+);
+var<private> voxel_surface_scatter__: array<f32, 14> = array<f32, 14>(
+    0.0, // AIR
+    0.8, // STONE
+    0.8, // DIRT
+    0.8, // GRASS
+    0.0, // FIRE
+    0.2, // MAGMA
+    0.2, // WATER
+    0.8, // WOOD
+    0.8, // BARK
+    0.8, // LEAVES
+    0.3, // SAND
+    0.3, // MUD
+    0.3, // CLAY
+    0.0, // IRON
 );
 
 fn rand_float() -> f32 {
@@ -106,7 +129,7 @@ fn get_world_voxel(pos: vec3<i32>) -> u32 {
     if pos.x >= i32(CHUNK_W) * 6 || pos.y >= i32(CHUNK_H) * 6 || pos.z >= i32(CHUNK_W) * 6 {
         return 255u;
     }
-    let pos = voxel_chunk_pos(vec3<u32>(u32(pos.x), u32(pos.y), u32(pos.z)));
+    let pos = voxel_chunk_pos(vec3(u32(pos.x), u32(pos.y), u32(pos.z)));
 
     let chunk_idx = i32(pos.chunk.x + pos.chunk.y * 6u + pos.chunk.z * 36u);
     return get_chunk_voxel(chunk_idx, pos.in_chunk);
@@ -124,6 +147,8 @@ struct HitResult {
     exact_pos: vec3<f32>,
 	face: vec3<i32>,
 	voxel: u32,
+    water_dist: f32,
+    effect: vec4<f32>,
 }
 
 fn cast_ray(ray: Ray, max_dist: f32) -> HitResult {
@@ -133,13 +158,13 @@ fn cast_ray(ray: Ray, max_dist: f32) -> HitResult {
 
     // length of a line in same direction as the ray,
     // that travels 1 unit in the X, Y, Z
-    let unit_step_size = vec3<f32>(
+    let unit_step_size = vec3(
         sqrt(1.0 + (dir.y / dir.x) * (dir.y / dir.x) + (dir.z / dir.x) * (dir.z / dir.x)),
         sqrt(1.0 + (dir.x / dir.y) * (dir.x / dir.y) + (dir.z / dir.y) * (dir.z / dir.y)),
         sqrt(1.0 + (dir.x / dir.z) * (dir.x / dir.z) + (dir.y / dir.z) * (dir.y / dir.z)),
     );
 
-    var world_pos: vec3<i32> = vec3<i32>(i32(start.x), i32(start.y), i32(start.z));
+    var world_pos: vec3<i32> = vec3(i32(start.x), i32(start.y), i32(start.z));
     var step: vec3<i32>;
     var ray_len: vec3<f32>;
     
@@ -170,6 +195,10 @@ fn cast_ray(ray: Ray, max_dist: f32) -> HitResult {
     var dist: f32 = 0.0;
     var prev_world_pos: vec3<i32>;
     var result: HitResult;
+    result.effect = vec4(1.0);
+    
+    // the distance the ray travled when it entered water
+    var dist_entered_water: f32 = -1.0;
 
     while dist < max_dist {
         prev_world_pos = world_pos;
@@ -221,7 +250,20 @@ fn cast_ray(ray: Ray, max_dist: f32) -> HitResult {
         let voxel = get_chunk_voxel(chunk_idx, in_chunk);
         
         // make sure the voxel is solid
-        if !voxel_is_solid(voxel) {
+        if voxel == AIR {
+            continue;
+        }
+        if voxel != WATER {
+            if dist_entered_water != -1.0 {
+                result.water_dist += dist - dist_entered_water;
+                dist_entered_water = -1.0;
+            }
+        }
+        if voxel == WATER {
+            result.effect *= vec4(0.95, 0.95, 1.5, 1.0);
+            if dist_entered_water == -1.0 {
+                dist_entered_water = dist;
+            }
             continue;
         }
         
@@ -230,18 +272,21 @@ fn cast_ray(ray: Ray, max_dist: f32) -> HitResult {
         result.pos = world_pos;
         result.hit = true;
         result.face = prev_world_pos - result.pos;
-        result.norm = vec3<f32>(f32(result.face.x), f32(result.face.y), f32(result.face.z));
+        result.norm = vec3(f32(result.face.x), f32(result.face.y), f32(result.face.z));
         result.exact_pos = start + dir * dist;
         return result;
+    }
+    if dist_entered_water != -1.0 {
+        result.water_dist += dist - dist_entered_water;
     }
     return result;
 }
 fn create_ray_from_screen(screen_pos: vec2<i32>) -> Ray {
 	let x = (f32(screen_pos.x) * 2.0) / f32(proj.size.x) - 1.0;
 	let y = (f32(screen_pos.y) * 2.0) / f32(proj.size.y) - 1.0;
-	let clip_coords = vec4<f32>(x, -y, -1.0, 1.0);
+	let clip_coords = vec4(x, -y, -1.0, 1.0);
 	let eye_coords0 = clip_coords * proj.inv_mat;
-	let eye_coords = vec4<f32>(eye_coords0.xy, -1.0, 0.0);
+	let eye_coords = vec4(eye_coords0.xy, -1.0, 0.0);
 	let ray_world = normalize((eye_coords * cam.inv_view_mat).xyz);
 	
 	var ray: Ray;
@@ -254,26 +299,26 @@ struct VertexOutput {
 	@builtin(position) clip_pos: vec4<f32>,
 }
 
+fn overlay_color(back: vec4<f32>, front: vec4<f32>, factor: f32) -> vec4<f32> {
+    return back * (1.0 - factor) + front * factor;
+}
+
 @compute @workgroup_size(1, 1, 1)
 fn update(@builtin(global_invocation_id) inv_id: vec3<u32>) {
     let screen_pos: vec2<i32> = vec2(i32(inv_id.x), i32(inv_id.y));
 
 	let ray = create_ray_from_screen(screen_pos);
-	let result = cast_ray(ray, 40.0);
+	let result = cast_ray(ray, 100.0);
     
-    var color: vec4<f32>;
+    var color: vec4<f32> = vec4(0.3, 0.7, 1.0, 1.0);
     if result.hit {
         color = voxel_colors__[i32(result.voxel)];
         
-        var reflect: Ray;
-        reflect.dir = ray.dir - 2.0 * result.norm * dot(result.norm, ray.dir);
-        reflect.origin = result.exact_pos + reflect.dir * 0.3;
+        // var reflect: Ray;
+        // reflect.dir = ray.dir - 2.0 * norm * dot(norm, ray.dir);
+        // reflect.origin = result.exact_pos + reflect.dir * 0.2;
         
-        let reflect_hit = cast_ray(reflect, 50.0);
-        // if we hit a voxel that emits light, we are in light
-        if reflect_hit.voxel != 5u {
-            color *= 0.2;
-        }
+        // let reflect_hit = cast_ray(reflect, 20.0);
         
         if result.face.x ==  1 { color *= 0.7; }
         if result.face.x == -1 { color *= 0.7; }
@@ -282,8 +327,12 @@ fn update(@builtin(global_invocation_id) inv_id: vec3<u32>) {
         if result.face.y ==  1 { color *= 1.0; }
         if result.face.y == -1 { color *= 0.3; }
     }
-    else {
-        color = vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    
+    if result.water_dist != 0.0 {
+        var factor = clamp(result.water_dist / 14.0, 0.8, 1.0);
+    
+        color = overlay_color(color, vec4(0.2, 0.5, 1.0, 1.0), factor);
     }
+    
     textureStore(color_buffer_, screen_pos, color);
 }

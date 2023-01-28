@@ -15,7 +15,7 @@ use crate::vectors::Vec2;
 use crate::world::World;
 use winit::event::*;
 use winit::event_loop::{ControlFlow, EventLoop};
-use winit::window::{Window, WindowBuilder};
+use winit::window::{CursorGrabMode, Window, WindowBuilder};
 
 struct State {
     surface: wgpu::Surface,
@@ -101,7 +101,7 @@ impl State {
     }
 
     fn update(&mut self, input: &InputState) {
-        self.cam.update(0.5, input);
+        self.cam.update(1.0, input);
         self.shader.cam_buffer.update(&self.queue, &self.cam);
         self.shader.rand_floats_buffer.update(&self.queue);
     }
@@ -165,6 +165,7 @@ pub fn main() {
         .with_title("Rocky")
         .build(&event_loop)
         .unwrap();
+    window.set_cursor_grab(CursorGrabMode::Locked).unwrap();
     window.set_cursor_visible(false);
 
     let mut state = pollster::block_on(State::new(&window));
