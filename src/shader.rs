@@ -388,8 +388,15 @@ impl WorldBuffer {
     }
 
     pub fn update(&self, queue: &Queue, world: &World) {
-        let data = WorldData::new(world);
-        queue.write_buffer(&self.0, 0, bytemuck::cast_slice(&[data]));
+        const SIZE: usize = std::mem::size_of::<WorldData>();
+        let data = Box::new(WorldData::new(world));
+
+        let ptr: *mut WorldData = Box::into_raw(data) as *mut WorldData;
+        let ptr: *const [u8; SIZE] = ptr.cast();
+
+        unsafe {
+            queue.write_buffer(&self.0, 0, ptr.as_ref().unwrap());
+        }
     }
 }
 

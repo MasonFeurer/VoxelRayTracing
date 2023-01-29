@@ -5,10 +5,11 @@ use crate::matrices::Mat4;
 use crate::vectors::{Vec2, Vec3};
 use crate::world::World;
 
-const GRAVITY: f32 = -0.02;
+const GRAVITY: f32 = -0.012;
 
 #[derive(Clone)]
 pub struct Player {
+    pub flying: bool,
     pub pos: Vec3<f32>,
     // in degrees
     pub rot: Vec3<f32>,
@@ -21,12 +22,13 @@ pub struct Player {
 impl Player {
     pub fn new(pos: Vec3<f32>) -> Self {
         Self {
+            flying: false,
             pos,
             rot: Vec3::new(0.0, 0.0, 0.0),
             fov: 70.0,
             vel: Vec3::new(0.0, 0.0, 0.0),
             on_ground: false,
-            speed: 0.1,
+            speed: 0.3,
             aabb: Self::create_aabb(pos),
         }
     }
@@ -74,18 +76,18 @@ impl Player {
             self.handle_cursor_movement(t_delta, input.cursor_delta);
         }
 
-        if self.on_ground {
+        if self.on_ground || self.flying {
             self.vel.y = 0.0;
         } else {
             self.acc(Vec3::new(0.0, GRAVITY * t_delta, 0.0));
         }
         self.vel *= 0.96;
 
-        if input.key_down(Key::Space) && self.on_ground {
-            self.vel.y = 0.3;
-        }
-
         let mut frame_vel = self.vel;
+
+        if input.key_pressed(Key::Z) {
+            self.flying = !self.flying;
+        }
 
         if input.key_down(Key::W) {
             frame_vel.x += -dx;
@@ -103,6 +105,18 @@ impl Player {
             frame_vel.x += -dz;
             frame_vel.z += dx;
         }
+        if self.flying {
+            if input.key_down(Key::Space) {
+                frame_vel.y += self.speed;
+            }
+            if input.key_down(Key::LShift) {
+                frame_vel.y += -self.speed;
+            }
+        } else {
+            if input.key_down(Key::Space) && self.on_ground {
+                self.vel.y = 0.4;
+            }
+        }
         self.attempt_movement(world, frame_vel * t_delta);
     }
 
@@ -114,6 +128,12 @@ impl Player {
     }
 
     pub fn attempt_movement(&mut self, world: &World, mut a: Vec3<f32>) {
+        if self.flying {
+            self.pos += a;
+            self.aabb.translate(a);
+            return;
+        }
+
         let a_orig = a;
 
         let aabbs = world.get_collisions_w(&self.aabb.expand(a));

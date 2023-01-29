@@ -79,9 +79,13 @@ impl Chunk {
     }
 }
 
+// 14x14 world: 90,047,120 bytes (90MB)
+// 12x12 world: 56,706,064 bytes (56MB)
+// 8x8 world: 16,801,808 bytes (16MB)
+// 4x4 world: 2,100,240 bytes (2MB)
 pub const WORLD_W: u32 = 6;
 pub const WORLD_H: u32 = 6;
-pub const WORLD_CHUNKS_COUNT: u32 = 216; // 6 * 6 * 6
+pub const WORLD_CHUNKS_COUNT: u32 = WORLD_W * WORLD_W * WORLD_H;
 
 pub struct VoxelChunkPos {
     pub chunk: Vec3<u32>,
@@ -109,20 +113,22 @@ impl World {
 
     pub fn get_voxel(&self, pos: Vec3<u32>) -> Option<Voxel> {
         let pos = self.voxel_chunk_pos(pos);
-        if pos.chunk.x >= 6 || pos.chunk.y >= 6 || pos.chunk.z >= 6 {
+        if pos.chunk.x >= WORLD_W || pos.chunk.y >= WORLD_H || pos.chunk.z >= WORLD_W {
             return None;
         }
 
-        let chunk_idx = (pos.chunk.x + pos.chunk.y * 6 + pos.chunk.z * 36) as usize;
+        let chunk_idx =
+            (pos.chunk.x + pos.chunk.y * WORLD_W + pos.chunk.z * WORLD_W * WORLD_H) as usize;
         Some(self.chunks[chunk_idx].get_voxel(pos.in_chunk))
     }
     pub fn set_voxel(&mut self, pos: Vec3<u32>, voxel: Voxel) {
         let pos = self.voxel_chunk_pos(pos);
-        if pos.chunk.x >= 6 || pos.chunk.y >= 6 || pos.chunk.z >= 6 {
+        if pos.chunk.x >= WORLD_W || pos.chunk.y >= WORLD_W || pos.chunk.z >= WORLD_W {
             panic!("invalid world pos");
         }
 
-        let chunk_idx = (pos.chunk.x + pos.chunk.y * 6 + pos.chunk.z * 36) as usize;
+        let chunk_idx =
+            (pos.chunk.x + pos.chunk.y * WORLD_W + pos.chunk.z * WORLD_W * WORLD_H) as usize;
         self.chunks[chunk_idx].set_voxel(pos.in_chunk, voxel);
     }
     pub fn set_voxels(&mut self, min: Vec3<u32>, max: Vec3<u32>, voxel: Voxel) {

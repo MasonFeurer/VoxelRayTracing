@@ -13,12 +13,12 @@ struct RandSrc {
 
 const CHUNK_W: u32 = 32u;
 const CHUNK_H: u32 = 32u;
-const CHUNK_VOLUME: u32 = 32768u; // 32 * 32 * 32
+const CHUNK_VOLUME: u32 = 32768u; // CHUNK_W * CHUNK_H * CHUNK_W
 const CHUNK_INT_COUNT: u32 = 8192u; // CHUNK_VOLUME / 4
 
 const WORLD_W: u32 = 6u;
 const WORLD_H: u32 = 6u;
-const WORLD_CHUNKS_COUNT: u32 = 216u; // 6 * 6 * 6
+const WORLD_CHUNKS_COUNT: u32 = 216u; // WORLD_W * WORLD_H * WORLD_W
 
 const TAU: f32 = 6.283185307;
 
@@ -126,12 +126,14 @@ fn get_world_voxel(pos: vec3<i32>) -> u32 {
     if pos.x < 0 || pos.y < 0 || pos.z < 0 {
         return 255u;
     }
-    if pos.x >= i32(CHUNK_W) * 6 || pos.y >= i32(CHUNK_H) * 6 || pos.z >= i32(CHUNK_W) * 6 {
+    if pos.x >= i32(CHUNK_W) * i32(WORLD_W) 
+    || pos.y >= i32(CHUNK_H) * i32(WORLD_H) 
+    || pos.z >= i32(CHUNK_W) * i32(WORLD_W) {
         return 255u;
     }
     let pos = voxel_chunk_pos(vec3(u32(pos.x), u32(pos.y), u32(pos.z)));
 
-    let chunk_idx = i32(pos.chunk.x + pos.chunk.y * 6u + pos.chunk.z * 36u);
+    let chunk_idx = i32(pos.chunk.x + pos.chunk.y * WORLD_W + pos.chunk.z * WORLD_W * WORLD_H);
     return get_chunk_voxel(chunk_idx, pos.in_chunk);
 }
 
@@ -148,7 +150,6 @@ struct HitResult {
 	face: vec3<i32>,
 	voxel: u32,
     water_dist: f32,
-    effect: vec4<f32>,
 }
 
 fn cast_ray(ray: Ray, max_dist: f32) -> HitResult {
@@ -195,7 +196,6 @@ fn cast_ray(ray: Ray, max_dist: f32) -> HitResult {
     var dist: f32 = 0.0;
     var prev_world_pos: vec3<i32>;
     var result: HitResult;
-    result.effect = vec4(1.0);
     
     // the distance the ray travled when it entered water
     var dist_entered_water: f32 = -1.0;
@@ -219,9 +219,9 @@ fn cast_ray(ray: Ray, max_dist: f32) -> HitResult {
         
         // if the position of the voxel is outside the world, skip
         if world_pos.x < 0 || world_pos.y < 0 || world_pos.z < 0 
-        || world_pos.x >= i32(CHUNK_W) * 6 
-        || world_pos.y >= i32(CHUNK_H) * 6 
-        || world_pos.z >= i32(CHUNK_W) * 6 {
+        || world_pos.x >= i32(CHUNK_W) * i32(WORLD_W)
+        || world_pos.y >= i32(CHUNK_H) * i32(WORLD_H)
+        || world_pos.z >= i32(CHUNK_W) * i32(WORLD_W) {
             continue;
         }
         
@@ -231,7 +231,7 @@ fn cast_ray(ray: Ray, max_dist: f32) -> HitResult {
         chunk.x = world_pos.x / i32(CHUNK_W) - i32(min_chunk_pos.x);
         chunk.y = world_pos.y / i32(CHUNK_H) - i32(min_chunk_pos.y);
         chunk.z = world_pos.z / i32(CHUNK_W) - i32(min_chunk_pos.z);
-        let chunk_idx = i32(chunk.x + chunk.y * 6 + chunk.z * 36);
+        let chunk_idx = chunk.x + chunk.y * i32(WORLD_W) + chunk.z * i32(WORLD_W) * i32(WORLD_H);
         
         // if the chunk is empty, the voxel isn't solid, skip
         // TODO skip entire chunk, not just this voxel
@@ -260,7 +260,6 @@ fn cast_ray(ray: Ray, max_dist: f32) -> HitResult {
             }
         }
         if voxel == WATER {
-            result.effect *= vec4(0.95, 0.95, 1.5, 1.0);
             if dist_entered_water == -1.0 {
                 dist_entered_water = dist;
             }
