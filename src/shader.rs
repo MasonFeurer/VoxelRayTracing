@@ -54,6 +54,11 @@ impl ColorBuffer {
             sampler,
         }
     }
+
+    pub fn size(&self) -> Vec2<u32> {
+        let size = self.texture.size();
+        Vec2::new(size.width, size.height)
+    }
 }
 
 fn uniform_binding_type() -> BindingType {

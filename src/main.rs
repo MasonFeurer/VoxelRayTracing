@@ -35,6 +35,7 @@ impl State {
     async fn new(window: &Window) -> Self {
         let size = window.inner_size();
         let size = Vec2::new(size.width, size.height);
+        let buffer_size = size;
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
         // Handle to a presentable surface
@@ -70,7 +71,7 @@ impl State {
         surface.configure(&device, &config);
 
         // Create shader
-        let shader = Shader::new(&device, &config, size);
+        let shader = Shader::new(&device, &config, buffer_size);
 
         let mut world = Box::new(World::new());
         world.populate();
@@ -117,9 +118,11 @@ impl State {
             .create_view(&wgpu::TextureViewDescriptor::default());
 
         if self.size_changed {
-            self.shader
-                .proj_buffer
-                .update(&self.queue, self.size, &self.player);
+            self.shader.proj_buffer.update(
+                &self.queue,
+                self.shader.color_buffer.size(),
+                &self.player,
+            );
             self.size_changed = false;
         }
 
@@ -134,7 +137,8 @@ impl State {
         });
         compute_pass.set_pipeline(&self.shader.compute_pipeline);
         compute_pass.set_bind_group(0, &self.shader.compute_bind_group, &[]);
-        compute_pass.dispatch_workgroups(self.size.x, self.size.y, 1);
+        let [buffer_w, buffer_h]: [u32; 2] = self.shader.color_buffer.size().into();
+        compute_pass.dispatch_workgroups(buffer_w, buffer_h, 1);
         std::mem::drop(compute_pass);
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
