@@ -75,6 +75,6 @@ impl InputState {
             },
             _ => return false,
         }
-        true
+        false
     }
 }

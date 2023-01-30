@@ -83,8 +83,8 @@ impl Chunk {
 // 12x12 world: 56,706,064 bytes (56MB)
 // 8x8 world: 16,801,808 bytes (16MB)
 // 4x4 world: 2,100,240 bytes (2MB)
-pub const WORLD_W: u32 = 6;
-pub const WORLD_H: u32 = 6;
+pub const WORLD_W: u32 = 8;
+pub const WORLD_H: u32 = 8;
 pub const WORLD_CHUNKS_COUNT: u32 = WORLD_W * WORLD_W * WORLD_H;
 
 pub struct VoxelChunkPos {
@@ -260,7 +260,7 @@ impl WorldGen {
             let x = fastrand::u32(0..(WORLD_W * CHUNK_W));
             let z = fastrand::u32(0..(WORLD_W * CHUNK_W));
             let y = world.surface_at(x, z);
-            world.set_voxel(Vec3::new(x, y, z), Voxel::MAGMA);
+            world.set_voxel(Vec3::new(x, y, z), Voxel::IRON);
         }
     }
 }

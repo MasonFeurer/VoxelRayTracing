@@ -88,6 +88,7 @@ pub struct Shader {
     pub proj_buffer: ProjBuffer,
     pub world_buffer: WorldBuffer,
     pub rand_floats_buffer: RandFloatsBuffer,
+    pub settings_buffer: SettingsBuffer,
 }
 impl Shader {
     pub fn new(device: &Device, config: &SurfaceConfiguration, size: Vec2<u32>) -> Self {
@@ -96,6 +97,7 @@ impl Shader {
         let world_buffer = WorldBuffer::new(device);
         let color_buffer = ColorBuffer::new(device, size);
         let rand_floats_buffer = RandFloatsBuffer::new(device);
+        let settings_buffer = SettingsBuffer::new(device);
 
         let (compute_pipeline, compute_bind_group) = create_compute_pipeline(
             device,
@@ -104,6 +106,7 @@ impl Shader {
             &proj_buffer,
             &world_buffer,
             &rand_floats_buffer,
+            &settings_buffer,
         );
         let (render_pipeline, render_bind_group) =
             create_render_pipeline(device, &color_buffer, config.format);
@@ -120,6 +123,7 @@ impl Shader {
             world_buffer,
             color_buffer,
             rand_floats_buffer,
+            settings_buffer,
         }
     }
 }
@@ -131,6 +135,7 @@ pub fn create_compute_pipeline(
     proj_buffer: &ProjBuffer,
     world_buffer: &WorldBuffer,
     rand_floats_buffer: &RandFloatsBuffer,
+    settings_buffer: &SettingsBuffer,
 ) -> (ComputePipeline, BindGroup) {
     let shader_module = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("raytracing_pipeline::shader_module"),
@@ -174,6 +179,12 @@ pub fn create_compute_pipeline(
                 ty: storage_binding_type(true),
                 count: None,
             },
+            BindGroupLayoutEntry {
+                binding: 5,
+                visibility: ShaderStages::COMPUTE,
+                ty: uniform_binding_type(),
+                count: None,
+            },
         ],
     });
     let bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -199,6 +210,10 @@ pub fn create_compute_pipeline(
             BindGroupEntry {
                 binding: 4,
                 resource: rand_floats_buffer.0.as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 5,
+                resource: settings_buffer.0.as_entire_binding(),
             },
         ],
     });
@@ -422,5 +437,50 @@ impl RandFloatsBuffer {
             *f = fastrand::f32();
         }
         queue.write_buffer(&self.0, 0, bytemuck::cast_slice(&[data]));
+    }
+}
+
+#[derive(Clone, Copy, Zeroable, Pod)]
+#[repr(C)]
+pub struct Settings {
+    pub ray_dist: f32,
+    _padding0: [u32; 3],
+    pub water_color: [f32; 4],
+    pub min_water_opacity: f32,
+    pub water_opacity_max_dist: f32,
+    _padding1: [u32; 2],
+    pub sky_color: [f32; 4],
+    pub sun_pos: [f32; 3],
+    _padding2: [u32; 1],
+}
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            ray_dist: 100.0,
+            water_color: [0.2, 0.5, 1.0, 1.0],
+            min_water_opacity: 0.8,
+            water_opacity_max_dist: 14.0,
+            sky_color: [0.3, 0.7, 1.0, 1.0],
+            sun_pos: [-500.0, 500.0, 100.0],
+            _padding0: [0; 3],
+            _padding1: [0; 2],
+            _padding2: [0; 1],
+        }
+    }
+}
+
+pub struct SettingsBuffer(pub Buffer);
+impl SettingsBuffer {
+    pub fn new(device: &Device) -> Self {
+        Self(device.create_buffer(&BufferDescriptor {
+            label: Some("#settings_buffer"),
+            size: std::mem::size_of::<Settings>() as u64,
+            usage: BufferUsages::COPY_DST | BufferUsages::UNIFORM,
+            mapped_at_creation: false,
+        }))
+    }
+
+    pub fn update(&self, queue: &Queue, settings: Settings) {
+        queue.write_buffer(&self.0, 0, cast_slice(&[settings]));
     }
 }

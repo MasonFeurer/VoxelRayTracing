@@ -13,6 +13,10 @@ log = "0.4"
 pollster = "0.2"
 fastrand = "^1.0"
 
+egui = { git = "https://github.com/emilk/egui.git" }
+egui-wgpu = { git = "https://github.com/emilk/egui.git" }
+egui-winit = { git = "https://github.com/emilk/egui.git" }
+
 [dependencies.bytemuck]
 version = "1.13.0"
 features = ["derive", "min_const_generics", "extern_crate_alloc"]

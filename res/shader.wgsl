@@ -10,15 +10,23 @@ struct Proj {
 struct RandSrc {
     floats: array<f32, 128>,
 }
+struct Settings {
+    ray_dist: f32,
+    water_color: vec4<f32>,
+    min_water_opacity: f32,
+    water_opacity_max_dist: f32,
+    sky_color: vec4<f32>,
+    sun_pos: vec3<f32>,
+}
 
 const CHUNK_W: u32 = 32u;
 const CHUNK_H: u32 = 32u;
 const CHUNK_VOLUME: u32 = 32768u; // CHUNK_W * CHUNK_H * CHUNK_W
 const CHUNK_INT_COUNT: u32 = 8192u; // CHUNK_VOLUME / 4
 
-const WORLD_W: u32 = 6u;
-const WORLD_H: u32 = 6u;
-const WORLD_CHUNKS_COUNT: u32 = 216u; // WORLD_W * WORLD_H * WORLD_W
+const WORLD_W: u32 = 8u;
+const WORLD_H: u32 = 8u;
+const WORLD_CHUNKS_COUNT: u32 = 512u; // WORLD_W * WORLD_H * WORLD_W
 
 const TAU: f32 = 6.283185307;
 
@@ -43,16 +51,18 @@ struct VoxelChunkPos {
 }
 
 @group(0) @binding(0) var color_buffer_: texture_storage_2d<rgba8unorm, write>;
-@group(0) @binding(1) var<uniform> cam: Cam;
-@group(0) @binding(2) var<uniform> proj: Proj;
-@group(0) @binding(3) var<storage, read> world: World;
+@group(0) @binding(1) var<uniform> cam_: Cam;
+@group(0) @binding(2) var<uniform> proj_: Proj;
+@group(0) @binding(3) var<storage, read> world_: World;
 @group(0) @binding(4) var<storage, read> rand_src_: RandSrc;
+@group(0) @binding(5) var<uniform> settings_: Settings;
 
 var<private> rand_float_idx__: i32 = 0;
 
 const AIR: u32 = 0u;
 const MAGMA: u32 = 5u;
 const WATER: u32 = 6u;
+const IRON: u32 = 13u;
 
 var<private> voxel_colors__: array<vec4<f32>, 14> = array<vec4<f32>, 14>(
     vec4<f32>(0.0, 0.0, 0.0, 0.0), // AIR
@@ -105,11 +115,11 @@ fn get_chunk_voxel(chunk_idx: i32, pos: vec3<u32>) -> u32 {
     let shift: u32 = (byte_idx % 4u) * 8u;
     let int_idx: i32 = i32(byte_idx / 4u + 1u);
     
-    return (world.chunks[chunk_idx].voxels[int_idx] >> shift) & 0xFFu;
+    return (world_.chunks[chunk_idx].voxels[int_idx] >> shift) & 0xFFu;
 }
 
 fn voxel_chunk_pos(pos: vec3<u32>) -> VoxelChunkPos {
-    let min_chunk_pos = world.min_chunk_pos;
+    let min_chunk_pos = world_.min_chunk_pos;
     var result: VoxelChunkPos;
     result.chunk.x = pos.x / CHUNK_W - min_chunk_pos.x;
     result.chunk.y = pos.y / CHUNK_H - min_chunk_pos.y;
@@ -191,7 +201,7 @@ fn cast_ray(ray: Ray, max_dist: f32) -> HitResult {
         ray_len.z = (f32(world_pos.z + 1) - start.z) * unit_step_size.z;
     }
     
-    let min_chunk_pos = world.min_chunk_pos;
+    let min_chunk_pos = world_.min_chunk_pos;
     
     var dist: f32 = 0.0;
     var prev_world_pos: vec3<i32>;
@@ -235,7 +245,7 @@ fn cast_ray(ray: Ray, max_dist: f32) -> HitResult {
         
         // if the chunk is empty, the voxel isn't solid, skip
         // TODO skip entire chunk, not just this voxel
-        if world.chunks[chunk_idx].solid_voxels_count == 0u {
+        if world_.chunks[chunk_idx].solid_voxels_count == 0u {
             continue;
         }
         
@@ -281,15 +291,15 @@ fn cast_ray(ray: Ray, max_dist: f32) -> HitResult {
     return result;
 }
 fn create_ray_from_screen(screen_pos: vec2<i32>) -> Ray {
-	let x = (f32(screen_pos.x) * 2.0) / f32(proj.size.x) - 1.0;
-	let y = (f32(screen_pos.y) * 2.0) / f32(proj.size.y) - 1.0;
+	let x = (f32(screen_pos.x) * 2.0) / f32(proj_.size.x) - 1.0;
+	let y = (f32(screen_pos.y) * 2.0) / f32(proj_.size.y) - 1.0;
 	let clip_coords = vec4(x, -y, -1.0, 1.0);
-	let eye_coords0 = clip_coords * proj.inv_mat;
+	let eye_coords0 = clip_coords * proj_.inv_mat;
 	let eye_coords = vec4(eye_coords0.xy, -1.0, 0.0);
-	let ray_world = normalize((eye_coords * cam.inv_view_mat).xyz);
+	let ray_world = normalize((eye_coords * cam_.inv_view_mat).xyz);
 	
 	var ray: Ray;
-	ray.origin = cam.pos;
+	ray.origin = cam_.pos;
 	ray.dir = ray_world;
 	return ray;
 }
@@ -307,17 +317,39 @@ fn update(@builtin(global_invocation_id) inv_id: vec3<u32>) {
     let screen_pos: vec2<i32> = vec2(i32(inv_id.x), i32(inv_id.y));
 
 	let ray = create_ray_from_screen(screen_pos);
-	let result = cast_ray(ray, 100.0);
+	var result = cast_ray(ray, settings_.ray_dist);
     
-    var color: vec4<f32> = vec4(0.3, 0.7, 1.0, 1.0);
+    var color: vec4<f32> = settings_.sky_color;
     if result.hit {
+        var iron_count = 0;
+        while result.voxel == IRON && iron_count < 5 {
+            var reflect: Ray;
+            reflect.dir = ray.dir - 2.0 * result.norm * dot(result.norm, ray.dir);
+            reflect.origin = result.exact_pos + reflect.dir * 0.2;
+        
+            result = cast_ray(reflect, settings_.ray_dist);
+            iron_count += 1;
+        }
+        
         color = voxel_colors__[i32(result.voxel)];
+        if iron_count > 0 {
+            let factor = min(f32(iron_count) / 5.0, 1.0);
+            color = overlay_color(color, vec4(1.0), factor);
+        }
         
         // var reflect: Ray;
         // reflect.dir = ray.dir - 2.0 * norm * dot(norm, ray.dir);
         // reflect.origin = result.exact_pos + reflect.dir * 0.2;
         
         // let reflect_hit = cast_ray(reflect, 20.0);
+        
+        var to_sun: Ray;
+        to_sun.dir = normalize(settings_.sun_pos - result.exact_pos);
+        to_sun.origin = result.exact_pos + to_sun.dir * 0.001;
+        let to_sun_result = cast_ray(to_sun, 50.0);
+        if to_sun_result.hit {
+            color *= 0.9;
+        }
         
         if result.face.x ==  1 { color *= 0.7; }
         if result.face.x == -1 { color *= 0.7; }
@@ -328,9 +360,12 @@ fn update(@builtin(global_invocation_id) inv_id: vec3<u32>) {
     }
     
     if result.water_dist != 0.0 {
-        var factor = clamp(result.water_dist / 14.0, 0.8, 1.0);
+        var factor = clamp(
+            result.water_dist / settings_.water_opacity_max_dist, 
+            settings_.min_water_opacity, 1.0
+        );
     
-        color = overlay_color(color, vec4(0.2, 0.5, 1.0, 1.0), factor);
+        color = overlay_color(color, settings_.water_color, factor);
     }
     
     textureStore(color_buffer_, screen_pos, color);
