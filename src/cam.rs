@@ -31,19 +31,28 @@ impl Cam {
     pub fn view_mat(&self) -> Mat4 {
         Mat4::view(self.pos, self.rot.map(f32::to_radians))
     }
+
+    pub fn cast_ray(
+        &self,
+        max_dist: f32,
+        collides: impl Fn(Vec3<i32>) -> bool,
+    ) -> Option<HitResult> {
+        let dir = axis_rot_to_ray(self.rot.map(f32::to_radians));
+        cast_ray(self.pos, dir, max_dist, collides)
+    }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct HitResult {
-    pub pos: Vec3<i64>,
-    pub face: Vec3<i64>,
+    pub pos: Vec3<i32>,
+    pub face: Vec3<i32>,
 }
 
 pub fn cast_ray(
     start: Vec3<f32>,
     dir: Vec3<f32>,
     max_dist: f32,
-    collides: impl Fn(Vec3<i64>) -> bool,
+    collides: impl Fn(Vec3<i32>) -> bool,
 ) -> Option<HitResult> {
     // -- DDA algorithm --
 
@@ -55,7 +64,7 @@ pub fn cast_ray(
         (1.0 + (dir.x / dir.z) * (dir.x / dir.z) + (dir.y / dir.z) * (dir.y / dir.z)).sqrt(),
     );
 
-    let mut map_check = start.map(|e| e.floor() as i64);
+    let mut map_check = start.map(|e| e.floor() as i32);
 
     let (step, mut ray_len1d): (Vec3<f32>, Vec3<f32>) = {
         let (step_x, ray_len_x) = {
@@ -91,15 +100,15 @@ pub fn cast_ray(
         prev_map_check = map_check;
         // walk
         if ray_len1d.x < ray_len1d.y && ray_len1d.x < ray_len1d.z {
-            map_check.x += step.x as i64;
+            map_check.x += step.x as i32;
             dist = ray_len1d.x;
             ray_len1d.x += unit_step_size.x;
         } else if ray_len1d.z < ray_len1d.x && ray_len1d.z < ray_len1d.y {
-            map_check.z += step.z as i64;
+            map_check.z += step.z as i32;
             dist = ray_len1d.z;
             ray_len1d.z += unit_step_size.z;
         } else {
-            map_check.y += step.y as i64;
+            map_check.y += step.y as i32;
             dist = ray_len1d.y;
             ray_len1d.y += unit_step_size.y;
         }

@@ -10,6 +10,7 @@ pub struct InputState {
     pub pressed_keys: HashSet<Key>,
     pub down_keys: HashSet<Key>,
     pub pressed_mouse_buttons: HashSet<MouseButton>,
+    pub down_mouse_buttons: HashSet<MouseButton>,
     pub cursor_delta: Vec2<f32>,
     pub cursor_pos: Vec2<f32>,
     pub scroll_delta: Vec2<f32>,
@@ -21,10 +22,16 @@ impl InputState {
     pub fn key_down(&self, key: Key) -> bool {
         self.down_keys.contains(&key)
     }
-    pub fn left_button_is_down(&self) -> bool {
+    pub fn left_button_down(&self) -> bool {
+        self.down_mouse_buttons.contains(&MouseButton::Left)
+    }
+    pub fn right_button_down(&self) -> bool {
+        self.down_mouse_buttons.contains(&MouseButton::Right)
+    }
+    pub fn left_button_pressed(&self) -> bool {
         self.pressed_mouse_buttons.contains(&MouseButton::Left)
     }
-    pub fn right_button_is_down(&self) -> bool {
+    pub fn right_button_pressed(&self) -> bool {
         self.pressed_mouse_buttons.contains(&MouseButton::Right)
     }
 
@@ -32,6 +39,7 @@ impl InputState {
         self.cursor_delta = Vec2::all(0.0);
         self.scroll_delta = Vec2::all(0.0);
         self.pressed_keys.clear();
+        self.pressed_mouse_buttons.clear();
     }
 
     pub fn update<T>(&mut self, event: &Event<T>) -> bool {
@@ -51,8 +59,13 @@ impl InputState {
                 }
                 WindowEvent::MouseInput { state, button, .. } => {
                     match state == &ElementState::Pressed {
-                        true => self.pressed_mouse_buttons.insert(*button),
-                        false => self.pressed_mouse_buttons.remove(button),
+                        true => {
+                            self.pressed_mouse_buttons.insert(*button);
+                            self.down_mouse_buttons.insert(*button);
+                        }
+                        false => {
+                            self.down_mouse_buttons.remove(button);
+                        }
                     };
                 }
                 _ => return false,

@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![feature(let_chains)]
 
 pub mod aabb;
 pub mod cam;
@@ -10,11 +11,12 @@ pub mod shader;
 pub mod vectors;
 pub mod world;
 
+use crate::cam::HitResult;
 use crate::input::{InputState, Key};
 use crate::player::Player;
 use crate::shader::{Settings, Shader};
 use crate::vectors::{Vec2, Vec3};
-use crate::world::World;
+use crate::world::{Voxel, World};
 use winit::event::*;
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::Window as WinitWindow;
@@ -154,6 +156,7 @@ struct State {
     settings: Settings,
 
     player: Player,
+    hit_result: Option<HitResult>,
     world: Box<World>,
 }
 impl State {
@@ -175,8 +178,9 @@ impl State {
             shader,
             settings,
 
-            world,
             player,
+            hit_result: None,
+            world,
         }
     }
 
@@ -194,6 +198,20 @@ impl State {
             self.window.toggle_fullscreen();
         }
         self.shader.rand_floats_buffer.update(&self.gpu.queue);
+
+        self.hit_result = self.player.cast_ray(&self.world);
+
+        if let Some(hit) = self.hit_result && input.left_button_pressed() {
+            let (chunk_idx, _) = self.world.set_voxel(hit.pos.unsigned().unwrap(), Voxel::AIR).unwrap();
+            self.shader.world_buffer.update_chunk(&self.gpu.queue, chunk_idx, self.world.chunks[chunk_idx]);
+        }
+        if let Some(hit) = self.hit_result && input.right_button_pressed() {
+            let Some(place_pos) = (hit.pos + hit.face).unsigned() else {
+                return;
+            };
+            let (chunk_idx, _) = self.world.set_voxel(place_pos, Voxel::IRON).unwrap();
+            self.shader.world_buffer.update_chunk(&self.gpu.queue, chunk_idx, self.world.chunks[chunk_idx]);
+        }
     }
 
     fn resize(&mut self, new_size: Vec2<u32>) {

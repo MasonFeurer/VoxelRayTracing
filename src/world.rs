@@ -25,6 +25,10 @@ impl Voxel {
     pub fn is_empty(self) -> bool {
         self == Self::AIR || self == Self::WATER
     }
+    #[inline(always)]
+    pub fn is_solid(self) -> bool {
+        self != Self::AIR && self != Self::WATER
+    }
 }
 
 pub const CHUNK_W: u32 = 32;
@@ -60,22 +64,21 @@ impl Chunk {
         let idx = (pos.x + pos.y * CHUNK_W + pos.z * CHUNK_W * CHUNK_H) as usize;
         self.voxels[idx]
     }
-    pub fn set_voxel(&mut self, pos: Vec3<u32>, voxel: Voxel) {
+    pub fn set_voxel(&mut self, pos: Vec3<u32>, voxel: Voxel) -> Option<usize> {
         if pos.x >= CHUNK_W || pos.y >= CHUNK_H || pos.z >= CHUNK_W {
-            panic!("invalid in-chunk pos");
+            return None;
         }
 
         let idx = (pos.x + pos.y * CHUNK_W + pos.z * CHUNK_W * CHUNK_H) as usize;
         if self.voxels[idx] == voxel {
-            return;
+            return None;
         }
         self.voxels[idx] = voxel;
-        match voxel.is_empty() {
-            true => self.solid_voxels_count -= 1,
-            false => {
-                self.solid_voxels_count += 1;
-            }
+        match voxel.is_solid() {
+            false => self.solid_voxels_count -= 1,
+            true => self.solid_voxels_count += 1,
         }
+        Some(idx)
     }
 }
 
@@ -121,15 +124,18 @@ impl World {
             (pos.chunk.x + pos.chunk.y * WORLD_W + pos.chunk.z * WORLD_W * WORLD_H) as usize;
         Some(self.chunks[chunk_idx].get_voxel(pos.in_chunk))
     }
-    pub fn set_voxel(&mut self, pos: Vec3<u32>, voxel: Voxel) {
+    pub fn set_voxel(&mut self, pos: Vec3<u32>, voxel: Voxel) -> Option<(usize, usize)> {
         let pos = self.voxel_chunk_pos(pos);
         if pos.chunk.x >= WORLD_W || pos.chunk.y >= WORLD_W || pos.chunk.z >= WORLD_W {
-            panic!("invalid world pos");
+            return None;
         }
 
         let chunk_idx =
             (pos.chunk.x + pos.chunk.y * WORLD_W + pos.chunk.z * WORLD_W * WORLD_H) as usize;
-        self.chunks[chunk_idx].set_voxel(pos.in_chunk, voxel);
+        Some((
+            chunk_idx,
+            self.chunks[chunk_idx].set_voxel(pos.in_chunk, voxel)?,
+        ))
     }
     pub fn set_voxels(&mut self, min: Vec3<u32>, max: Vec3<u32>, voxel: Voxel) {
         for x in min.x..max.x {
@@ -255,12 +261,6 @@ impl WorldGen {
                 // set surface
                 world.set_voxel(Vec3::new(x, y, z), surface);
             }
-        }
-        for _ in 0..10 {
-            let x = fastrand::u32(0..(WORLD_W * CHUNK_W));
-            let z = fastrand::u32(0..(WORLD_W * CHUNK_W));
-            let y = world.surface_at(x, z);
-            world.set_voxel(Vec3::new(x, y, z), Voxel::IRON);
         }
     }
 }

@@ -316,18 +316,17 @@ fn overlay_color(back: vec4<f32>, front: vec4<f32>, factor: f32) -> vec4<f32> {
 fn update(@builtin(global_invocation_id) inv_id: vec3<u32>) {
     let screen_pos: vec2<i32> = vec2(i32(inv_id.x), i32(inv_id.y));
 
-	let ray = create_ray_from_screen(screen_pos);
+	var ray = create_ray_from_screen(screen_pos);
 	var result = cast_ray(ray, settings_.ray_dist);
     
     var color: vec4<f32> = settings_.sky_color;
     if result.hit {
         var iron_count = 0;
-        while result.voxel == IRON && iron_count < 5 {
-            var reflect: Ray;
-            reflect.dir = ray.dir - 2.0 * result.norm * dot(result.norm, ray.dir);
-            reflect.origin = result.exact_pos + reflect.dir * 0.2;
+        while result.voxel == IRON && iron_count < 10 {
+            ray.dir = ray.dir - 2.0 * result.norm * dot(result.norm, ray.dir);
+            ray.origin = result.exact_pos + ray.dir * 0.01;
         
-            result = cast_ray(reflect, settings_.ray_dist);
+            result = cast_ray(ray, settings_.ray_dist);
             iron_count += 1;
         }
         
@@ -336,12 +335,6 @@ fn update(@builtin(global_invocation_id) inv_id: vec3<u32>) {
             let factor = min(f32(iron_count) / 5.0, 1.0);
             color = overlay_color(color, vec4(1.0), factor);
         }
-        
-        // var reflect: Ray;
-        // reflect.dir = ray.dir - 2.0 * norm * dot(norm, ray.dir);
-        // reflect.origin = result.exact_pos + reflect.dir * 0.2;
-        
-        // let reflect_hit = cast_ray(reflect, 20.0);
         
         var to_sun: Ray;
         to_sun.dir = normalize(settings_.sun_pos - result.exact_pos);

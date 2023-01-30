@@ -1,5 +1,5 @@
 use crate::aabb::Aabb;
-use crate::cam::Cam;
+use crate::cam::{Cam, HitResult};
 use crate::input::{InputState, Key};
 use crate::matrices::Mat4;
 use crate::vectors::{Vec2, Vec3};
@@ -168,5 +168,13 @@ impl Player {
             pos - Vec3::new(WIDTH, 0.0, WIDTH) * 0.5,
             pos + Vec3::new(WIDTH, HEIGHT * 2.0, WIDTH) * 0.5,
         )
+    }
+
+    pub fn cast_ray(&self, world: &World) -> Option<HitResult> {
+        self.cam()
+            .cast_ray(100.0, |pos| match world.get_voxel(pos.map(|e| e as u32)) {
+                Some(voxel) => voxel.is_solid(),
+                None => false,
+            })
     }
 }

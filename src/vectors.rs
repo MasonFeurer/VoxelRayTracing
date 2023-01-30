@@ -181,6 +181,15 @@ impl<T: Copy> From<[T; 4]> for Vec4<T> {
     }
 }
 
+impl Vec3<i32> {
+    pub fn unsigned(self) -> Option<Vec3<u32>> {
+        if self.x < 0 || self.y < 0 || self.z < 0 {
+            return None;
+        }
+        Some(Vec3::new(self.x as u32, self.y as u32, self.z as u32))
+    }
+}
+
 pub trait VecMath {
     /// The length of this vector, squared, assuming an origin of (0, 0).
     fn len_sq(&self) -> f64;
