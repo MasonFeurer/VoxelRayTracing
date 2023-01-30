@@ -2,9 +2,9 @@
 Is a project I'm working on for rendering a voxel world, with ray tracing.
 
 ## Screenshots
-![Screenshot](https://github.com/MasonFeurer/VoxelRayTracing/blob/main/images/230129-200315.png?raw=true)
-![Screenshot](https://github.com/MasonFeurer/VoxelRayTracing/blob/main/images/230129-200353.png?raw=true)
-![Screenshot](https://github.com/MasonFeurer/VoxelRayTracing/blob/main/images/230129-200247.png?raw=true)
+![Screenshot](https://github.com/MasonFeurer/VoxelRayTracing/raw/main/images/230129-200315.png)
+![Screenshot](https://github.com/MasonFeurer/VoxelRayTracing/raw/main/images/230129-200353.png)
+![Screenshot](https://github.com/MasonFeurer/VoxelRayTracing/raw/main/images/230129-200247.png)
 
 ## Running
 In [releases](https://github.com/MasonFeurer/VoxelRayTracing/tree/main/releases), you can find binaries for MacOS.
