@@ -201,6 +201,10 @@ impl State {
 
         self.hit_result = self.player.cast_ray(&self.world);
 
+        if !self.window.cursor_locked {
+            return;
+        }
+
         if let Some(hit) = self.hit_result && input.left_button_pressed() {
             let (chunk_idx, _) = self.world.set_voxel(hit.pos.unsigned().unwrap(), Voxel::AIR).unwrap();
             self.shader.world_buffer.update_chunk(&self.gpu.queue, chunk_idx, self.world.chunks[chunk_idx]);
@@ -224,19 +228,17 @@ impl State {
     }
 
     fn settings_ui(&mut self, ui: &mut egui::Ui) {
-        fn value(ui: &mut egui::Ui, label: &str, v: &mut f32, min: f32, max: f32) -> bool {
-            ui.horizontal(|ui| {
-                ui.label(label);
-                ui.add(egui::Slider::new(v, min..=max)).changed()
-            })
-            .inner
+        fn value_f32(ui: &mut egui::Ui, label: &str, v: &mut f32, min: f32, max: f32) -> bool {
+            ui.label(label);
+            ui.add(egui::Slider::new(v, min..=max)).changed()
+        }
+        fn value_u32(ui: &mut egui::Ui, label: &str, v: &mut u32, min: u32, max: u32) -> bool {
+            ui.label(label);
+            ui.add(egui::Slider::new(v, min..=max)).changed()
         }
         fn color(ui: &mut egui::Ui, label: &str, color: &mut [f32; 4]) -> bool {
-            ui.horizontal(|ui| {
-                ui.label(label);
-                ui.color_edit_button_rgba_premultiplied(color).changed()
-            })
-            .inner
+            ui.label(label);
+            ui.color_edit_button_rgba_premultiplied(color).changed()
         }
 
         let Settings {
@@ -245,19 +247,23 @@ impl State {
             min_water_opacity,
             water_opacity_max_dist,
             sky_color,
+            max_reflections,
+            iron_color,
             ..
         } = &mut self.settings;
 
         let mut changed = false;
-        changed |= value(ui, "ray dist: ", ray_dist, 0.0, 300.0);
-        changed |= value(ui, "min water opacity: ", min_water_opacity, 0.0, 1.0);
-        changed |= value(
+        changed |= value_f32(ui, "ray dist: ", ray_dist, 0.0, 300.0);
+        changed |= value_f32(ui, "min water opacity: ", min_water_opacity, 0.0, 1.0);
+        changed |= value_f32(
             ui,
             "water opacity max dist: ",
             water_opacity_max_dist,
             0.0,
             100.0,
         );
+        changed |= value_u32(ui, "max reflections:", max_reflections, 0, 100);
+        changed |= color(ui, "iron color", iron_color);
         changed |= color(ui, "water color", water_color);
         changed |= color(ui, "sky color", sky_color);
 
@@ -271,7 +277,14 @@ impl State {
     fn render(&mut self, egui: &mut Egui) -> Result<(), wgpu::SurfaceError> {
         let egui_input = egui.winit.take_egui_input(&self.window.winit);
         let egui_output = egui.ctx.run(egui_input, |ctx| {
-            egui::TopBottomPanel::top("top").show(&ctx, |ui| {
+            let mut style: egui::Style = (*ctx.style()).clone();
+            style.visuals.widgets.noninteractive.fg_stroke.color = egui::Color32::WHITE;
+            ctx.set_style(style);
+
+            let mut frame = egui::containers::Frame::side_top_panel(&ctx.style());
+            frame.fill = frame.fill.linear_multiply(0.3);
+
+            egui::SidePanel::left("top").frame(frame).show(&ctx, |ui| {
                 self.settings_ui(ui);
             });
         });

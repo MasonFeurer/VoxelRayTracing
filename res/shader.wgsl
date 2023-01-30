@@ -17,6 +17,8 @@ struct Settings {
     water_opacity_max_dist: f32,
     sky_color: vec4<f32>,
     sun_pos: vec3<f32>,
+    iron_color: vec4<f32>,
+    max_reflections: u32,
 }
 
 const CHUNK_W: u32 = 32u;
@@ -318,23 +320,20 @@ fn update(@builtin(global_invocation_id) inv_id: vec3<u32>) {
 
 	var ray = create_ray_from_screen(screen_pos);
 	var result = cast_ray(ray, settings_.ray_dist);
-    
-    var color: vec4<f32> = settings_.sky_color;
+    var iron_count: u32 = 0u;
     if result.hit {
-        var iron_count = 0;
-        while result.voxel == IRON && iron_count < 10 {
+        while result.voxel == IRON && iron_count < settings_.max_reflections {
             ray.dir = ray.dir - 2.0 * result.norm * dot(result.norm, ray.dir);
             ray.origin = result.exact_pos + ray.dir * 0.01;
         
             result = cast_ray(ray, settings_.ray_dist);
-            iron_count += 1;
+            iron_count += 1u;
         }
-        
+    }
+    
+    var color: vec4<f32> = settings_.sky_color;
+    if result.hit {
         color = voxel_colors__[i32(result.voxel)];
-        if iron_count > 0 {
-            let factor = min(f32(iron_count) / 5.0, 1.0);
-            color = overlay_color(color, vec4(1.0), factor);
-        }
         
         var to_sun: Ray;
         to_sun.dir = normalize(settings_.sun_pos - result.exact_pos);
@@ -359,6 +358,10 @@ fn update(@builtin(global_invocation_id) inv_id: vec3<u32>) {
         );
     
         color = overlay_color(color, settings_.water_color, factor);
+    }
+    if iron_count > 0u {
+        let factor = min(f32(iron_count) / f32(settings_.max_reflections), 1.0);
+        color = overlay_color(color, settings_.iron_color, factor);
     }
     
     textureStore(color_buffer_, screen_pos, color);

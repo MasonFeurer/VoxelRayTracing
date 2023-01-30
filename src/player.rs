@@ -5,7 +5,7 @@ use crate::matrices::Mat4;
 use crate::vectors::{Vec2, Vec3};
 use crate::world::World;
 
-const GRAVITY: f32 = -0.012;
+const GRAVITY: f32 = -0.026;
 
 #[derive(Clone)]
 pub struct Player {
