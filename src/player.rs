@@ -1,39 +1,39 @@
 use crate::aabb::Aabb;
-use crate::cam::{Cam, HitResult};
+use crate::cam::Cam;
 use crate::input::{InputState, Key};
-use crate::matrices::Mat4;
-use crate::vectors::{Vec2, Vec3};
+use crate::math::{HitResult, Mat4, Vec2f, Vec2u, Vec3f};
 use crate::world::World;
+use crate::{vec2f, vec3f};
 
 const GRAVITY: f32 = -0.026;
 
 #[derive(Clone)]
 pub struct Player {
     pub flying: bool,
-    pub pos: Vec3<f32>,
+    pub pos: Vec3f,
     // in degrees
-    pub rot: Vec3<f32>,
+    pub rot: Vec3f,
     pub fov: f32,
-    pub vel: Vec3<f32>,
+    pub vel: Vec3f,
     pub on_ground: bool,
     pub speed: f32,
     pub aabb: Aabb,
 }
 impl Player {
-    pub fn new(pos: Vec3<f32>) -> Self {
+    pub fn new(pos: Vec3f) -> Self {
         Self {
             flying: false,
             pos,
-            rot: Vec3::new(0.0, 0.0, 0.0),
+            rot: vec3f!(0.0),
             fov: 70.0,
-            vel: Vec3::new(0.0, 0.0, 0.0),
+            vel: vec3f!(0.0),
             on_ground: false,
             speed: 0.3,
             aabb: Self::create_aabb(pos),
         }
     }
 
-    pub fn inv_proj_mat(&self, view_size: Vec2<u32>) -> Mat4 {
+    pub fn inv_proj_mat(&self, view_size: Vec2u) -> Mat4 {
         Mat4::projection(
             self.fov.to_radians(),
             (view_size.x as f32, view_size.y as f32),
@@ -44,7 +44,7 @@ impl Player {
         .unwrap()
     }
 
-    pub fn handle_cursor_movement(&mut self, t_delta: f32, delta: Vec2<f32>) {
+    pub fn handle_cursor_movement(&mut self, t_delta: f32, delta: Vec2f) {
         const SENSITIVITY: f32 = 0.4;
         let delta = delta * t_delta;
 
@@ -59,11 +59,11 @@ impl Player {
         // the camera does not rotate about the Z axis. That would be like tilting your head
     }
 
-    pub fn acc(&mut self, v: Vec3<f32>) {
+    pub fn acc(&mut self, v: Vec3f) {
         self.vel += v;
     }
 
-    pub fn set_pos(&mut self, pos: Vec3<f32>) {
+    pub fn set_pos(&mut self, pos: Vec3f) {
         self.pos = pos;
         self.aabb = Self::create_aabb(pos);
     }
@@ -72,14 +72,14 @@ impl Player {
         let dx = self.rot.y.to_radians().sin() * self.speed;
         let dz = self.rot.y.to_radians().cos() * self.speed;
 
-        if input.cursor_delta != Vec2::all(0.0) {
+        if input.cursor_delta != vec2f!(0.0) {
             self.handle_cursor_movement(t_delta, input.cursor_delta);
         }
 
         if self.on_ground || self.flying {
             self.vel.y = 0.0;
         } else {
-            self.acc(Vec3::new(0.0, GRAVITY * t_delta, 0.0));
+            self.acc(vec3f!(0.0, GRAVITY * t_delta, 0.0));
         }
         self.vel *= 0.96;
 
@@ -122,12 +122,12 @@ impl Player {
 
     pub fn cam(&self) -> Cam {
         Cam {
-            pos: self.pos + Vec3::new(0.0, 1.6, 0.0),
+            pos: self.pos + vec3f!(0.0, 1.6, 0.0),
             rot: self.rot,
         }
     }
 
-    pub fn attempt_movement(&mut self, world: &World, mut a: Vec3<f32>) {
+    pub fn attempt_movement(&mut self, world: &World, mut a: Vec3f) {
         if self.flying {
             self.pos += a;
             self.aabb.translate(a);
@@ -160,19 +160,19 @@ impl Player {
         self.aabb.translate(a);
     }
 
-    pub fn create_aabb(pos: Vec3<f32>) -> Aabb {
+    pub fn create_aabb(pos: Vec3f) -> Aabb {
         const WIDTH: f32 = 0.6;
         const HEIGHT: f32 = 1.8;
 
         Aabb::new(
-            pos - Vec3::new(WIDTH, 0.0, WIDTH) * 0.5,
-            pos + Vec3::new(WIDTH, HEIGHT * 2.0, WIDTH) * 0.5,
+            pos - vec3f!(WIDTH, 0.0, WIDTH) * 0.5,
+            pos + vec3f!(WIDTH, HEIGHT * 2.0, WIDTH) * 0.5,
         )
     }
 
     pub fn cast_ray(&self, world: &World) -> Option<HitResult> {
         self.cam()
-            .cast_ray(100.0, |pos| match world.get_voxel(pos.map(|e| e as u32)) {
+            .cast_ray(100.0, |pos| match world.get_voxel(pos) {
                 Some(voxel) => voxel.is_solid(),
                 None => false,
             })

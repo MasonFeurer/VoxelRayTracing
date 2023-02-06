@@ -1,5 +1,6 @@
 use crate::aabb::Aabb;
-use crate::vectors::{Vec2, Vec3};
+use crate::math::{Vec2f, Vec3i};
+use crate::{vec2f, vec3f, vec3i};
 use bytemuck::{Pod, Zeroable};
 
 #[derive(Clone, Copy, PartialEq, Eq, Pod, Zeroable)]
@@ -29,12 +30,34 @@ impl Voxel {
     pub fn is_solid(self) -> bool {
         self != Self::AIR && self != Self::WATER
     }
+
+    pub fn display(self) -> &'static str {
+        &VOXEL_DISPLAY_NAMES[self.0 as usize]
+    }
 }
 
-pub const CHUNK_W: u32 = 32;
-pub const CHUNK_H: u32 = 32;
-pub const CHUNK_VOLUME: u32 = CHUNK_W * CHUNK_W * CHUNK_H; // 32768
-pub const CHUNK_SIZE: Vec3<u32> = Vec3::new(CHUNK_W, CHUNK_H, CHUNK_W);
+#[rustfmt::skip]
+static VOXEL_DISPLAY_NAMES: &[&str] = &[
+    "air",
+    "stone",
+    "dirt",
+    "grass",
+    "fire",
+    "magma",
+    "water",
+    "wood",
+    "bark",
+    "leaves",
+    "sand",
+    "mud",
+    "clay",
+    "iron",
+];
+
+pub const CHUNK_W: i32 = 32;
+pub const CHUNK_H: i32 = 32;
+pub const CHUNK_VOLUME: i32 = CHUNK_W * CHUNK_W * CHUNK_H; // 32768
+pub const CHUNK_SIZE: Vec3i = vec3i!(CHUNK_W, CHUNK_H, CHUNK_W);
 
 #[derive(Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
@@ -60,11 +83,11 @@ impl Chunk {
         }
     }
 
-    pub fn get_voxel(&self, pos: Vec3<u32>) -> Voxel {
+    pub fn get_voxel(&self, pos: Vec3i) -> Voxel {
         let idx = (pos.x + pos.y * CHUNK_W + pos.z * CHUNK_W * CHUNK_H) as usize;
         self.voxels[idx]
     }
-    pub fn set_voxel(&mut self, pos: Vec3<u32>, voxel: Voxel) -> Option<usize> {
+    pub fn set_voxel(&mut self, pos: Vec3i, voxel: Voxel) -> Option<usize> {
         if pos.x >= CHUNK_W || pos.y >= CHUNK_H || pos.z >= CHUNK_W {
             return None;
         }
@@ -86,36 +109,42 @@ impl Chunk {
 // 12x12 world: 56,706,064 bytes (56MB)
 // 8x8 world: 16,801,808 bytes (16MB)
 // 4x4 world: 2,100,240 bytes (2MB)
-pub const WORLD_W: u32 = 8;
-pub const WORLD_H: u32 = 8;
-pub const WORLD_CHUNKS_COUNT: u32 = WORLD_W * WORLD_W * WORLD_H;
+pub const WORLD_W: i32 = 8;
+pub const WORLD_H: i32 = 8;
+pub const WORLD_CHUNKS_COUNT: i32 = WORLD_W * WORLD_W * WORLD_H;
 
 pub struct VoxelChunkPos {
-    pub chunk: Vec3<u32>,
-    pub in_chunk: Vec3<u32>,
+    pub chunk: Vec3i,
+    pub in_chunk: Vec3i,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy, Zeroable, Pod)]
+#[repr(C)]
 pub struct World {
-    pub min_chunk_pos: Vec3<u32>,
+    pub min_chunk_pos: [u32; 3],
+    _padding0: [u32; 1],
     pub chunks: [Chunk; WORLD_CHUNKS_COUNT as usize],
 }
 impl World {
     pub fn new() -> Self {
         Self {
-            min_chunk_pos: Vec3::new(0, 0, 0),
+            min_chunk_pos: [0; 3],
             chunks: [Chunk::new(); WORLD_CHUNKS_COUNT as usize],
+            _padding0: [0; 1],
         }
     }
 
-    pub fn voxel_chunk_pos(&self, pos: Vec3<u32>) -> VoxelChunkPos {
-        let chunk = pos / CHUNK_SIZE - self.min_chunk_pos;
+    pub fn voxel_chunk_pos(&self, pos: Vec3i) -> Option<VoxelChunkPos> {
+        if pos.x < 0 || pos.y < 0 || pos.z < 0 {
+            return None;
+        }
+        let chunk = pos / CHUNK_SIZE;
         let in_chunk = pos % CHUNK_SIZE;
-        VoxelChunkPos { chunk, in_chunk }
+        Some(VoxelChunkPos { chunk, in_chunk })
     }
 
-    pub fn get_voxel(&self, pos: Vec3<u32>) -> Option<Voxel> {
-        let pos = self.voxel_chunk_pos(pos);
+    pub fn get_voxel(&self, pos: Vec3i) -> Option<Voxel> {
+        let pos = self.voxel_chunk_pos(pos)?;
         if pos.chunk.x >= WORLD_W || pos.chunk.y >= WORLD_H || pos.chunk.z >= WORLD_W {
             return None;
         }
@@ -124,8 +153,8 @@ impl World {
             (pos.chunk.x + pos.chunk.y * WORLD_W + pos.chunk.z * WORLD_W * WORLD_H) as usize;
         Some(self.chunks[chunk_idx].get_voxel(pos.in_chunk))
     }
-    pub fn set_voxel(&mut self, pos: Vec3<u32>, voxel: Voxel) -> Option<(usize, usize)> {
-        let pos = self.voxel_chunk_pos(pos);
+    pub fn set_voxel(&mut self, pos: Vec3i, voxel: Voxel) -> Option<(usize, usize)> {
+        let pos = self.voxel_chunk_pos(pos)?;
         if pos.chunk.x >= WORLD_W || pos.chunk.y >= WORLD_W || pos.chunk.z >= WORLD_W {
             return None;
         }
@@ -137,19 +166,19 @@ impl World {
             self.chunks[chunk_idx].set_voxel(pos.in_chunk, voxel)?,
         ))
     }
-    pub fn set_voxels(&mut self, min: Vec3<u32>, max: Vec3<u32>, voxel: Voxel) {
+    pub fn set_voxels(&mut self, min: Vec3i, max: Vec3i, voxel: Voxel) {
         for x in min.x..max.x {
             for y in min.y..max.y {
                 for z in min.z..max.z {
-                    self.set_voxel(Vec3::new(x, y, z), voxel);
+                    self.set_voxel(vec3i!(x, y, z), voxel);
                 }
             }
         }
     }
 
-    pub fn surface_at(&self, x: u32, z: u32) -> u32 {
-        for y in 0..(CHUNK_H * WORLD_H) {
-            if self.get_voxel(Vec3::new(x, y, z)).unwrap().is_empty() {
+    pub fn surface_at(&self, x: i32, z: i32) -> i32 {
+        for y in 0..WORLD_H {
+            if self.get_voxel(vec3i!(x, y, z)).unwrap().is_empty() {
                 return y;
             }
         }
@@ -159,23 +188,23 @@ impl World {
     pub fn populate(&mut self) {
         let seed = fastrand::i64(..);
         let mut gen = WorldGen::new(seed);
-        gen.populate([0, CHUNK_W * WORLD_W], [0, CHUNK_W * WORLD_W], self);
+        gen.populate([0, WORLD_W * CHUNK_W], [0, WORLD_W * CHUNK_W], self);
     }
 
     pub fn get_collisions_w(&self, aabb: &Aabb) -> Vec<Aabb> {
         let mut aabbs = Vec::new();
 
-        let from = aabb.from.map(|e| (e.floor() as i32).max(1)) - 1;
-        let to = aabb.to.map(|e| e.ceil() as i32);
+        let from = aabb.from.floor();
+        let to = aabb.to.ceil();
 
         for x in from.x..to.x {
             for y in from.y..to.y {
                 for z in from.z..to.z {
-                    let pos = Vec3::new(x as u32, y as u32, z as u32);
+                    let pos = vec3i!(x, y, z);
                     let voxel = self.get_voxel(pos).unwrap_or(Voxel::AIR);
 
                     if !voxel.is_empty() {
-                        let min = Vec3::new(x as f32, y as f32, z as f32);
+                        let min = vec3f!(x as f32, y as f32, z as f32);
                         let max = min + 1.0;
                         aabbs.push(Aabb::new(min, max));
                     }
@@ -217,41 +246,26 @@ impl WorldGen {
         }
     }
 
-    pub fn get_terrain_h(&self, pos: Vec2<f64>) -> f64 {
+    pub fn get_terrain_h(&self, pos: Vec2f) -> f32 {
         let height_scale = self.height_scale_map.get(pos);
         let height_freq = self.height_freq_map.get(pos);
         self.height_map.get(pos * height_freq) * height_scale
     }
 
-    pub fn populate(&mut self, x: [u32; 2], z: [u32; 2], world: &mut World) {
+    pub fn populate(&mut self, x: [i32; 2], z: [i32; 2], world: &mut World) {
         for x in x[0]..x[1] {
             for z in z[0]..z[1] {
-                let mut y = self.get_terrain_h(Vec2::new(x as f64, z as f64)) as u32;
-                if y >= CHUNK_H * WORLD_H - 1 {
-                    y = CHUNK_H * WORLD_H - 2;
-                }
+                let y = self.get_terrain_h(vec2f!(x as f32, z as f32)) as i32;
 
                 // set stone
-                world.set_voxels(
-                    Vec3::new(x, 0, z),
-                    Vec3::new(x + 1, y - 3, z + 1),
-                    Voxel::STONE,
-                );
+                world.set_voxels(vec3i!(x, 0, z), vec3i!(x + 1, y - 3, z + 1), Voxel::STONE);
 
                 // set dirt
-                world.set_voxels(
-                    Vec3::new(x, y - 3, z),
-                    Vec3::new(x + 1, y, z + 1),
-                    Voxel::DIRT,
-                );
+                world.set_voxels(vec3i!(x, y - 3, z), vec3i!(x + 1, y, z + 1), Voxel::DIRT);
 
                 let mut surface = Voxel::GRASS;
                 if y < 30 {
-                    world.set_voxels(
-                        Vec3::new(x, y, z),
-                        Vec3::new(x + 1, 31, z + 1),
-                        Voxel::WATER,
-                    );
+                    world.set_voxels(vec3i!(x, y, z), vec3i!(x + 1, 31, z + 1), Voxel::WATER);
                     surface = Voxel::SAND;
                     if y <= 26 {
                         surface = Voxel::DIRT;
@@ -259,7 +273,7 @@ impl WorldGen {
                 }
 
                 // set surface
-                world.set_voxel(Vec3::new(x, y, z), surface);
+                world.set_voxel(vec3i!(x, y, z), surface);
             }
         }
     }

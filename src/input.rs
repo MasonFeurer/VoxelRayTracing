@@ -1,4 +1,5 @@
-use crate::vectors::Vec2;
+use crate::math::Vec2f;
+use crate::vec2f;
 use std::collections::HashSet;
 use winit::event::*;
 
@@ -11,9 +12,9 @@ pub struct InputState {
     pub down_keys: HashSet<Key>,
     pub pressed_mouse_buttons: HashSet<MouseButton>,
     pub down_mouse_buttons: HashSet<MouseButton>,
-    pub cursor_delta: Vec2<f32>,
-    pub cursor_pos: Vec2<f32>,
-    pub scroll_delta: Vec2<f32>,
+    pub cursor_delta: Vec2f,
+    pub cursor_pos: Vec2f,
+    pub scroll_delta: Vec2f,
 }
 impl InputState {
     pub fn key_pressed(&self, key: Key) -> bool {
@@ -36,8 +37,8 @@ impl InputState {
     }
 
     pub fn finish_frame(&mut self) {
-        self.cursor_delta = Vec2::all(0.0);
-        self.scroll_delta = Vec2::all(0.0);
+        self.cursor_delta = vec2f!(0.0);
+        self.scroll_delta = vec2f!(0.0);
         self.pressed_keys.clear();
         self.pressed_mouse_buttons.clear();
     }
@@ -79,8 +80,8 @@ impl InputState {
                 }
                 DeviceEvent::MouseWheel { delta } => {
                     let delta = match *delta {
-                        MouseScrollDelta::PixelDelta(pos) => Vec2::new(pos.x as f32, pos.y as f32),
-                        MouseScrollDelta::LineDelta(x, y) => Vec2 { x, y },
+                        MouseScrollDelta::PixelDelta(pos) => vec2f!(pos.x as f32, pos.y as f32),
+                        MouseScrollDelta::LineDelta(x, y) => vec2f!(x, y),
                     };
                     self.scroll_delta += delta;
                 }

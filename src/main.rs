@@ -4,18 +4,16 @@
 pub mod aabb;
 pub mod cam;
 pub mod input;
-pub mod matrices;
+pub mod math;
 pub mod open_simplex;
 pub mod player;
 pub mod shader;
-pub mod vectors;
 pub mod world;
 
-use crate::cam::HitResult;
 use crate::input::{InputState, Key};
+use crate::math::{HitResult, Vec2u};
 use crate::player::Player;
 use crate::shader::{Settings, Shader};
-use crate::vectors::{Vec2, Vec3};
 use crate::world::{Voxel, World};
 use winit::event::*;
 use winit::event_loop::{ControlFlow, EventLoop};
@@ -29,11 +27,11 @@ struct Gpu {
     surface_config: wgpu::SurfaceConfiguration,
 }
 impl Gpu {
-    fn create_shader(&self, buffer_size: Vec2<u32>) -> Shader {
+    fn create_shader(&self, buffer_size: Vec2u) -> Shader {
         Shader::new(&self.device, &self.surface_config, buffer_size)
     }
 
-    fn resize(&mut self, new_size: Vec2<u32>) {
+    fn resize(&mut self, new_size: Vec2u) {
         self.surface_config.width = new_size.x;
         self.surface_config.height = new_size.y;
         self.surface.configure(&self.device, &self.surface_config);
@@ -41,7 +39,7 @@ impl Gpu {
 }
 async fn init_wgpu(window: &WinitWindow) -> Gpu {
     let size = window.inner_size();
-    let size = Vec2::new(size.width, size.height);
+    let size = vec2u!(size.width, size.height);
 
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
     // Handle to a presentable surface
@@ -121,7 +119,7 @@ impl Window {
         }
     }
 
-    fn size(&self) -> Vec2<u32> {
+    fn size(&self) -> Vec2u {
         <[u32; 2]>::from(self.winit.inner_size()).into()
     }
 
@@ -158,6 +156,7 @@ struct State {
     player: Player,
     hit_result: Option<HitResult>,
     world: Box<World>,
+    voxel_in_hand: Voxel,
 }
 impl State {
     fn new(window: Window, gpu: Gpu) -> Self {
@@ -165,11 +164,11 @@ impl State {
 
         let mut world = Box::new(World::new());
         world.populate();
-        let player = Player::new(Vec3::new(50.0, 100.0, 50.0));
+        let player = Player::new(vec3f!(50.0, 100.0, 50.0));
 
         // Create shader
         let shader = gpu.create_shader(window.size());
-        shader.world_buffer.update(&gpu.queue, &world);
+        shader.world_buffer.update(&gpu.queue, world.clone());
         shader.settings_buffer.update(&gpu.queue, settings);
 
         Self {
@@ -181,6 +180,7 @@ impl State {
             player,
             hit_result: None,
             world,
+            voxel_in_hand: Voxel::DIRT,
         }
     }
 
@@ -201,24 +201,35 @@ impl State {
 
         self.hit_result = self.player.cast_ray(&self.world);
 
+        if input.key_pressed(Key::Key1) {
+            self.voxel_in_hand = Voxel::DIRT;
+        }
+        if input.key_pressed(Key::Key2) {
+            self.voxel_in_hand = Voxel::GRASS;
+        }
+        if input.key_pressed(Key::Key3) {
+            self.voxel_in_hand = Voxel::STONE;
+        }
+        if input.key_pressed(Key::Key4) {
+            self.voxel_in_hand = Voxel::IRON;
+        }
+        if input.key_pressed(Key::Key5) {
+            self.voxel_in_hand = Voxel::WATER;
+        }
+
         if !self.window.cursor_locked {
             return;
         }
 
         if let Some(hit) = self.hit_result && input.left_button_pressed() {
-            let (chunk_idx, _) = self.world.set_voxel(hit.pos.unsigned().unwrap(), Voxel::AIR).unwrap();
-            self.shader.world_buffer.update_chunk(&self.gpu.queue, chunk_idx, self.world.chunks[chunk_idx]);
+            self.world.set_voxel(hit.pos, Voxel::AIR).unwrap();
         }
         if let Some(hit) = self.hit_result && input.right_button_pressed() {
-            let Some(place_pos) = (hit.pos + hit.face).unsigned() else {
-                return;
-            };
-            let (chunk_idx, _) = self.world.set_voxel(place_pos, Voxel::IRON).unwrap();
-            self.shader.world_buffer.update_chunk(&self.gpu.queue, chunk_idx, self.world.chunks[chunk_idx]);
+            self.world.set_voxel(hit.pos + hit.face, self.voxel_in_hand).unwrap();
         }
     }
 
-    fn resize(&mut self, new_size: Vec2<u32>) {
+    fn resize(&mut self, new_size: Vec2u) {
         self.gpu.resize(new_size);
         self.shader.proj_buffer.update(
             &self.gpu.queue,
@@ -242,7 +253,7 @@ impl State {
         }
 
         let Settings {
-            ray_dist,
+            max_ray_steps,
             water_color,
             min_water_opacity,
             water_opacity_max_dist,
@@ -252,8 +263,13 @@ impl State {
             ..
         } = &mut self.settings;
 
+        ui.label(&format!(
+            "voxel in hand: {:?}",
+            self.voxel_in_hand.display()
+        ));
+
         let mut changed = false;
-        changed |= value_f32(ui, "ray dist: ", ray_dist, 0.0, 300.0);
+        changed |= value_u32(ui, "ray max steps: ", max_ray_steps, 0, 300);
         changed |= value_f32(ui, "min water opacity: ", min_water_opacity, 0.0, 1.0);
         changed |= value_f32(
             ui,
@@ -396,11 +412,11 @@ pub fn main() {
             e if egui.winit.on_event(&egui.ctx, &e).consumed => {}
             WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
             WindowEvent::Resized(size) => {
-                state.resize(Vec2::new(size.width, size.height));
+                state.resize(vec2u!(size.width, size.height));
             }
             WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
                 let size = *new_inner_size;
-                state.resize(Vec2::new(size.width, size.height));
+                state.resize(vec2u!(size.width, size.height));
             }
             _ => {}
         },

@@ -11,7 +11,7 @@ struct RandSrc {
     floats: array<f32, 128>,
 }
 struct Settings {
-    ray_dist: f32,
+    max_ray_steps: u32,
     water_color: vec4<f32>,
     min_water_opacity: f32,
     water_opacity_max_dist: f32,
@@ -43,8 +43,8 @@ struct Chunk {
     voxels: array<u32, CHUNK_INT_COUNT>,
 }
 struct World {
-	min_chunk_pos: vec3<u32>,
-	chunks: array<Chunk, WORLD_CHUNKS_COUNT>,
+    min_chunk_pos: vec3<u32>,
+    chunks: array<Chunk, WORLD_CHUNKS_COUNT>,
 }
 
 struct VoxelChunkPos {
@@ -149,7 +149,6 @@ fn get_world_voxel(pos: vec3<i32>) -> u32 {
     return get_chunk_voxel(chunk_idx, pos.in_chunk);
 }
 
-
 struct Ray {
     origin: vec3<f32>,
     dir: vec3<f32>,
@@ -189,10 +188,10 @@ fn cast_ray(ray: Ray, max_dist: f32) -> HitResult {
         ray_len.x = (f32(world_pos.x + 1) - start.x) * unit_step_size.x;
     }
     if dir.y < 0.0 {
-    	step.y = -1;
-    	ray_len.y = (start.y - f32(world_pos.y)) * unit_step_size.y;
+        step.y = -1;
+        ray_len.y = (start.y - f32(world_pos.y)) * unit_step_size.y;
     } else {
-    	step.y = 1;
+        step.y = 1;
         ray_len.y = (f32(world_pos.y + 1) - start.y) * unit_step_size.y;
     }
     if dir.z < 0.0 {
@@ -292,6 +291,7 @@ fn cast_ray(ray: Ray, max_dist: f32) -> HitResult {
     }
     return result;
 }
+
 fn create_ray_from_screen(screen_pos: vec2<i32>) -> Ray {
 	let x = (f32(screen_pos.x) * 2.0) / f32(proj_.size.x) - 1.0;
 	let y = (f32(screen_pos.y) * 2.0) / f32(proj_.size.y) - 1.0;
@@ -319,14 +319,14 @@ fn update(@builtin(global_invocation_id) inv_id: vec3<u32>) {
     let screen_pos: vec2<i32> = vec2(i32(inv_id.x), i32(inv_id.y));
 
 	var ray = create_ray_from_screen(screen_pos);
-	var result = cast_ray(ray, settings_.ray_dist);
+	var result = cast_ray(ray, f32(settings_.max_ray_steps));
     var iron_count: u32 = 0u;
     if result.hit {
         while result.voxel == IRON && iron_count < settings_.max_reflections {
             ray.dir = ray.dir - 2.0 * result.norm * dot(result.norm, ray.dir);
             ray.origin = result.exact_pos + ray.dir * 0.01;
         
-            result = cast_ray(ray, settings_.ray_dist);
+            result = cast_ray(ray, f32(settings_.max_ray_steps));
             iron_count += 1u;
         }
     }
@@ -335,13 +335,13 @@ fn update(@builtin(global_invocation_id) inv_id: vec3<u32>) {
     if result.hit {
         color = voxel_colors__[i32(result.voxel)];
         
-        var to_sun: Ray;
-        to_sun.dir = normalize(settings_.sun_pos - result.exact_pos);
-        to_sun.origin = result.exact_pos + to_sun.dir * 0.001;
-        let to_sun_result = cast_ray(to_sun, 50.0);
-        if to_sun_result.hit {
-            color *= 0.9;
-        }
+        // var to_sun: Ray;
+        // to_sun.dir = normalize(settings_.sun_pos - result.exact_pos);
+        // to_sun.origin = result.exact_pos + to_sun.dir * 0.001;
+        // let to_sun_result = cast_ray(to_sun, 50.0);
+        // if to_sun_result.hit {
+        //     color *= 0.9;
+        // }
         
         if result.face.x ==  1 { color *= 0.7; }
         if result.face.x == -1 { color *= 0.7; }

@@ -1,7 +1,8 @@
 use crate::cam::Cam;
+use crate::math::Vec2u;
 use crate::player::Player;
-use crate::vectors::Vec2;
-use crate::world::{Chunk, World, WORLD_CHUNKS_COUNT};
+use crate::vec2u;
+use crate::world::World;
 use bytemuck::{cast_slice, Pod, Zeroable};
 use wgpu::*;
 
@@ -16,7 +17,7 @@ pub struct ColorBuffer {
     sampler: Sampler,
 }
 impl ColorBuffer {
-    pub fn new(device: &Device, size: Vec2<u32>) -> Self {
+    pub fn new(device: &Device, size: Vec2u) -> Self {
         let texture = device.create_texture(&TextureDescriptor {
             label: Some("color_buffer"),
             size: Extent3d {
@@ -55,9 +56,9 @@ impl ColorBuffer {
         }
     }
 
-    pub fn size(&self) -> Vec2<u32> {
+    pub fn size(&self) -> Vec2u {
         let size = self.texture.size();
-        Vec2::new(size.width, size.height)
+        vec2u!(size.width, size.height)
     }
 }
 
@@ -91,7 +92,7 @@ pub struct Shader {
     pub settings_buffer: SettingsBuffer,
 }
 impl Shader {
-    pub fn new(device: &Device, config: &SurfaceConfiguration, size: Vec2<u32>) -> Self {
+    pub fn new(device: &Device, config: &SurfaceConfiguration, size: Vec2u) -> Self {
         let cam_buffer = CamBuffer::new(device);
         let proj_buffer = ProjBuffer::new(device);
         let world_buffer = WorldBuffer::new(device);
@@ -353,7 +354,7 @@ pub struct ProjData {
     inv_mat: [f32; 16],
 }
 impl ProjData {
-    pub fn new(size: Vec2<u32>, player: &Player) -> Self {
+    pub fn new(size: Vec2u, player: &Player) -> Self {
         Self {
             size: size.into(),
             _padding0: [0; 2],
@@ -373,26 +374,9 @@ impl ProjBuffer {
         }))
     }
 
-    pub fn update(&self, queue: &Queue, size: Vec2<u32>, player: &Player) {
+    pub fn update(&self, queue: &Queue, size: Vec2u, player: &Player) {
         let data = ProjData::new(size, player);
         queue.write_buffer(&self.0, 0, cast_slice(&[data]));
-    }
-}
-
-#[derive(Clone, Copy, Pod, Zeroable)]
-#[repr(C)]
-pub struct WorldData {
-    pub min_chunk_pos: [u32; 3],
-    _padding0: [u32; 1],
-    pub chunks: [Chunk; WORLD_CHUNKS_COUNT as usize],
-}
-impl WorldData {
-    pub fn new(world: &World) -> Self {
-        Self {
-            min_chunk_pos: world.min_chunk_pos.into(),
-            _padding0: [0; 1],
-            chunks: world.chunks.clone(),
-        }
     }
 }
 
@@ -401,27 +385,21 @@ impl WorldBuffer {
     pub fn new(device: &Device) -> Self {
         Self(device.create_buffer(&BufferDescriptor {
             label: Some("#world_buffer"),
-            size: std::mem::size_of::<WorldData>() as u64,
+            size: std::mem::size_of::<World>() as u64,
             usage: BufferUsages::COPY_DST | BufferUsages::STORAGE,
             mapped_at_creation: false,
         }))
     }
 
-    pub fn update(&self, queue: &Queue, world: &World) {
-        const SIZE: usize = std::mem::size_of::<WorldData>();
-        let data = Box::new(WorldData::new(world));
+    pub fn update(&self, queue: &Queue, world: Box<World>) {
+        const SIZE: usize = std::mem::size_of::<World>();
 
-        let ptr: *mut WorldData = Box::into_raw(data) as *mut WorldData;
+        let ptr = Box::into_raw(world) as *mut World;
         let ptr: *const [u8; SIZE] = ptr.cast();
 
         unsafe {
             queue.write_buffer(&self.0, 0, ptr.as_ref().unwrap());
         }
-    }
-
-    pub fn update_chunk(&self, queue: &Queue, chunk_idx: usize, chunk: Chunk) {
-        let idx = 16 + chunk_idx * std::mem::size_of::<Chunk>();
-        queue.write_buffer(&self.0, idx as u64, &cast_slice(&[chunk]));
     }
 }
 
@@ -448,7 +426,7 @@ impl RandFloatsBuffer {
 #[derive(Clone, Copy, Zeroable, Pod)]
 #[repr(C)]
 pub struct Settings {
-    pub ray_dist: f32,
+    pub max_ray_steps: u32,
     _padding0: [u32; 3],
     pub water_color: [f32; 4],
     pub min_water_opacity: f32,
@@ -464,7 +442,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            ray_dist: 100.0,
+            max_ray_steps: 100,
             water_color: [0.2, 0.5, 1.0, 1.0],
             min_water_opacity: 0.8,
             water_opacity_max_dist: 14.0,

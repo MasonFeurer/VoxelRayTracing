@@ -1,14 +1,15 @@
-use crate::vectors::Vec3;
+use crate::math::Vec3f;
+use crate::vec3f;
 
 #[derive(Debug, Clone)]
 pub struct Aabb {
     epsilon: f32,
-    pub from: Vec3<f32>,
-    pub to: Vec3<f32>,
+    pub from: Vec3f,
+    pub to: Vec3f,
 }
 impl Aabb {
     #[inline]
-    pub fn new(from: Vec3<f32>, to: Vec3<f32>) -> Self {
+    pub fn new(from: Vec3f, to: Vec3f) -> Self {
         Self {
             from,
             to,
@@ -17,10 +18,10 @@ impl Aabb {
     }
     #[inline]
     pub fn unit() -> Self {
-        Self::new(Vec3::all(0.0), Vec3::all(1.0))
+        Self::new(vec3f!(0.0), vec3f!(1.0))
     }
 
-    pub fn expand(&self, a: Vec3<f32>) -> Self {
+    pub fn expand(&self, a: Vec3f) -> Self {
         let mut from = self.from;
         let mut to = self.to;
 
@@ -48,7 +49,7 @@ impl Aabb {
         Self::new(from, to)
     }
 
-    pub fn grow(&self, a: Vec3<f32>) -> Self {
+    pub fn grow(&self, a: Vec3f) -> Self {
         Self::new(self.from - a, self.to + a)
     }
 
@@ -125,7 +126,7 @@ impl Aabb {
             && (c.to.z > self.from.z && c.from.z < self.to.z)
     }
 
-    pub fn translate(&mut self, a: Vec3<f32>) {
+    pub fn translate(&mut self, a: Vec3f) {
         self.from += a;
         self.to += a;
     }
