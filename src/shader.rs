@@ -2,7 +2,7 @@ use crate::cam::Cam;
 use crate::math::Vec2u;
 use crate::player::Player;
 use crate::vec2u;
-use crate::world::World;
+use crate::world::{Chunk, World};
 use bytemuck::{cast_slice, Pod, Zeroable};
 use wgpu::*;
 
@@ -400,6 +400,11 @@ impl WorldBuffer {
         unsafe {
             queue.write_buffer(&self.0, 0, ptr.as_ref().unwrap());
         }
+    }
+
+    pub fn update_chunk(&self, queue: &Queue, chunk_idx: usize, chunk: Chunk) {
+        let idx = 16 + chunk_idx * std::mem::size_of::<Chunk>();
+        queue.write_buffer(&self.0, idx as u64, &cast_slice(&[chunk]));
     }
 }
 

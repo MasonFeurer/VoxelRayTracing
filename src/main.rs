@@ -222,10 +222,12 @@ impl State {
         }
 
         if let Some(hit) = self.hit_result && input.left_button_pressed() {
-            self.world.set_voxel(hit.pos, Voxel::AIR).unwrap();
+            let chunk_idx = self.world.set_voxel(hit.pos, Voxel::AIR).unwrap().0;
+            self.shader.world_buffer.update_chunk(&self.gpu.queue, chunk_idx, self.world.chunks[chunk_idx]);
         }
         if let Some(hit) = self.hit_result && input.right_button_pressed() {
-            self.world.set_voxel(hit.pos + hit.face, self.voxel_in_hand).unwrap();
+            let chunk_idx = self.world.set_voxel(hit.pos + hit.face, self.voxel_in_hand).unwrap().0;
+            self.shader.world_buffer.update_chunk(&self.gpu.queue, chunk_idx, self.world.chunks[chunk_idx]);
         }
     }
 
