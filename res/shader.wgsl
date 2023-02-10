@@ -19,6 +19,7 @@ struct Settings {
     sun_pos: vec3<f32>,
     iron_color: vec4<f32>,
     max_reflections: u32,
+    shadows: u32, // bool
 }
 
 const CHUNK_W: u32 = 32u;
@@ -38,8 +39,7 @@ fn voxel_is_solid(voxel: u32) -> bool {
 
 struct Chunk {
     solid_voxels_count: u32,
-    min: vec3<u32>,
-    max: vec3<u32>,
+    minmax: array<u32, 6>,
     voxels: array<u32, CHUNK_INT_COUNT>,
 }
 struct World {
@@ -163,6 +163,17 @@ struct HitResult {
     water_dist: f32,
 }
 
+// fn check() {
+//     // How much further the ray needs to travel along the X axis to reach the +X chunk edge
+//     let dist_x = (floor(curr_pos.x / CHUNK_W) + CHUNK_W) - curr_pos.x;
+//     // How much further the ray needs to travel along the Y axis to reach the +X chunk edge
+//     let dist_y = dist_x * slope;
+//     if curr_pos.y + dist_y * dir.y >= max_y {
+//         // skip chunk
+//         continue;
+//     }
+// }
+
 fn cast_ray(ray: Ray, max_dist: f32) -> HitResult {
     let dir = ray.dir;
     let start = ray.origin;
@@ -246,9 +257,9 @@ fn cast_ray(ray: Ray, max_dist: f32) -> HitResult {
         
         // if the chunk is empty, the voxel isn't solid, skip
         // TODO skip entire chunk, not just this voxel
-        if world_.chunks[chunk_idx].solid_voxels_count == 0u {
-            continue;
-        }
+        // if world_.chunks[chunk_idx].solid_voxels_count == 0u {
+        //     continue;
+        // }
         
         // TODO 
         // if the ray doesnt hit the bounding box for the min/max voxels in the chunk, skip the chunk
@@ -335,13 +346,15 @@ fn update(@builtin(global_invocation_id) inv_id: vec3<u32>) {
     if result.hit {
         color = voxel_colors__[i32(result.voxel)];
         
-        // var to_sun: Ray;
-        // to_sun.dir = normalize(settings_.sun_pos - result.exact_pos);
-        // to_sun.origin = result.exact_pos + to_sun.dir * 0.001;
-        // let to_sun_result = cast_ray(to_sun, 50.0);
-        // if to_sun_result.hit {
-        //     color *= 0.9;
-        // }
+        if settings_.shadows == 1u {
+            var to_sun: Ray;
+            to_sun.dir = normalize(settings_.sun_pos - result.exact_pos);
+            to_sun.origin = result.exact_pos + result.norm * 0.001;
+            let to_sun_result = cast_ray(to_sun, 50.0);
+            if to_sun_result.hit {
+                color *= 0.6;
+            }
+        }
         
         if result.face.x ==  1 { color *= 0.7; }
         if result.face.x == -1 { color *= 0.7; }

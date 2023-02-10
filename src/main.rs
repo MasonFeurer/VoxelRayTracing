@@ -241,17 +241,28 @@ impl State {
     }
 
     fn settings_ui(&mut self, ui: &mut egui::Ui) {
+        const SPACING: f32 = 5.0;
         fn value_f32(ui: &mut egui::Ui, label: &str, v: &mut f32, min: f32, max: f32) -> bool {
+            ui.add_space(SPACING);
             ui.label(label);
             ui.add(egui::Slider::new(v, min..=max)).changed()
         }
         fn value_u32(ui: &mut egui::Ui, label: &str, v: &mut u32, min: u32, max: u32) -> bool {
+            ui.add_space(SPACING);
             ui.label(label);
             ui.add(egui::Slider::new(v, min..=max)).changed()
         }
         fn color(ui: &mut egui::Ui, label: &str, color: &mut [f32; 4]) -> bool {
+            ui.add_space(SPACING);
             ui.label(label);
             ui.color_edit_button_rgba_premultiplied(color).changed()
+        }
+        fn toggle(ui: &mut egui::Ui, label: &str, v: &mut u32) -> bool {
+            ui.add_space(SPACING);
+            let mut b = *v == 1;
+            let result = ui.checkbox(&mut b, label).changed();
+            *v = b as u32;
+            result
         }
 
         let Settings {
@@ -262,6 +273,7 @@ impl State {
             sky_color,
             max_reflections,
             iron_color,
+            shadows,
             ..
         } = &mut self.settings;
 
@@ -271,16 +283,17 @@ impl State {
         ));
 
         let mut changed = false;
-        changed |= value_u32(ui, "ray max steps: ", max_ray_steps, 0, 300);
-        changed |= value_f32(ui, "min water opacity: ", min_water_opacity, 0.0, 1.0);
+        changed |= value_u32(ui, "ray max steps", max_ray_steps, 0, 300);
+        changed |= value_f32(ui, "min water opacity", min_water_opacity, 0.0, 1.0);
         changed |= value_f32(
             ui,
-            "water opacity max dist: ",
+            "water opacity max dist",
             water_opacity_max_dist,
             0.0,
             100.0,
         );
-        changed |= value_u32(ui, "max reflections:", max_reflections, 0, 100);
+        changed |= value_u32(ui, "max reflections", max_reflections, 0, 100);
+        changed |= toggle(ui, "shadows", shadows);
         changed |= color(ui, "iron color", iron_color);
         changed |= color(ui, "water color", water_color);
         changed |= color(ui, "sky color", sky_color);
@@ -297,10 +310,12 @@ impl State {
         let egui_output = egui.ctx.run(egui_input, |ctx| {
             let mut style: egui::Style = (*ctx.style()).clone();
             style.visuals.widgets.noninteractive.fg_stroke.color = egui::Color32::WHITE;
+            style.visuals.widgets.inactive.fg_stroke.color = egui::Color32::WHITE;
+            style.visuals.widgets.hovered.fg_stroke.color = egui::Color32::WHITE;
             ctx.set_style(style);
 
             let mut frame = egui::containers::Frame::side_top_panel(&ctx.style());
-            frame.fill = frame.fill.linear_multiply(0.3);
+            frame.fill = frame.fill.linear_multiply(0.5);
 
             egui::SidePanel::left("top").frame(frame).show(&ctx, |ui| {
                 self.settings_ui(ui);

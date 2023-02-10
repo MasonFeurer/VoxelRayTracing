@@ -442,7 +442,8 @@ pub struct Settings {
     _padding2: [u32; 1],
     pub iron_color: [f32; 4],
     pub max_reflections: u32,
-    _padding3: [u32; 3],
+    pub shadows: u32,
+    _padding3: [u32; 2],
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -452,13 +453,14 @@ impl Default for Settings {
             min_water_opacity: 0.8,
             water_opacity_max_dist: 14.0,
             sky_color: [0.3, 0.7, 1.0, 1.0],
-            sun_pos: [-500.0, 500.0, 100.0],
+            sun_pos: [-1000.0, 1000.0, 0.0],
             iron_color: [0.8, 0.8, 0.8, 1.0],
             max_reflections: 5,
+            shadows: 0,
             _padding0: [0; 3],
             _padding1: [0; 2],
             _padding2: [0; 1],
-            _padding3: [0; 3],
+            _padding3: [0; 2],
         }
     }
 }

@@ -226,7 +226,7 @@ macro_rules! vec3i {
 #[macro_export]
 macro_rules! vec3u {
     ($v: expr) => {
-        crate::math::Vec3u::new($x, $y, $z)
+        crate::math::Vec3u::new($v, $v, $v)
     };
     ($x: expr, $y: expr, $z: expr$(,)?) => {
         crate::math::Vec3u::new($x, $y, $z)

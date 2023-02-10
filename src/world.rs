@@ -63,24 +63,23 @@ pub const CHUNK_SIZE: Vec3i = vec3i!(CHUNK_W, CHUNK_H, CHUNK_W);
 #[repr(C)]
 pub struct Chunk {
     solid_voxels_count: u32,
-    _padding0: [u32; 3],
-    min: [u32; 3],
-    _padding1: [u32; 1],
-    max: [u32; 3],
-    _padding2: [u32; 1],
+    minmax: [u32; 6],
     voxels: [Voxel; CHUNK_VOLUME as usize],
 }
 impl Chunk {
     pub fn new() -> Self {
-        Self {
+        let mut result = Self {
             solid_voxels_count: 0,
-            min: [0; 3],
-            max: [0; 3],
-            _padding0: [0; 3],
-            _padding1: [0; 1],
-            _padding2: [0; 1],
+            minmax: [0; 6],
             voxels: [Voxel::AIR; CHUNK_VOLUME as usize],
-        }
+        };
+        // result.voxels[result.voxels.len() - 1] = Voxel(0);
+        // result.voxels[result.voxels.len() - 2] = Voxel(0);
+        // result.voxels[result.voxels.len() - 3] = Voxel(0);
+        // result.voxels[result.voxels.len() - 4] = Voxel(0);
+        // result.voxels[result.voxels.len() - 5] = Voxel(1);
+        // result.solid_voxels_count += 1;
+        result
     }
 
     pub fn get_voxel(&self, pos: Vec3i) -> Voxel {
