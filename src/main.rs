@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![feature(new_uninit)]
 #![feature(let_chains)]
 
 pub mod aabb;
@@ -162,7 +163,10 @@ impl State {
     fn new(window: Window, gpu: Gpu) -> Self {
         let settings = Settings::default();
 
-        let mut world = Box::new(World::new());
+        let mut world = unsafe {
+            let world = Box::<World>::new_zeroed();
+            world.assume_init()
+        };
         world.populate();
         let player = Player::new(vec3f!(50.0, 100.0, 50.0));
 

@@ -67,21 +67,6 @@ pub struct Chunk {
     voxels: [Voxel; CHUNK_VOLUME as usize],
 }
 impl Chunk {
-    pub fn new() -> Self {
-        let mut result = Self {
-            solid_voxels_count: 0,
-            minmax: [0; 6],
-            voxels: [Voxel::AIR; CHUNK_VOLUME as usize],
-        };
-        // result.voxels[result.voxels.len() - 1] = Voxel(0);
-        // result.voxels[result.voxels.len() - 2] = Voxel(0);
-        // result.voxels[result.voxels.len() - 3] = Voxel(0);
-        // result.voxels[result.voxels.len() - 4] = Voxel(0);
-        // result.voxels[result.voxels.len() - 5] = Voxel(1);
-        // result.solid_voxels_count += 1;
-        result
-    }
-
     pub fn get_voxel(&self, pos: Vec3i) -> Voxel {
         let idx = (pos.x + pos.y * CHUNK_W + pos.z * CHUNK_W * CHUNK_H) as usize;
         self.voxels[idx]
@@ -95,11 +80,12 @@ impl Chunk {
         if self.voxels[idx] == voxel {
             return None;
         }
-        self.voxels[idx] = voxel;
         match voxel.is_solid() {
+            b if b == self.voxels[idx].is_solid() => {}
             false => self.solid_voxels_count -= 1,
             true => self.solid_voxels_count += 1,
         }
+        self.voxels[idx] = voxel;
         Some(idx)
     }
 }
@@ -125,14 +111,6 @@ pub struct World {
     pub chunks: [Chunk; WORLD_CHUNKS_COUNT as usize],
 }
 impl World {
-    pub fn new() -> Self {
-        Self {
-            min_chunk_pos: [0; 3],
-            chunks: [Chunk::new(); WORLD_CHUNKS_COUNT as usize],
-            _padding0: [0; 1],
-        }
-    }
-
     pub fn voxel_chunk_pos(&self, pos: Vec3i) -> Option<VoxelChunkPos> {
         if pos.x < 0 || pos.y < 0 || pos.z < 0 {
             return None;
