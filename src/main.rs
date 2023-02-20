@@ -220,18 +220,23 @@ impl State {
         if input.key_pressed(Key::Key5) {
             self.voxel_in_hand = Voxel::WATER;
         }
+        if input.key_pressed(Key::Key6) {
+            self.voxel_in_hand = Voxel::FIRE;
+        }
 
         if !self.window.cursor_locked {
             return;
         }
 
         if let Some(hit) = self.hit_result && input.left_button_pressed() {
-            let chunk_idx = self.world.set_voxel(hit.pos, Voxel::AIR).unwrap().0;
-            self.shader.world_buffer.update_chunk(&self.gpu.queue, chunk_idx, self.world.chunks[chunk_idx]);
+            if let Some((chunk_idx, _)) = self.world.set_voxel(hit.pos, Voxel::AIR) {
+                self.shader.world_buffer.update_chunk(&self.gpu.queue, chunk_idx, self.world.chunks[chunk_idx]);
+            }
         }
         if let Some(hit) = self.hit_result && input.right_button_pressed() {
-            let chunk_idx = self.world.set_voxel(hit.pos + hit.face, self.voxel_in_hand).unwrap().0;
-            self.shader.world_buffer.update_chunk(&self.gpu.queue, chunk_idx, self.world.chunks[chunk_idx]);
+            if let Some((chunk_idx, _)) = self.world.set_voxel(hit.pos + hit.face, self.voxel_in_hand) {
+                self.shader.world_buffer.update_chunk(&self.gpu.queue, chunk_idx, self.world.chunks[chunk_idx]);
+            }
         }
     }
 
@@ -328,7 +333,7 @@ impl State {
 
         let egui_prims = egui.ctx.tessellate(egui_output.shapes);
         let screen_desc = egui_wgpu::renderer::ScreenDescriptor {
-            size_in_pixels: self.window.size().into(),
+            size_in_pixels: self.shader.color_buffer.size().into(),
             pixels_per_point: egui_winit::native_pixels_per_point(&self.window.winit),
         };
 

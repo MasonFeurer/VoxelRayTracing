@@ -90,10 +90,6 @@ impl Chunk {
     }
 }
 
-// 14x14 world: 90,047,120 bytes (90MB)
-// 12x12 world: 56,706,064 bytes (56MB)
-// 8x8 world: 16,801,808 bytes (16MB)
-// 4x4 world: 2,100,240 bytes (2MB)
 pub const WORLD_W: i32 = 8;
 pub const WORLD_H: i32 = 8;
 pub const WORLD_CHUNKS_COUNT: i32 = WORLD_W * WORLD_W * WORLD_H;
@@ -107,8 +103,8 @@ pub struct VoxelChunkPos {
 #[repr(C)]
 pub struct World {
     pub min_chunk_pos: [u32; 3],
-    _padding0: [u32; 1],
     pub chunks: [Chunk; WORLD_CHUNKS_COUNT as usize],
+    _padding0: [u32; 1],
 }
 impl World {
     pub fn voxel_chunk_pos(&self, pos: Vec3i) -> Option<VoxelChunkPos> {

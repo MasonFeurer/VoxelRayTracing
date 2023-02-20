@@ -37,14 +37,17 @@ fn voxel_is_solid(voxel: u32) -> bool {
     return voxel != 0u;
 }
 
-struct Chunk {
-    solid_voxels_count: u32,
-    minmax: array<u32, 6>,
-    voxels: array<u32, CHUNK_INT_COUNT>,
+// reference: https://www.w3.org/TR/WGSL/#structure-member-layout
+struct Chunk {                           //            align(4) size(32796)
+    solid_voxels_count: u32,             // offset(0)  align(4) size(4)
+    minmax: array<u32, 6>,               // offset(4)  align(4) size(24)
+    voxels: array<u32, CHUNK_INT_COUNT>, // offset(28) align(4) size(32768)
 }
-struct World {
-    min_chunk_pos: vec3<u32>,
-    chunks: array<Chunk, WORLD_CHUNKS_COUNT>,
+struct World {                                //            align(16) size(16791568)
+    min_chunk_pos: vec3<u32>,                 // offset(0)  align(16) size(12)
+    // stride = 32796
+    chunks: array<Chunk, WORLD_CHUNKS_COUNT>, // offset(12) align(4)  size(16791552)
+    // --- padding ---                        // offset(16791562)     size(4)
 }
 
 struct VoxelChunkPos {
@@ -115,7 +118,7 @@ fn get_chunk_voxel(chunk_idx: i32, pos: vec3<u32>) -> u32 {
     let byte_idx: u32 = (pos.z * CHUNK_W * CHUNK_H) + (pos.y * CHUNK_W) + pos.x;
     
     let shift: u32 = (byte_idx % 4u) * 8u;
-    let int_idx: i32 = i32(byte_idx / 4u + 1u);
+    let int_idx: i32 = i32(byte_idx / 4u);
     
     return (world_.chunks[chunk_idx].voxels[int_idx] >> shift) & 0xFFu;
 }
@@ -163,16 +166,9 @@ struct HitResult {
     water_dist: f32,
 }
 
-// fn check() {
-//     // How much further the ray needs to travel along the X axis to reach the +X chunk edge
-//     let dist_x = (floor(curr_pos.x / CHUNK_W) + CHUNK_W) - curr_pos.x;
-//     // How much further the ray needs to travel along the Y axis to reach the +X chunk edge
-//     let dist_y = dist_x * slope;
-//     if curr_pos.y + dist_y * dir.y >= max_y {
-//         // skip chunk
-//         continue;
-//     }
-// }
+fn dist_sq(a: vec3<f32>, b: vec3<f32>) -> f32 {
+    return dot(a - b, a - b);
+}
 
 fn cast_ray(ray: Ray, max_dist: f32) -> HitResult {
     let dir = ray.dir;
@@ -218,9 +214,6 @@ fn cast_ray(ray: Ray, max_dist: f32) -> HitResult {
     var dist: f32 = 0.0;
     var prev_world_pos: vec3<i32>;
     var result: HitResult;
-    
-    // the distance the ray travled when it entered water
-    var dist_entered_water: f32 = -1.0;
 
     while dist < max_dist {
         prev_world_pos = world_pos;
@@ -255,15 +248,6 @@ fn cast_ray(ray: Ray, max_dist: f32) -> HitResult {
         chunk.z = world_pos.z / i32(CHUNK_W) - i32(min_chunk_pos.z);
         let chunk_idx = chunk.x + chunk.y * i32(WORLD_W) + chunk.z * i32(WORLD_W) * i32(WORLD_H);
         
-        // if the chunk is empty, the voxel isn't solid, skip
-        // TODO skip entire chunk, not just this voxel
-        // if world_.chunks[chunk_idx].solid_voxels_count == 0u {
-        //     continue;
-        // }
-        
-        // TODO 
-        // if the ray doesnt hit the bounding box for the min/max voxels in the chunk, skip the chunk
-        
         // calculate the position of `world_pos` in the chunk
         in_chunk.x = u32(world_pos.x) % CHUNK_W;
         in_chunk.y = u32(world_pos.y) % CHUNK_H;
@@ -275,18 +259,6 @@ fn cast_ray(ray: Ray, max_dist: f32) -> HitResult {
         if voxel == AIR {
             continue;
         }
-        if voxel != WATER {
-            if dist_entered_water != -1.0 {
-                result.water_dist += dist - dist_entered_water;
-                dist_entered_water = -1.0;
-            }
-        }
-        if voxel == WATER {
-            if dist_entered_water == -1.0 {
-                dist_entered_water = dist;
-            }
-            continue;
-        }
         
         // done
         result.voxel = voxel;
@@ -296,9 +268,6 @@ fn cast_ray(ray: Ray, max_dist: f32) -> HitResult {
         result.norm = vec3(f32(result.face.x), f32(result.face.y), f32(result.face.z));
         result.exact_pos = start + dir * dist;
         return result;
-    }
-    if dist_entered_water != -1.0 {
-        result.water_dist += dist - dist_entered_water;
     }
     return result;
 }
@@ -362,15 +331,6 @@ fn update(@builtin(global_invocation_id) inv_id: vec3<u32>) {
         if result.face.z == -1 { color *= 0.8; }
         if result.face.y ==  1 { color *= 1.0; }
         if result.face.y == -1 { color *= 0.3; }
-    }
-    
-    if result.water_dist != 0.0 {
-        var factor = clamp(
-            result.water_dist / settings_.water_opacity_max_dist, 
-            settings_.min_water_opacity, 1.0
-        );
-    
-        color = overlay_color(color, settings_.water_color, factor);
     }
     if iron_count > 0u {
         let factor = min(f32(iron_count) / f32(settings_.max_reflections), 1.0);
