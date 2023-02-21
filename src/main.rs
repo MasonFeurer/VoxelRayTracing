@@ -134,13 +134,15 @@ impl Window {
         if locked == self.cursor_locked {
             return;
         }
-        if locked {
-            self.winit.set_cursor_grab(CursorGrabMode::Locked).unwrap();
-            self.winit.set_cursor_visible(false);
-        } else {
-            self.winit.set_cursor_grab(CursorGrabMode::None).unwrap();
-            self.winit.set_cursor_visible(true);
+        let grab_mode = match (locked, cfg!(target_os = "macos")) {
+            (false, _) => CursorGrabMode::None,
+            (_, true) => CursorGrabMode::Locked,
+            (_, false) => CursorGrabMode::Confined,
+        };
+        if let Err(err) = self.winit.set_cursor_grab(grab_mode) {
+            println!("error locking cursor: {err:?}");
         }
+        self.winit.set_cursor_visible(!locked);
         self.cursor_locked = locked;
     }
     fn toggle_cursor_locked(&mut self) {
