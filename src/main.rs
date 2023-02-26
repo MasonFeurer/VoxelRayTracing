@@ -16,6 +16,7 @@ use crate::math::{HitResult, Vec2u};
 use crate::player::Player;
 use crate::shader::{Settings, Shader};
 use crate::world::{Voxel, World};
+use std::time::SystemTime;
 use winit::event::*;
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::Window as WinitWindow;
@@ -158,6 +159,9 @@ struct State {
     hit_result: Option<HitResult>,
     world: Box<World>,
     voxel_in_hand: Voxel,
+    last_second: SystemTime,
+    fps: u32,
+    fps_temp: u32,
 }
 impl State {
     fn new(window: Window, gpu: Gpu) -> Self {
@@ -185,6 +189,9 @@ impl State {
             hit_result: None,
             world,
             voxel_in_hand: Voxel::DIRT,
+            last_second: SystemTime::now(),
+            fps: 0,
+            fps_temp: 0,
         }
     }
 
@@ -249,30 +256,56 @@ impl State {
         );
     }
 
-    fn settings_ui(&mut self, ui: &mut egui::Ui) {
+    fn debug_ui(&mut self, ui: &mut egui::Ui) {
+        use egui::*;
+
         const SPACING: f32 = 5.0;
-        fn value_f32(ui: &mut egui::Ui, label: &str, v: &mut f32, min: f32, max: f32) -> bool {
+        fn value_f32(ui: &mut Ui, label: &str, v: &mut f32, min: f32, max: f32) -> bool {
             ui.add_space(SPACING);
             ui.label(label);
-            ui.add(egui::Slider::new(v, min..=max)).changed()
+            ui.add(Slider::new(v, min..=max)).changed()
         }
-        fn value_u32(ui: &mut egui::Ui, label: &str, v: &mut u32, min: u32, max: u32) -> bool {
+        fn value_u32(ui: &mut Ui, label: &str, v: &mut u32, min: u32, max: u32) -> bool {
             ui.add_space(SPACING);
             ui.label(label);
-            ui.add(egui::Slider::new(v, min..=max)).changed()
+            ui.add(Slider::new(v, min..=max)).changed()
         }
-        fn color(ui: &mut egui::Ui, label: &str, color: &mut [f32; 4]) -> bool {
+        fn color_picker(ui: &mut Ui, label: &str, color: &mut [f32; 4]) -> bool {
             ui.add_space(SPACING);
             ui.label(label);
             ui.color_edit_button_rgba_premultiplied(color).changed()
         }
-        fn toggle(ui: &mut egui::Ui, label: &str, v: &mut u32) -> bool {
+        fn toggle(ui: &mut Ui, label: &str, v: &mut u32) -> bool {
             ui.add_space(SPACING);
             let mut b = *v == 1;
             let result = ui.checkbox(&mut b, label).changed();
             *v = b as u32;
             result
         }
+        fn label(ui: &mut Ui, label: &str, color: Color32) {
+            ui.label(RichText::new(label).color(color));
+        }
+
+        let in_hand = self.voxel_in_hand;
+        let [red, green, blue, white] = [
+            Color32::from_rgb(255, 150, 0),
+            Color32::from_rgb(0, 255, 0),
+            Color32::from_rgb(0, 255, 255),
+            Color32::WHITE,
+        ];
+
+        ui.add_space(3.0);
+        label(ui, &format!("fps: {}", self.fps), white);
+        ui.add_space(3.0);
+        label(ui, &format!("in hand: {:?}", in_hand.display()), white);
+
+        ui.add_space(3.0);
+        label(ui, &format!("X: {:#}", self.player.pos.x), red);
+        label(ui, &format!("Y: {:#}", self.player.pos.y), green);
+        label(ui, &format!("Z: {:#}", self.player.pos.z), blue);
+
+        ui.separator();
+        ui.heading("shader");
 
         let Settings {
             max_ray_steps,
@@ -286,11 +319,6 @@ impl State {
             ..
         } = &mut self.settings;
 
-        ui.label(&format!(
-            "voxel in hand: {:?}",
-            self.voxel_in_hand.display()
-        ));
-
         let mut changed = false;
         changed |= value_u32(ui, "ray max steps", max_ray_steps, 0, 300);
         changed |= value_f32(ui, "min water opacity", min_water_opacity, 0.0, 1.0);
@@ -303,9 +331,9 @@ impl State {
         );
         changed |= value_u32(ui, "max reflections", max_reflections, 0, 100);
         changed |= toggle(ui, "shadows", shadows);
-        changed |= color(ui, "iron color", iron_color);
-        changed |= color(ui, "water color", water_color);
-        changed |= color(ui, "sky color", sky_color);
+        changed |= color_picker(ui, "iron color", iron_color);
+        changed |= color_picker(ui, "water color", water_color);
+        changed |= color_picker(ui, "sky color", sky_color);
 
         if changed {
             self.shader
@@ -319,15 +347,17 @@ impl State {
         let egui_output = egui.ctx.run(egui_input, |ctx| {
             let mut style: egui::Style = (*ctx.style()).clone();
             style.visuals.widgets.noninteractive.fg_stroke.color = egui::Color32::WHITE;
+            style.visuals.widgets.noninteractive.bg_stroke.color = egui::Color32::WHITE;
             style.visuals.widgets.inactive.fg_stroke.color = egui::Color32::WHITE;
+            style.visuals.widgets.active.fg_stroke.color = egui::Color32::WHITE;
             style.visuals.widgets.hovered.fg_stroke.color = egui::Color32::WHITE;
             ctx.set_style(style);
 
             let mut frame = egui::containers::Frame::side_top_panel(&ctx.style());
-            frame.fill = frame.fill.linear_multiply(0.5);
+            frame.fill = frame.fill.linear_multiply(0.9);
 
             egui::SidePanel::left("top").frame(frame).show(&ctx, |ui| {
-                self.settings_ui(ui);
+                self.debug_ui(ui);
             });
         });
 
@@ -410,12 +440,19 @@ impl State {
             egui.wgpu.free_texture(&id);
         }
 
+        self.fps_temp += 1;
+        let now = SystemTime::now();
+        if now.duration_since(self.last_second).unwrap().as_secs() >= 1 {
+            self.last_second = now;
+            self.fps = self.fps_temp;
+            self.fps_temp = 0;
+        }
+
         Ok(())
     }
 }
 
 pub fn main() {
-    use std::time::SystemTime;
     env_logger::init();
 
     let event_loop = EventLoop::new();
@@ -457,11 +494,6 @@ pub fn main() {
             }
             last_frame = SystemTime::now();
 
-            let title = format!(
-                "{} {} {}",
-                state.player.pos.x, state.player.pos.y, state.player.pos.z
-            );
-            state.window.winit.set_title(&title);
             state.update(&input);
 
             input.finish_frame();

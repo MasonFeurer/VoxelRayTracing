@@ -236,11 +236,16 @@ impl WorldGen {
                 // set dirt
                 world.set_voxels(vec3i!(x, y - 3, z), vec3i!(x + 1, y, z + 1), Voxel::DIRT);
 
+                let water_level = 15;
                 let mut surface = Voxel::GRASS;
-                if y < 30 {
-                    world.set_voxels(vec3i!(x, y, z), vec3i!(x + 1, 31, z + 1), Voxel::WATER);
+                if y < water_level {
+                    world.set_voxels(
+                        vec3i!(x, y, z),
+                        vec3i!(x + 1, water_level + 1, z + 1),
+                        Voxel::WATER,
+                    );
                     surface = Voxel::SAND;
-                    if y <= 26 {
+                    if y <= water_level - 4 {
                         surface = Voxel::DIRT;
                     }
                 }
