@@ -20,7 +20,8 @@ impl Voxel {
     pub const SAND: Self = Self(10);
     pub const MUD: Self = Self(11);
     pub const CLAY: Self = Self(12);
-    pub const IRON: Self = Self(13);
+    pub const GOLD: Self = Self(13);
+    pub const MIRROR: Self = Self(14);
 
     #[inline(always)]
     pub fn is_empty(self) -> bool {
@@ -51,93 +52,44 @@ static VOXEL_DISPLAY_NAMES: &[&str] = &[
     "sand",
     "mud",
     "clay",
-    "iron",
+    "gold",
+    "mirror",
 ];
 
-pub const CHUNK_W: i32 = 32;
-pub const CHUNK_H: i32 = 32;
-pub const CHUNK_VOLUME: i32 = CHUNK_W * CHUNK_W * CHUNK_H; // 32768
-pub const CHUNK_SIZE: Vec3i = vec3i!(CHUNK_W, CHUNK_H, CHUNK_W);
-
-#[derive(Clone, Copy, Pod, Zeroable)]
-#[repr(C)]
-pub struct Chunk {
-    solid_voxels_count: u32,
-    minmax: [u32; 6],
-    voxels: [Voxel; CHUNK_VOLUME as usize],
-}
-impl Chunk {
-    pub fn get_voxel(&self, pos: Vec3i) -> Voxel {
-        let idx = (pos.x + pos.y * CHUNK_W + pos.z * CHUNK_W * CHUNK_H) as usize;
-        self.voxels[idx]
-    }
-    pub fn set_voxel(&mut self, pos: Vec3i, voxel: Voxel) -> Option<usize> {
-        if pos.x >= CHUNK_W || pos.y >= CHUNK_H || pos.z >= CHUNK_W {
-            return None;
-        }
-
-        let idx = (pos.x + pos.y * CHUNK_W + pos.z * CHUNK_W * CHUNK_H) as usize;
-        if self.voxels[idx] == voxel {
-            return None;
-        }
-        match voxel.is_solid() {
-            b if b == self.voxels[idx].is_solid() => {}
-            false => self.solid_voxels_count -= 1,
-            true => self.solid_voxels_count += 1,
-        }
-        self.voxels[idx] = voxel;
-        Some(idx)
-    }
-}
-
-pub const WORLD_W: i32 = 8;
-pub const WORLD_H: i32 = 8;
-pub const WORLD_CHUNKS_COUNT: i32 = WORLD_W * WORLD_W * WORLD_H;
-
-pub struct VoxelChunkPos {
-    pub chunk: Vec3i,
-    pub in_chunk: Vec3i,
-}
+pub const WORLD_W: i32 = 256;
+pub const WORLD_H: i32 = 256;
+pub const WORLD_VOLUME: i32 = WORLD_W * WORLD_W * WORLD_H;
 
 #[derive(Clone, Copy, Zeroable, Pod)]
 #[repr(C)]
 pub struct World {
-    pub min_chunk_pos: [u32; 3],
-    pub chunks: [Chunk; WORLD_CHUNKS_COUNT as usize],
-    _padding0: [u32; 1],
+    pub origin: [u32; 3],
+    _filler: u32,
+    pub voxels: [Voxel; WORLD_VOLUME as usize],
 }
 impl World {
-    pub fn voxel_chunk_pos(&self, pos: Vec3i) -> Option<VoxelChunkPos> {
-        if pos.x < 0 || pos.y < 0 || pos.z < 0 {
-            return None;
-        }
-        let chunk = pos / CHUNK_SIZE;
-        let in_chunk = pos % CHUNK_SIZE;
-        Some(VoxelChunkPos { chunk, in_chunk })
+    #[inline(always)]
+    pub fn contains_pos(&self, pos: Vec3i) -> bool {
+        pos.x >= 0
+            && pos.x < WORLD_W
+            && pos.y >= 0
+            && pos.y < WORLD_H
+            && pos.z >= 0
+            && pos.z < WORLD_W
     }
-
     pub fn get_voxel(&self, pos: Vec3i) -> Option<Voxel> {
-        let pos = self.voxel_chunk_pos(pos)?;
-        if pos.chunk.x >= WORLD_W || pos.chunk.y >= WORLD_H || pos.chunk.z >= WORLD_W {
+        if !self.contains_pos(pos) {
             return None;
         }
-
-        let chunk_idx =
-            (pos.chunk.x + pos.chunk.y * WORLD_W + pos.chunk.z * WORLD_W * WORLD_H) as usize;
-        Some(self.chunks[chunk_idx].get_voxel(pos.in_chunk))
+        Some(self.voxels[(pos.x + pos.y * WORLD_W + pos.z * WORLD_W * WORLD_H) as usize])
     }
-    pub fn set_voxel(&mut self, pos: Vec3i, voxel: Voxel) -> Option<(usize, usize)> {
-        let pos = self.voxel_chunk_pos(pos)?;
-        if pos.chunk.x >= WORLD_W || pos.chunk.y >= WORLD_W || pos.chunk.z >= WORLD_W {
+    pub fn set_voxel(&mut self, pos: Vec3i, voxel: Voxel) -> Option<usize> {
+        if !self.contains_pos(pos) {
             return None;
         }
-
-        let chunk_idx =
-            (pos.chunk.x + pos.chunk.y * WORLD_W + pos.chunk.z * WORLD_W * WORLD_H) as usize;
-        Some((
-            chunk_idx,
-            self.chunks[chunk_idx].set_voxel(pos.in_chunk, voxel)?,
-        ))
+        let idx = (pos.x + pos.y * WORLD_W + pos.z * WORLD_W * WORLD_H) as usize;
+        self.voxels[idx] = voxel;
+        Some(idx)
     }
     pub fn set_voxels(&mut self, min: Vec3i, max: Vec3i, voxel: Voxel) {
         for x in min.x..max.x {
@@ -161,7 +113,7 @@ impl World {
     pub fn populate(&mut self) {
         let seed = fastrand::i64(..);
         let mut gen = WorldGen::new(seed);
-        gen.populate([0, WORLD_W * CHUNK_W], [0, WORLD_W * CHUNK_W], self);
+        gen.populate([0, WORLD_W], [0, WORLD_W], self);
     }
 
     pub fn get_collisions_w(&self, aabb: &Aabb) -> Vec<Aabb> {

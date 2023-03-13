@@ -164,6 +164,8 @@ struct State {
     last_second: SystemTime,
     fps: u32,
     fps_temp: u32,
+    sdf_dist: u32,
+    rebuild_sdf: bool,
 }
 impl State {
     fn new(window: Window, gpu: Gpu) -> Self {
@@ -176,10 +178,13 @@ impl State {
         world.populate();
         let player = Player::new(vec3f!(50.0, 100.0, 50.0));
 
+        let sdf_dist = 6;
+
         // Create shader
         let shader = gpu.create_shader(window.size());
-        shader.world_buffer.update(&gpu.queue, world.clone());
+        shader.world_buffer.update(&gpu.queue, &world);
         shader.settings_buffer.update(&gpu.queue, settings);
+        shader.sdf_dist_buffer.update(&gpu.queue, sdf_dist);
 
         Self {
             window,
@@ -194,6 +199,8 @@ impl State {
             last_second: SystemTime::now(),
             fps: 0,
             fps_temp: 0,
+            sdf_dist,
+            rebuild_sdf: true,
         }
     }
 
@@ -210,7 +217,13 @@ impl State {
         if input.key_pressed(Key::F) {
             self.window.toggle_fullscreen();
         }
-        self.shader.rand_floats_buffer.update(&self.gpu.queue);
+        let mut rand_floats = [0.0; 128];
+        for i in 0..rand_floats.len() {
+            rand_floats[i] = fastrand::f32();
+        }
+        self.shader
+            .rand_src_buffer
+            .update(&self.gpu.queue, rand_floats);
 
         self.hit_result = self.player.cast_ray(&self.world);
 
@@ -224,12 +237,15 @@ impl State {
             self.voxel_in_hand = Voxel::STONE;
         }
         if input.key_pressed(Key::Key4) {
-            self.voxel_in_hand = Voxel::IRON;
+            self.voxel_in_hand = Voxel::GOLD;
         }
         if input.key_pressed(Key::Key5) {
-            self.voxel_in_hand = Voxel::WATER;
+            self.voxel_in_hand = Voxel::MIRROR;
         }
         if input.key_pressed(Key::Key6) {
+            self.voxel_in_hand = Voxel::WATER;
+        }
+        if input.key_pressed(Key::Key7) {
             self.voxel_in_hand = Voxel::FIRE;
         }
 
@@ -238,14 +254,14 @@ impl State {
         }
 
         if let Some(hit) = self.hit_result && input.left_button_pressed() {
-            if let Some((chunk_idx, _)) = self.world.set_voxel(hit.pos, Voxel::AIR) {
-                self.shader.world_buffer.update_chunk(&self.gpu.queue, chunk_idx, self.world.chunks[chunk_idx]);
-            }
+            self.world.set_voxel(hit.pos, Voxel::AIR);
+            self.shader.world_buffer.update(&self.gpu.queue, &self.world);
+            self.rebuild_sdf = true;
         }
         if let Some(hit) = self.hit_result && input.right_button_pressed() {
-            if let Some((chunk_idx, _)) = self.world.set_voxel(hit.pos + hit.face, self.voxel_in_hand) {
-                self.shader.world_buffer.update_chunk(&self.gpu.queue, chunk_idx, self.world.chunks[chunk_idx]);
-            }
+            self.world.set_voxel(hit.pos + hit.face, self.voxel_in_hand);
+            self.shader.world_buffer.update(&self.gpu.queue, &self.world);
+            self.rebuild_sdf = true;
         }
     }
 
@@ -316,8 +332,8 @@ impl State {
             water_opacity_max_dist,
             sky_color,
             max_reflections,
-            iron_color,
             shadows,
+            ray_cast_method,
             ..
         } = &mut self.settings;
 
@@ -333,42 +349,35 @@ impl State {
         );
         changed |= value_u32(ui, "max reflections", max_reflections, 0, 100);
         changed |= toggle(ui, "shadows", shadows);
-        changed |= color_picker(ui, "iron color", iron_color);
         changed |= color_picker(ui, "water color", water_color);
         changed |= color_picker(ui, "sky color", sky_color);
+        changed |= value_u32(ui, "ray cast method", ray_cast_method, 0, 1);
 
         if changed {
             self.shader
                 .settings_buffer
                 .update(&self.gpu.queue, self.settings);
         }
+
+        if value_u32(ui, "sdf dist", &mut self.sdf_dist, 1, 6) {
+            self.rebuild_sdf = true;
+        }
+
+        if ui.button("debug sdf").clicked() {
+            wgpu::util::DownloadBuffer::read_buffer(
+                &self.gpu.device,
+                &self.gpu.queue,
+                &self.shader.sdf_buffer.0.slice(..),
+                |result| match result {
+                    Ok(bytes) => std::fs::write("./sdf_debug", &*bytes).unwrap(),
+                    Err(err) => eprintln!("failed to read sdf: {err:?}"),
+                },
+            )
+        }
     }
 
     fn render(&mut self, egui: &mut Egui) -> Result<(), wgpu::SurfaceError> {
-        let egui_input = egui.winit.take_egui_input(&self.window.winit);
-        let egui_output = egui.ctx.run(egui_input, |ctx| {
-            let mut style: egui::Style = (*ctx.style()).clone();
-            style.visuals.widgets.noninteractive.fg_stroke.color = egui::Color32::WHITE;
-            style.visuals.widgets.noninteractive.bg_stroke.color = egui::Color32::WHITE;
-            style.visuals.widgets.inactive.fg_stroke.color = egui::Color32::WHITE;
-            style.visuals.widgets.active.fg_stroke.color = egui::Color32::WHITE;
-            style.visuals.widgets.hovered.fg_stroke.color = egui::Color32::WHITE;
-            ctx.set_style(style);
-
-            let mut frame = egui::containers::Frame::side_top_panel(&ctx.style());
-            frame.fill = frame.fill.linear_multiply(0.9);
-
-            egui::SidePanel::left("top").frame(frame).show(&ctx, |ui| {
-                self.debug_ui(ui);
-            });
-        });
-
-        let egui_prims = egui.ctx.tessellate(egui_output.shapes);
-        let screen_desc = egui_wgpu::renderer::ScreenDescriptor {
-            size_in_pixels: self.shader.color_buffer.size().into(),
-            pixels_per_point: egui_winit::native_pixels_per_point(&self.window.winit),
-        };
-
+        // --- get surface and create encoder ---
         let output = self.gpu.surface.get_current_texture()?;
         let view = output
             .texture
@@ -381,67 +390,125 @@ impl State {
                 label: Some("#encoder"),
             });
 
-        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("#compute_pass"),
-        });
-        compute_pass.set_pipeline(&self.shader.compute_pipeline);
-        compute_pass.set_bind_group(0, &self.shader.compute_bind_group, &[]);
-        let [buffer_w, buffer_h]: [u32; 2] = self.shader.color_buffer.size().into();
-        compute_pass.dispatch_workgroups(buffer_w, buffer_h, 1);
-        std::mem::drop(compute_pass);
+        // --- sdf compute pass ---
+        if self.rebuild_sdf {
+            self.rebuild_sdf = false;
+            println!("generating SDF with dist of {}", self.sdf_dist);
 
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("#render_pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: true,
-                },
-            })],
-            depth_stencil_attachment: None,
-        });
-        render_pass.set_pipeline(&self.shader.render_pipeline);
-        render_pass.set_bind_group(0, &self.shader.render_bind_group, &[]);
-        render_pass.draw(0..6, 0..1);
-        std::mem::drop(render_pass);
+            // --- update `sdf_dist` uniform ---
+            self.shader
+                .sdf_dist_buffer
+                .update(&self.gpu.queue, self.sdf_dist);
 
-        for (id, image) in egui_output.textures_delta.set {
-            egui.wgpu
-                .update_texture(&self.gpu.device, &self.gpu.queue, id, &image);
+            // --- create pass ---
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("#sdf_pass"),
+            });
+            pass.set_pipeline(&self.shader.sdf_pipeline);
+            pass.set_bind_group(0, &self.shader.sdf_bind_group, &[]);
+
+            use crate::world::{WORLD_H, WORLD_W};
+            pass.dispatch_workgroups(WORLD_W as u32 / 4, WORLD_H as u32, WORLD_W as u32);
         }
-        egui.wgpu.update_buffers(
-            &self.gpu.device,
-            &self.gpu.queue,
-            &mut encoder,
-            &egui_prims,
-            &screen_desc,
-        );
 
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("#egui_render_pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: true,
-                },
-            })],
-            depth_stencil_attachment: None,
-        });
-        egui.wgpu
-            .render(&mut render_pass, &egui_prims, &screen_desc);
-        std::mem::drop(render_pass);
+        // --- raytracing pass ---
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("#raytracing_pass"),
+            });
+            pass.set_pipeline(&self.shader.raytracing_pipeline);
+            pass.set_bind_group(0, &self.shader.raytracing_bind_group, &[]);
 
+            let [buffer_w, buffer_h]: [u32; 2] = self.shader.color_buffer.size().into();
+            pass.dispatch_workgroups(buffer_w, buffer_h, 1);
+        }
+
+        // --- render pass ---
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("#render_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: None,
+            });
+            pass.set_pipeline(&self.shader.render_pipeline);
+            pass.set_bind_group(0, &self.shader.render_bind_group, &[]);
+            pass.draw(0..6, 0..1);
+        }
+
+        // --- egui ---
+        let egui_textures_free = {
+            // --- create scene ---
+            let egui_input = egui.winit.take_egui_input(&self.window.winit);
+            let egui_output = egui.ctx.run(egui_input, |ctx| {
+                let mut style: egui::Style = (*ctx.style()).clone();
+                style.visuals.widgets.noninteractive.fg_stroke.color = egui::Color32::WHITE;
+                style.visuals.widgets.noninteractive.bg_stroke.color = egui::Color32::WHITE;
+                style.visuals.widgets.inactive.fg_stroke.color = egui::Color32::WHITE;
+                style.visuals.widgets.active.fg_stroke.color = egui::Color32::WHITE;
+                style.visuals.widgets.hovered.fg_stroke.color = egui::Color32::WHITE;
+                ctx.set_style(style);
+
+                let mut frame = egui::containers::Frame::side_top_panel(&ctx.style());
+                frame.fill = frame.fill.linear_multiply(0.9);
+
+                egui::SidePanel::left("top").frame(frame).show(&ctx, |ui| {
+                    self.debug_ui(ui);
+                });
+            });
+            let egui_prims = egui.ctx.tessellate(egui_output.shapes);
+            let screen_desc = egui_wgpu::renderer::ScreenDescriptor {
+                size_in_pixels: self.shader.color_buffer.size().into(),
+                pixels_per_point: egui_winit::native_pixels_per_point(&self.window.winit),
+            };
+
+            // --- update buffers ---
+            for (id, image) in egui_output.textures_delta.set {
+                egui.wgpu
+                    .update_texture(&self.gpu.device, &self.gpu.queue, id, &image);
+            }
+            egui.wgpu.update_buffers(
+                &self.gpu.device,
+                &self.gpu.queue,
+                &mut encoder,
+                &egui_prims,
+                &screen_desc,
+            );
+
+            // --- render pass ---
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("#egui_render_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: None,
+            });
+            egui.wgpu.render(&mut pass, &egui_prims, &screen_desc);
+
+            egui_output.textures_delta.free
+        };
+
+        // --- submit passes ---
         self.gpu.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
-        for id in egui_output.textures_delta.free {
+        // --- free egui textures ---
+        for id in egui_textures_free {
             egui.wgpu.free_texture(&id);
         }
 
+        // --- update fps counter ---
         self.fps_temp += 1;
         let now = SystemTime::now();
         if now.duration_since(self.last_second).unwrap().as_secs() >= 1 {
