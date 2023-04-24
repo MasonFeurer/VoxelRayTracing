@@ -24,19 +24,18 @@ fn node_is_split(node: Node) -> bool {
     return bool(node.data & 1u);
 }
 
-struct Svo {
+struct World {
     root_idx: u32,
     size: u32,
-    max_depth: u32,
-    num_nodes: u32,
-    total_nodes: u32,
-    nodes: array<Node, 90000000>,
+    _max_depth: u32,
+    _start_search: u32,
+    nodes: array<Node>,
 }
 
 @group(0) @binding(0) var output_texture_: texture_storage_2d<rgba8unorm, write>;
 @group(0) @binding(1) var<uniform> cam_data_: CamData;
 @group(0) @binding(2) var<uniform> settings_: Settings;
-@group(0) @binding(3) var<storage, read> world_: Svo;
+@group(0) @binding(3) var<storage, read> world_: World;
 @group(0) @binding(4) var<storage, read> rand_src_: array<f32, 128>;
 
 var<private> rand_float_idx__: i32 = 0;

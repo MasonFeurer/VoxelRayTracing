@@ -9,7 +9,6 @@ static COLOR_SHADER_SRC: &str = include_str!("../../res/color_shader.wgsl");
 const OUTPUT_TEX_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
 
 const COPY_DST: BufferUsages = BufferUsages::COPY_DST;
-const COPY_SRC: BufferUsages = BufferUsages::COPY_SRC;
 const STORAGE: BufferUsages = BufferUsages::STORAGE;
 const UNIFORM: BufferUsages = BufferUsages::UNIFORM;
 const VERTEX: ShaderStages = ShaderStages::VERTEX;

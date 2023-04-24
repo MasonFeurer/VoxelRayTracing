@@ -174,6 +174,8 @@ impl Node {
     }
 }
 
+const MAX_NODES: usize = 90_000_000;
+
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct World {
@@ -181,8 +183,7 @@ pub struct World {
     pub size: u32,
     pub max_depth: u32,
     pub start_search: u32,
-    pub total_nodes: u32,
-    pub nodes: [Node; 90_000_000],
+    pub nodes: [Node; MAX_NODES],
 }
 impl World {
     pub fn init(&mut self, max_depth: u32) {
@@ -190,7 +191,6 @@ impl World {
         self.max_depth = max_depth;
         self.size = 1 << max_depth;
         self.start_search = 1;
-        self.total_nodes = 1;
         self.nodes[0] = Node::new(Voxel::AIR, 0, false);
         for node in &mut self.nodes[1..] {
             node.set_free_flag(true);
@@ -423,8 +423,8 @@ impl WorldGen {
     }
 
     pub fn get_terrain_h(&self, pos: Vec2) -> f32 {
-        let height_scale = self.height_scale_map.get(pos) * 1.6;
-        let height_freq = self.height_freq_map.get(pos) * 5.0;
+        let height_scale = self.height_scale_map.get(pos);
+        let height_freq = self.height_freq_map.get(pos) * 2.0;
         self.height_map.get(pos * height_freq) * height_scale
     }
 

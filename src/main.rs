@@ -1,7 +1,5 @@
-#![allow(dead_code)]
 #![feature(new_uninit)]
 #![feature(let_chains)]
-// TODO: try to remove feature flags
 
 pub mod gpu;
 pub mod input;
@@ -43,12 +41,6 @@ impl Window {
         <[u32; 2]>::from(self.winit.inner_size()).into()
     }
 
-    fn set_fullscreen(&mut self, fs: bool) {
-        self.winit.set_fullscreen(match fs {
-            false => None,
-            true => Some(Fullscreen::Borderless(None)),
-        });
-    }
     fn toggle_fullscreen(&mut self) {
         self.winit.set_fullscreen(match self.winit.fullscreen() {
             Some(_) => None,
@@ -75,7 +67,11 @@ impl Window {
     }
 }
 
-fn create_svo_mesh(gpu: &Gpu, _world: &World) -> GpuMesh {
+fn create_svo_mesh(gpu: &Gpu, world: &World) -> Option<GpuMesh> {
+    if world.count_nodes() >= 1_000_000 {
+        println!("Too many nodes for a debug mesh");
+        return None;
+    }
     fn show_node(
         out: &mut ColoredMesh,
         world: &World,
@@ -108,16 +104,16 @@ fn create_svo_mesh(gpu: &Gpu, _world: &World) -> GpuMesh {
         }
     }
 
-    let out = ColoredMesh::default();
-    // show_node(
-    //     &mut out,
-    //     world,
-    //     world.root_idx,
-    //     0,
-    //     Vec3::splat(world.size as f32 * 0.5),
-    //     world.size as f32,
-    // );
-    out.upload(gpu)
+    let mut out = ColoredMesh::default();
+    show_node(
+        &mut out,
+        world,
+        world.root_idx,
+        0,
+        Vec3::splat(world.size as f32 * 0.5),
+        world.size as f32,
+    );
+    Some(out.upload(gpu))
 }
 
 struct State {
@@ -133,8 +129,9 @@ struct State {
     last_second: SystemTime,
     fps: u32,
     fps_temp: u32,
-    svo_mesh: GpuMesh,
+    svo_mesh: Option<GpuMesh>,
     show_svo: bool,
+    world_depth: u32,
 }
 impl State {
     fn new(window: Window, gpu: Gpu) -> Self {
@@ -144,12 +141,12 @@ impl State {
             let world = Box::<World>::new_zeroed();
             world.assume_init()
         };
-        world.init(10);
+        world.init(7);
         world.populate();
 
         let aspect = window.size().x as f32 / window.size().y as f32;
 
-        let player = Player::new(Vec3::new(10.0, 40.0, 10.0), 3.2);
+        let player = Player::new(Vec3::new(10.0, 80.0, 10.0), 0.2);
 
         let shaders = Shaders::new(&gpu.device, gpu.surface_config.format, window.size());
         shaders.raytracer.world.write(&gpu.queue, &world);
@@ -162,8 +159,6 @@ impl State {
             .color_shader
             .proj_mat
             .write(&gpu.queue, &player.create_proj_mat(aspect));
-
-        let svo_mesh = create_svo_mesh(&gpu, &world);
 
         Self {
             window,
@@ -178,8 +173,9 @@ impl State {
             last_second: SystemTime::now(),
             fps: 0,
             fps_temp: 0,
-            svo_mesh,
+            svo_mesh: None,
             show_svo: false,
+            world_depth: 7,
         }
     }
 
@@ -243,12 +239,16 @@ impl State {
         if let Some(hit) = self.hit_result && input.left_button_pressed() {
             self.world.set_voxel(hit.pos, Voxel::AIR);
             self.shaders.raytracer.world.write(&self.gpu.queue, &self.world);
-            self.svo_mesh = create_svo_mesh(&self.gpu, &self.world);
+            if self.show_svo {
+                self.svo_mesh = create_svo_mesh(&self.gpu, &self.world);
+            }
         }
         if let Some(hit) = self.hit_result && input.right_button_pressed() {
             self.world.set_voxel(hit.pos + hit.face, self.voxel_in_hand);
             self.shaders.raytracer.world.write(&self.gpu.queue, &self.world);
-            self.svo_mesh = create_svo_mesh(&self.gpu, &self.world);
+            if self.show_svo {
+                self.svo_mesh = create_svo_mesh(&self.gpu, &self.world);
+            }
         }
     }
 
@@ -322,6 +322,24 @@ impl State {
         label(ui, &format!("Y: {:#}", self.player.pos.y), green);
         label(ui, &format!("Z: {:#}", self.player.pos.z), blue);
 
+        value_f32(ui, "speed", &mut self.player.speed, 0.1, 3.0);
+
+        let prev_show_svo = self.show_svo;
+        toggle_bool(ui, "sho svo", &mut self.show_svo);
+        if self.show_svo && !prev_show_svo {
+            self.svo_mesh = create_svo_mesh(&self.gpu, &self.world);
+        }
+
+        value_u32(ui, "world depth", &mut self.world_depth, 2, 11);
+        if ui.button("regenerate").clicked() {
+            self.world.init(self.world_depth);
+            self.world.populate();
+            self.shaders
+                .raytracer
+                .world
+                .write(&self.gpu.queue, &self.world);
+        }
+
         ui.separator();
         ui.heading("shader");
 
@@ -334,13 +352,10 @@ impl State {
         } = &mut self.settings;
 
         let mut changed = false;
-        changed |= toggle_bool(ui, "sho svo", &mut self.show_svo);
         changed |= value_u32(ui, "ray max steps", max_ray_steps, 0, 300);
         changed |= value_u32(ui, "max reflections", max_reflections, 0, 100);
         changed |= toggle(ui, "shadows", shadows);
         changed |= color_picker(ui, "sky color", sky_color);
-
-        value_f32(ui, "speed", &mut self.player.speed, 0.1, 3.0);
 
         if changed {
             self.shaders
@@ -396,7 +411,7 @@ impl State {
         }
 
         // --- draw SVO mesh with color shader ---
-        if self.show_svo {
+        if let Some(mesh) = &self.svo_mesh && self.show_svo {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("#svo-mesh-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -411,9 +426,9 @@ impl State {
             });
             pass.set_pipeline(&self.shaders.color_shader.pipeline);
             pass.set_bind_group(0, &self.shaders.color_shader.bind_group, &[]);
-            pass.set_vertex_buffer(0, self.svo_mesh.vertex_buf.slice(..));
-            pass.set_index_buffer(self.svo_mesh.index_buf.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(0..self.svo_mesh.index_count, 0, 0..1);
+            pass.set_vertex_buffer(0, mesh.vertex_buf.slice(..));
+            pass.set_index_buffer(mesh.index_buf.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..mesh.index_count, 0, 0..1);
         }
 
         // --- egui ---
