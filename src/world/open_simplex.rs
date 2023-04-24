@@ -1,6 +1,4 @@
-#![allow(dead_code)]
-
-use crate::math::Vec2f;
+use glam::Vec2;
 
 #[derive(Clone)]
 pub struct NoiseMap {
@@ -18,7 +16,7 @@ impl NoiseMap {
             scale,
         }
     }
-    pub fn get(&self, pos: Vec2f) -> f32 {
+    pub fn get(&self, pos: Vec2) -> f32 {
         let val = self
             .noise
             .eval2d(pos.x as f64 * self.freq, pos.y as f64 * self.freq);
@@ -36,7 +34,7 @@ impl MultiNoiseMap {
             maps: maps.to_vec(),
         }
     }
-    pub fn get(&self, pos: Vec2f) -> f32 {
+    pub fn get(&self, pos: Vec2) -> f32 {
         let mut sum = 0.0;
         for map in &self.maps {
             sum += map.get(pos);

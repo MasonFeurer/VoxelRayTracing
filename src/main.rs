@@ -1,108 +1,26 @@
 #![allow(dead_code)]
 #![feature(new_uninit)]
 #![feature(let_chains)]
+// TODO: try to remove feature flags
 
-pub mod aabb;
-pub mod cam;
+pub mod gpu;
 pub mod input;
 pub mod math;
-pub mod open_simplex;
 pub mod player;
-pub mod shader;
 pub mod world;
 
+use crate::gpu::shaders::{Settings, Shaders};
+use crate::gpu::{debug::Egui, ColoredMesh, Gpu, GpuMesh};
 use crate::input::{InputState, Key};
-use crate::math::{HitResult, Vec2u};
+use crate::math::dda::HitResult;
 use crate::player::Player;
-use crate::shader::{Settings, Shader};
 use crate::world::{Voxel, World};
+use glam::{Mat4, UVec2, Vec3};
 use std::time::SystemTime;
 use winit::event::*;
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::Window as WinitWindow;
 use winit::window::{CursorGrabMode, Fullscreen, WindowBuilder};
-
-struct Gpu {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    surface: wgpu::Surface,
-    surface_config: wgpu::SurfaceConfiguration,
-}
-impl Gpu {
-    fn create_shader(&self, buffer_size: Vec2u) -> Shader {
-        Shader::new(&self.device, &self.surface_config, buffer_size)
-    }
-
-    fn resize(&mut self, new_size: Vec2u) {
-        self.surface_config.width = new_size.x;
-        self.surface_config.height = new_size.y;
-        self.surface.configure(&self.device, &self.surface_config);
-    }
-}
-async fn init_wgpu(window: &WinitWindow) -> Gpu {
-    let size = window.inner_size();
-    let size = vec2u!(size.width, size.height);
-
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
-    // Handle to a presentable surface
-    let surface = unsafe { instance.create_surface(window) }.unwrap();
-
-    // Handle to the graphics device
-    let adapter = instance
-        .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::default(),
-            compatible_surface: Some(&surface),
-            force_fallback_adapter: false,
-        })
-        .await
-        .unwrap();
-
-    // device: Open connection to graphics device
-    // queue: Handle to a command queue on the device
-    let (device, queue) = adapter
-        .request_device(
-            &wgpu::DeviceDescriptor {
-                features: wgpu::Features::empty(),
-                limits: wgpu::Limits::default(),
-                label: None,
-            },
-            None,
-        )
-        .await
-        .unwrap();
-
-    let surface_config = surface
-        .get_default_config(&adapter, size.x, size.y)
-        .unwrap();
-    surface.configure(&device, &surface_config);
-
-    Gpu {
-        surface,
-        device,
-        surface_config,
-        queue,
-    }
-}
-
-struct Egui {
-    wgpu: egui_wgpu::renderer::Renderer,
-    winit: egui_winit::State,
-    ctx: egui::Context,
-}
-impl Egui {
-    fn new(event_loop: &EventLoop<()>, gpu: &Gpu) -> Self {
-        Self {
-            wgpu: egui_wgpu::renderer::Renderer::new(
-                &gpu.device,
-                gpu.surface_config.format,
-                None,
-                1,
-            ),
-            winit: egui_winit::State::new(&event_loop),
-            ctx: egui::Context::default(),
-        }
-    }
-}
 
 struct Window {
     winit: WinitWindow,
@@ -121,10 +39,16 @@ impl Window {
         }
     }
 
-    fn size(&self) -> Vec2u {
+    fn size(&self) -> UVec2 {
         <[u32; 2]>::from(self.winit.inner_size()).into()
     }
 
+    fn set_fullscreen(&mut self, fs: bool) {
+        self.winit.set_fullscreen(match fs {
+            false => None,
+            true => Some(Fullscreen::Borderless(None)),
+        });
+    }
     fn toggle_fullscreen(&mut self) {
         self.winit.set_fullscreen(match self.winit.fullscreen() {
             Some(_) => None,
@@ -151,10 +75,55 @@ impl Window {
     }
 }
 
+fn create_svo_mesh(gpu: &Gpu, _world: &World) -> GpuMesh {
+    fn show_node(
+        out: &mut ColoredMesh,
+        world: &World,
+        node_idx: u32,
+        depth: u32,
+        center: Vec3,
+        size: f32,
+    ) {
+        let node = world.get_node(node_idx);
+        let c = depth as f32 / 8.0;
+        out.cube_frame(center - size * 0.5, center + size * 0.5, [c, c, c, 1.0]);
+        if !node.is_split() {
+            return;
+        }
+        for idx in 0..8 {
+            let dir = Vec3::new(
+                (((idx & 0b001) >> 0) * 2) as f32 - 1.0,
+                (((idx & 0b010) >> 1) * 2) as f32 - 1.0,
+                (((idx & 0b100) >> 2) * 2) as f32 - 1.0,
+            );
+            let center = center + dir * (size * 0.25);
+            show_node(
+                out,
+                world,
+                node.get_child(idx),
+                depth + 1,
+                center,
+                size * 0.5,
+            )
+        }
+    }
+
+    let out = ColoredMesh::default();
+    // show_node(
+    //     &mut out,
+    //     world,
+    //     world.root_idx,
+    //     0,
+    //     Vec3::splat(world.size as f32 * 0.5),
+    //     world.size as f32,
+    // );
+    out.upload(gpu)
+}
+
 struct State {
     window: Window,
     gpu: Gpu,
-    shader: Shader,
+    shaders: Shaders,
     settings: Settings,
 
     player: Player,
@@ -164,8 +133,8 @@ struct State {
     last_second: SystemTime,
     fps: u32,
     fps_temp: u32,
-    sdf_dist: u32,
-    rebuild_sdf: bool,
+    svo_mesh: GpuMesh,
+    show_svo: bool,
 }
 impl State {
     fn new(window: Window, gpu: Gpu) -> Self {
@@ -175,21 +144,31 @@ impl State {
             let world = Box::<World>::new_zeroed();
             world.assume_init()
         };
+        world.init(10);
         world.populate();
-        let player = Player::new(vec3f!(50.0, 100.0, 50.0));
 
-        let sdf_dist = 6;
+        let aspect = window.size().x as f32 / window.size().y as f32;
 
-        // Create shader
-        let shader = gpu.create_shader(window.size());
-        shader.world_buffer.update(&gpu.queue, &world);
-        shader.settings_buffer.update(&gpu.queue, settings);
-        shader.sdf_dist_buffer.update(&gpu.queue, sdf_dist);
+        let player = Player::new(Vec3::new(10.0, 40.0, 10.0), 3.2);
+
+        let shaders = Shaders::new(&gpu.device, gpu.surface_config.format, window.size());
+        shaders.raytracer.world.write(&gpu.queue, &world);
+        shaders.raytracer.settings.write(&gpu.queue, &settings);
+        shaders
+            .color_shader
+            .model_mat
+            .write(&gpu.queue, &Mat4::IDENTITY);
+        shaders
+            .color_shader
+            .proj_mat
+            .write(&gpu.queue, &player.create_proj_mat(aspect));
+
+        let svo_mesh = create_svo_mesh(&gpu, &world);
 
         Self {
             window,
             gpu,
-            shader,
+            shaders,
             settings,
 
             player,
@@ -199,17 +178,24 @@ impl State {
             last_second: SystemTime::now(),
             fps: 0,
             fps_temp: 0,
-            sdf_dist,
-            rebuild_sdf: true,
+            svo_mesh,
+            show_svo: false,
         }
     }
 
     fn update(&mut self, input: &InputState) {
         if self.window.cursor_locked {
             self.player.update(1.0, input, &self.world);
-            self.shader
-                .cam_buffer
-                .update(&self.gpu.queue, &self.player.cam());
+
+            let size = self.shaders.output_texture.size().as_vec2();
+            self.shaders
+                .raytracer
+                .cam_data
+                .write(&self.gpu.queue, &self.player.create_cam_data(size));
+            self.shaders
+                .color_shader
+                .view_mat
+                .write(&self.gpu.queue, &self.player.create_inv_view_mat());
         }
         if input.key_pressed(Key::T) {
             self.window.toggle_cursor_locked();
@@ -221,9 +207,10 @@ impl State {
         for i in 0..rand_floats.len() {
             rand_floats[i] = fastrand::f32();
         }
-        self.shader
-            .rand_src_buffer
-            .update(&self.gpu.queue, rand_floats);
+        self.shaders
+            .raytracer
+            .rand_src
+            .write(&self.gpu.queue, &rand_floats);
 
         self.hit_result = self.player.cast_ray(&self.world);
 
@@ -255,23 +242,29 @@ impl State {
 
         if let Some(hit) = self.hit_result && input.left_button_pressed() {
             self.world.set_voxel(hit.pos, Voxel::AIR);
-            self.shader.world_buffer.update(&self.gpu.queue, &self.world);
-            self.rebuild_sdf = true;
+            self.shaders.raytracer.world.write(&self.gpu.queue, &self.world);
+            self.svo_mesh = create_svo_mesh(&self.gpu, &self.world);
         }
         if let Some(hit) = self.hit_result && input.right_button_pressed() {
             self.world.set_voxel(hit.pos + hit.face, self.voxel_in_hand);
-            self.shader.world_buffer.update(&self.gpu.queue, &self.world);
-            self.rebuild_sdf = true;
+            self.shaders.raytracer.world.write(&self.gpu.queue, &self.world);
+            self.svo_mesh = create_svo_mesh(&self.gpu, &self.world);
         }
     }
 
-    fn resize(&mut self, new_size: Vec2u) {
+    fn resize(&mut self, new_size: UVec2) {
         self.gpu.resize(new_size);
-        self.shader.proj_buffer.update(
-            &self.gpu.queue,
-            self.shader.color_buffer.size(),
-            &self.player,
-        );
+
+        let proj_size = self.shaders.output_texture.size().as_vec2();
+        let aspect = proj_size.x / proj_size.y;
+        self.shaders
+            .raytracer
+            .cam_data
+            .write(&self.gpu.queue, &self.player.create_cam_data(proj_size));
+        self.shaders
+            .color_shader
+            .proj_mat
+            .write(&self.gpu.queue, &self.player.create_proj_mat(aspect));
     }
 
     fn debug_ui(&mut self, ui: &mut egui::Ui) {
@@ -292,6 +285,11 @@ impl State {
             ui.add_space(SPACING);
             ui.label(label);
             ui.color_edit_button_rgba_premultiplied(color).changed()
+        }
+        fn toggle_bool(ui: &mut Ui, label: &str, v: &mut bool) -> bool {
+            ui.add_space(SPACING);
+            let result = ui.checkbox(v, label).changed();
+            result
         }
         fn toggle(ui: &mut Ui, label: &str, v: &mut u32) -> bool {
             ui.add_space(SPACING);
@@ -316,6 +314,8 @@ impl State {
         label(ui, &format!("fps: {}", self.fps), white);
         ui.add_space(3.0);
         label(ui, &format!("in hand: {:?}", in_hand.display()), white);
+        ui.add_space(3.0);
+        label(ui, &format!("on ground: {}", self.player.on_ground), white);
 
         ui.add_space(3.0);
         label(ui, &format!("X: {:#}", self.player.pos.x), red);
@@ -327,52 +327,26 @@ impl State {
 
         let Settings {
             max_ray_steps,
-            water_color,
-            min_water_opacity,
-            water_opacity_max_dist,
             sky_color,
             max_reflections,
             shadows,
-            ray_cast_method,
             ..
         } = &mut self.settings;
 
         let mut changed = false;
+        changed |= toggle_bool(ui, "sho svo", &mut self.show_svo);
         changed |= value_u32(ui, "ray max steps", max_ray_steps, 0, 300);
-        changed |= value_f32(ui, "min water opacity", min_water_opacity, 0.0, 1.0);
-        changed |= value_f32(
-            ui,
-            "water opacity max dist",
-            water_opacity_max_dist,
-            0.0,
-            100.0,
-        );
         changed |= value_u32(ui, "max reflections", max_reflections, 0, 100);
         changed |= toggle(ui, "shadows", shadows);
-        changed |= color_picker(ui, "water color", water_color);
         changed |= color_picker(ui, "sky color", sky_color);
-        changed |= value_u32(ui, "ray cast method", ray_cast_method, 0, 1);
+
+        value_f32(ui, "speed", &mut self.player.speed, 0.1, 3.0);
 
         if changed {
-            self.shader
-                .settings_buffer
-                .update(&self.gpu.queue, self.settings);
-        }
-
-        if value_u32(ui, "sdf dist", &mut self.sdf_dist, 1, 6) {
-            self.rebuild_sdf = true;
-        }
-
-        if ui.button("debug sdf").clicked() {
-            wgpu::util::DownloadBuffer::read_buffer(
-                &self.gpu.device,
-                &self.gpu.queue,
-                &self.shader.sdf_buffer.0.slice(..),
-                |result| match result {
-                    Ok(bytes) => std::fs::write("./sdf_debug", &*bytes).unwrap(),
-                    Err(err) => eprintln!("failed to read sdf: {err:?}"),
-                },
-            )
+            self.shaders
+                .raytracer
+                .settings
+                .write(&self.gpu.queue, &self.settings);
         }
     }
 
@@ -390,43 +364,22 @@ impl State {
                 label: Some("#encoder"),
             });
 
-        // --- sdf compute pass ---
-        if self.rebuild_sdf {
-            self.rebuild_sdf = false;
-            println!("generating SDF with dist of {}", self.sdf_dist);
-
-            // --- update `sdf_dist` uniform ---
-            self.shader
-                .sdf_dist_buffer
-                .update(&self.gpu.queue, self.sdf_dist);
-
-            // --- create pass ---
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("#sdf_pass"),
-            });
-            pass.set_pipeline(&self.shader.sdf_pipeline);
-            pass.set_bind_group(0, &self.shader.sdf_bind_group, &[]);
-
-            use crate::world::{WORLD_H, WORLD_W};
-            pass.dispatch_workgroups(WORLD_W as u32 / 4, WORLD_H as u32, WORLD_W as u32);
-        }
-
-        // --- raytracing pass ---
+        // --- raytracer pass ---
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("#raytracing_pass"),
+                label: Some("#raytracer-pass"),
             });
-            pass.set_pipeline(&self.shader.raytracing_pipeline);
-            pass.set_bind_group(0, &self.shader.raytracing_bind_group, &[]);
+            pass.set_pipeline(&self.shaders.raytracer.pipeline);
+            pass.set_bind_group(0, &self.shaders.raytracer.bind_group, &[]);
 
-            let [buffer_w, buffer_h]: [u32; 2] = self.shader.color_buffer.size().into();
-            pass.dispatch_workgroups(buffer_w, buffer_h, 1);
+            let [buffer_w, buffer_h]: [u32; 2] = self.shaders.output_texture.size().into();
+            pass.dispatch_workgroups(buffer_w / 8, buffer_h / 8, 1);
         }
 
-        // --- render pass ---
+        // --- output tex shader pass ---
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("#render_pass"),
+                label: Some("#output-tex-shader-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
@@ -437,9 +390,30 @@ impl State {
                 })],
                 depth_stencil_attachment: None,
             });
-            pass.set_pipeline(&self.shader.render_pipeline);
-            pass.set_bind_group(0, &self.shader.render_bind_group, &[]);
+            pass.set_pipeline(&self.shaders.output_tex_shader.pipeline);
+            pass.set_bind_group(0, &self.shaders.output_tex_shader.bind_group, &[]);
             pass.draw(0..6, 0..1);
+        }
+
+        // --- draw SVO mesh with color shader ---
+        if self.show_svo {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("#svo-mesh-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: None,
+            });
+            pass.set_pipeline(&self.shaders.color_shader.pipeline);
+            pass.set_bind_group(0, &self.shaders.color_shader.bind_group, &[]);
+            pass.set_vertex_buffer(0, self.svo_mesh.vertex_buf.slice(..));
+            pass.set_index_buffer(self.svo_mesh.index_buf.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..self.svo_mesh.index_count, 0, 0..1);
         }
 
         // --- egui ---
@@ -464,7 +438,7 @@ impl State {
             });
             let egui_prims = egui.ctx.tessellate(egui_output.shapes);
             let screen_desc = egui_wgpu::renderer::ScreenDescriptor {
-                size_in_pixels: self.shader.color_buffer.size().into(),
+                size_in_pixels: self.shaders.output_texture.size().into(),
                 pixels_per_point: egui_winit::native_pixels_per_point(&self.window.winit),
             };
 
@@ -527,10 +501,11 @@ pub fn main() {
     let event_loop = EventLoop::new();
 
     let mut input = input::InputState::default();
+
     let mut window = Window::new(&event_loop);
     window.set_cursor_locked(true);
 
-    let gpu = pollster::block_on(init_wgpu(&window.winit));
+    let gpu = pollster::block_on(Gpu::new(&window.winit));
 
     let mut egui = Egui::new(&event_loop, &gpu);
     egui.winit
@@ -538,17 +513,17 @@ pub fn main() {
     let mut state = State::new(window, gpu);
     let mut last_frame = SystemTime::now();
 
-    event_loop.run(move |event, _, control_flow| match event {
+    event_loop.run(move |event, _, flow| match event {
         event if input.update(&event) => {}
         Event::WindowEvent { event, .. } => match event {
             e if egui.winit.on_event(&egui.ctx, &e).consumed => {}
-            WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+            WindowEvent::CloseRequested => *flow = ControlFlow::Exit,
             WindowEvent::Resized(size) => {
-                state.resize(vec2u!(size.width, size.height));
+                state.resize(UVec2::new(size.width, size.height));
             }
             WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
                 let size = *new_inner_size;
-                state.resize(vec2u!(size.width, size.height));
+                state.resize(UVec2::new(size.width, size.height));
             }
             _ => {}
         },
@@ -569,7 +544,7 @@ pub fn main() {
             match state.render(&mut egui) {
                 Ok(_) => {}
                 Err(wgpu::SurfaceError::Lost) => state.resize(state.window.size()),
-                Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
+                Err(wgpu::SurfaceError::OutOfMemory) => *flow = ControlFlow::Exit,
                 Err(e) => eprintln!("{e:?}"),
             };
         }

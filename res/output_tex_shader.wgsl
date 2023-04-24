@@ -1,13 +1,13 @@
-@group(0) @binding(0) var screen_sampler: sampler;
-@group(0) @binding(1) var color_buffer: texture_2d<f32>;
+@group(0) @binding(0) var tex: texture_2d<f32>;
+@group(0) @binding(1) var tex_s: sampler;
 
-struct VertexOutput {
+struct FsInput {
 	@builtin(position) pos: vec4<f32>,
 	@location(0) tex_coord: vec2<f32>,
 }
 
 @vertex
-fn vertex_main(@builtin(vertex_index) index: u32) -> VertexOutput {
+fn vs_main(@builtin(vertex_index) index: u32) -> FsInput {
 	var positions = array<vec2<f32>, 6>(
 		vec2(1.0, 1.0),
 		vec2(1.0, -1.0),
@@ -25,13 +25,13 @@ fn vertex_main(@builtin(vertex_index) index: u32) -> VertexOutput {
 		vec2(0.0, 0.0),
 	);
 	
-	var out: VertexOutput;
+	var out: FsInput;
 	out.pos = vec4(positions[index], 0.0, 1.0);
 	out.tex_coord = tex_coords[index];
 	return out;
 }
 
 @fragment
-fn fragment_main(@location(0) tex_coord: vec2<f32>) -> @location(0) vec4<f32> {
-	return textureSample(color_buffer, screen_sampler, tex_coord);
+fn fs_main(in: FsInput) -> @location(0) vec4<f32> {
+	return textureSample(tex, tex_s, in.tex_coord);
 }
