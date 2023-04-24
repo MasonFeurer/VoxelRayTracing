@@ -1,8 +1,10 @@
 # Voxel Ray Tracing
-Is a project I'm working on for rendering a voxel world, with ray tracing.
+My voxel rendering engine that makes use of ray tracing.
 
 ## Screenshots
-![Screenshot](./screenshots/230226-202607.png)
+![Screenshot](./screenshots/ss-230226-202607.png)
+
+![Screenshot](./screenshots/ss-230424-075112.png)
 
 ## Running
 In [releases](./releases), you can find binaries for MacOS.
