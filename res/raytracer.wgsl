@@ -289,3 +289,46 @@ fn update(@builtin(global_invocation_id) inv_id: vec3<u32>) {
     
     textureStore(output_texture_, screen_pos, result.color);
 }
+
+//typedef struct Pos2 {
+//    float x;
+//    float y;
+//} Pos2;
+//
+//Pos2* rayBoxIntersection(Pos2 rayPos, Pos2 rayDir, Pos2 boxMin, Pos2 boxMax) {
+//    float tmin = (boxMin.x - rayPos.x) / rayDir.x;
+//    float tmax = (boxMax.x - rayPos.x) / rayDir.x;
+//
+//    if (tmin > tmax) {
+//        float temp = tmin;
+//        tmin = tmax;
+//        tmax = temp;
+//    }
+//
+//    float tymin = (boxMin.y - rayPos.y) / rayDir.y;
+//    float tymax = (boxMax.y - rayPos.y) / rayDir.y;
+//
+//    if (tymin > tymax) {
+//        float temp = tymin;
+//        tymin = tymax;
+//        tymax = temp;
+//    }
+//
+//    if ((tmin > tymax) || (tymin > tmax)) {
+//        return NULL;
+//    }
+//
+//    if (tymin > tmin) {
+//        tmin = tymin;
+//    }
+//
+//    if (tymax < tmax) {
+//        tmax = tymax;
+//    }
+//
+//    Pos2* intersection = malloc(sizeof(Pos2));
+//    intersection->x = rayPos.x + (rayDir.x * tmin);
+//    intersection->y = rayPos.y + (rayDir.y * tmin);
+//
+//    return intersection;
+//}

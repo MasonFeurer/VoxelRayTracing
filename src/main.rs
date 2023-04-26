@@ -41,6 +41,10 @@ impl Window {
         <[u32; 2]>::from(self.winit.inner_size()).into()
     }
 
+    fn aspect(&self) -> f32 {
+        self.size().x as f32 / self.size().y as f32
+    }
+
     fn toggle_fullscreen(&mut self) {
         self.winit.set_fullscreen(match self.winit.fullscreen() {
             Some(_) => None,
@@ -132,6 +136,9 @@ struct State {
     svo_mesh: Option<GpuMesh>,
     show_svo: bool,
     world_depth: u32,
+
+    resize_output_tex: bool,
+    output_tex_h: u32,
 }
 impl State {
     fn new(window: Window, gpu: Gpu) -> Self {
@@ -144,11 +151,15 @@ impl State {
         world.init(7);
         world.populate();
 
-        let aspect = window.size().x as f32 / window.size().y as f32;
+        let aspect = window.aspect();
+
+        let output_tex_h = 800;
+
+        let output_tex_size = UVec2::new((output_tex_h as f32 * aspect) as u32, output_tex_h);
 
         let player = Player::new(Vec3::new(10.0, 80.0, 10.0), 0.2);
 
-        let shaders = Shaders::new(&gpu.device, gpu.surface_config.format, window.size());
+        let shaders = Shaders::new(&gpu.device, gpu.surface_config.format, output_tex_size);
         shaders.raytracer.world.write(&gpu.queue, &world);
         shaders.raytracer.settings.write(&gpu.queue, &settings);
         shaders
@@ -176,23 +187,38 @@ impl State {
             svo_mesh: None,
             show_svo: false,
             world_depth: 7,
+
+            output_tex_h,
+            resize_output_tex: false,
         }
     }
 
     fn update(&mut self, input: &InputState) {
+        if self.resize_output_tex {
+            self.resize_output_tex = false;
+
+            let aspect = self.window.aspect();
+            let size = UVec2::new(
+                (self.output_tex_h as f32 * aspect) as u32,
+                self.output_tex_h,
+            );
+            self.shaders.resize_output_tex(&self.gpu.device, size)
+        }
+
         if self.window.cursor_locked {
             self.player.update(1.0, input, &self.world);
-
-            let size = self.shaders.output_texture.size().as_vec2();
-            self.shaders
-                .raytracer
-                .cam_data
-                .write(&self.gpu.queue, &self.player.create_cam_data(size));
-            self.shaders
-                .color_shader
-                .view_mat
-                .write(&self.gpu.queue, &self.player.create_inv_view_mat());
         }
+
+        let size = self.shaders.output_texture.size().as_vec2();
+        self.shaders
+            .raytracer
+            .cam_data
+            .write(&self.gpu.queue, &self.player.create_cam_data(size));
+        self.shaders
+            .color_shader
+            .view_mat
+            .write(&self.gpu.queue, &self.player.create_inv_view_mat());
+
         if input.key_pressed(Key::T) {
             self.window.toggle_cursor_locked();
         }
@@ -253,18 +279,22 @@ impl State {
     }
 
     fn resize(&mut self, new_size: UVec2) {
+        let prev_output_aspect = self.shaders.output_texture.aspect();
+
         self.gpu.resize(new_size);
 
-        let proj_size = self.shaders.output_texture.size().as_vec2();
-        let aspect = proj_size.x / proj_size.y;
-        self.shaders
-            .raytracer
-            .cam_data
-            .write(&self.gpu.queue, &self.player.create_cam_data(proj_size));
-        self.shaders
-            .color_shader
-            .proj_mat
-            .write(&self.gpu.queue, &self.player.create_proj_mat(aspect));
+        self.shaders.raytracer.cam_data.write(
+            &self.gpu.queue,
+            &self.player.create_cam_data(self.window.size().as_vec2()),
+        );
+        self.shaders.color_shader.proj_mat.write(
+            &self.gpu.queue,
+            &self.player.create_proj_mat(self.window.aspect()),
+        );
+
+        if prev_output_aspect != self.window.aspect() {
+            self.resize_output_tex = true;
+        }
     }
 
     fn debug_ui(&mut self, ui: &mut egui::Ui) {
@@ -324,6 +354,20 @@ impl State {
 
         value_f32(ui, "speed", &mut self.player.speed, 0.1, 3.0);
 
+        label(
+            ui,
+            &format!("window aspect: {}", self.window.aspect()),
+            white,
+        );
+        label(
+            ui,
+            &format!(
+                "output texture aspect: {}",
+                self.shaders.output_texture.aspect()
+            ),
+            white,
+        );
+
         let prev_show_svo = self.show_svo;
         toggle_bool(ui, "sho svo", &mut self.show_svo);
         if self.show_svo && !prev_show_svo {
@@ -357,6 +401,10 @@ impl State {
         changed |= toggle(ui, "shadows", shadows);
         changed |= color_picker(ui, "sky color", sky_color);
 
+        if value_u32(ui, "vertical samples", &mut self.output_tex_h, 50, 2000) {
+            self.resize_output_tex = true;
+        }
+
         if changed {
             self.shaders
                 .raytracer
@@ -368,6 +416,10 @@ impl State {
     fn render(&mut self, egui: &mut Egui) -> Result<(), wgpu::SurfaceError> {
         // --- get surface and create encoder ---
         let output = self.gpu.surface.get_current_texture()?;
+        let surface_size = UVec2::new(
+            self.gpu.surface_config.width,
+            self.gpu.surface_config.height,
+        );
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -399,7 +451,12 @@ impl State {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 1.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 1.0,
+                        }),
                         store: true,
                     },
                 })],
@@ -453,7 +510,7 @@ impl State {
             });
             let egui_prims = egui.ctx.tessellate(egui_output.shapes);
             let screen_desc = egui_wgpu::renderer::ScreenDescriptor {
-                size_in_pixels: self.shaders.output_texture.size().into(),
+                size_in_pixels: surface_size.into(),
                 pixels_per_point: egui_winit::native_pixels_per_point(&self.window.winit),
             };
 

@@ -116,6 +116,10 @@ impl OutputTexture {
         let size = self.0.size();
         UVec2::new(size.width, size.height)
     }
+
+    pub fn aspect(&self) -> f32 {
+        self.size().x as f32 / self.size().y as f32
+    }
 }
 
 fn uniform_binding_type() -> BindingType {
@@ -232,6 +236,7 @@ impl ColorShader {
 
 pub struct OutputTexShader {
     pub pipeline: RenderPipeline,
+    pub bind_group_layout: BindGroupLayout,
     pub bind_group: BindGroup,
 
     pub tex: TextureView,
@@ -299,16 +304,29 @@ impl OutputTexShader {
         Self {
             pipeline,
             bind_group,
+            bind_group_layout,
 
             tex,
             tex_s,
         }
+    }
+
+    pub fn recreate_bind_group(&mut self, device: &Device) {
+        self.bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("output-tex-shader.bind_group"),
+            layout: &self.bind_group_layout,
+            entries: &bind_group_entries!(
+                0 => BindingResource::TextureView(&self.tex),
+                1 => BindingResource::Sampler(&self.tex_s),
+            ),
+        });
     }
 }
 
 pub struct Raytracer {
     pub pipeline: ComputePipeline,
     pub bind_group: BindGroup,
+    pub bind_group_layout: BindGroupLayout,
 
     pub output_texture: TextureView,
     pub cam_data: SimpleBuffer<CamData>,
@@ -369,6 +387,7 @@ impl Raytracer {
         Self {
             pipeline,
             bind_group,
+            bind_group_layout,
 
             output_texture,
             cam_data,
@@ -376,6 +395,20 @@ impl Raytracer {
             world,
             rand_src,
         }
+    }
+
+    pub fn recreate_bind_group(&mut self, device: &Device) {
+        self.bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("#raytracer.bind-broup"),
+            layout: &self.bind_group_layout,
+            entries: &bind_group_entries!(
+                0 => BindingResource::TextureView(&self.output_texture),
+                1 => self.cam_data.0.as_entire_binding(),
+                2 => self.settings.0.as_entire_binding(),
+                3 => self.world.0.as_entire_binding(),
+                4 => self.rand_src.0.as_entire_binding(),
+            ),
+        });
     }
 }
 
@@ -404,6 +437,17 @@ impl Shaders {
             raytracer,
             output_texture,
         }
+    }
+
+    pub fn resize_output_tex(&mut self, device: &Device, new_size: UVec2) {
+        self.output_texture = OutputTexture::new(device, new_size);
+
+        self.output_tex_shader.tex = self.output_texture.create_view();
+        self.output_tex_shader.tex_s = self.output_texture.create_sampler(device);
+        self.output_tex_shader.recreate_bind_group(device);
+
+        self.raytracer.output_texture = self.output_texture.create_view();
+        self.raytracer.recreate_bind_group(device);
     }
 }
 
