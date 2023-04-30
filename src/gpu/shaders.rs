@@ -1,4 +1,4 @@
-use crate::world::World;
+use crate::world::{VoxelProps, World};
 use glam::{Mat4, UVec2, Vec2, Vec3};
 use wgpu::*;
 
@@ -98,11 +98,11 @@ impl OutputTexture {
     pub fn create_sampler(&self, device: &Device) -> Sampler {
         device.create_sampler(&SamplerDescriptor {
             label: Some("#output-texture-sampler"),
-            address_mode_u: AddressMode::Repeat,
-            address_mode_v: AddressMode::Repeat,
-            address_mode_w: AddressMode::Repeat,
-            mag_filter: FilterMode::Linear,
-            min_filter: FilterMode::Nearest,
+            address_mode_u: AddressMode::ClampToEdge,
+            address_mode_v: AddressMode::ClampToEdge,
+            address_mode_w: AddressMode::ClampToEdge,
+            mag_filter: FilterMode::Nearest,
+            min_filter: FilterMode::Linear,
             mipmap_filter: FilterMode::Nearest,
             lod_min_clamp: 1.0,
             lod_max_clamp: 1.0,
@@ -333,6 +333,7 @@ pub struct Raytracer {
     pub settings: SimpleBuffer<Settings>,
     pub world: SimpleBuffer<World>,
     pub rand_src: SimpleBuffer<RandSrc>,
+    pub voxel_props: SimpleBuffer<[VoxelProps; 256]>,
 }
 impl Raytracer {
     pub fn new(device: &Device, output_texture: TextureView) -> Self {
@@ -345,6 +346,7 @@ impl Raytracer {
         let settings = SimpleBuffer::new(device, "", COPY_DST | UNIFORM);
         let world = SimpleBuffer::new(device, "", COPY_DST | STORAGE);
         let rand_src = SimpleBuffer::new(device, "", COPY_DST | STORAGE);
+        let voxel_props = SimpleBuffer::new(device, "", COPY_DST | STORAGE);
 
         let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("#raytracer.bind-group-layout"),
@@ -358,6 +360,7 @@ impl Raytracer {
                 2 => (COMPUTE) uniform_binding_type(),
                 3 => (COMPUTE) storage_binding_type(true),
                 4 => (COMPUTE) storage_binding_type(true),
+                5 => (COMPUTE) storage_binding_type(true),
             ),
         });
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -369,6 +372,7 @@ impl Raytracer {
                 2 => settings.0.as_entire_binding(),
                 3 => world.0.as_entire_binding(),
                 4 => rand_src.0.as_entire_binding(),
+                5 => voxel_props.0.as_entire_binding(),
             ),
         });
 
@@ -394,6 +398,7 @@ impl Raytracer {
             settings,
             world,
             rand_src,
+            voxel_props,
         }
     }
 
@@ -407,6 +412,7 @@ impl Raytracer {
                 2 => self.settings.0.as_entire_binding(),
                 3 => self.world.0.as_entire_binding(),
                 4 => self.rand_src.0.as_entire_binding(),
+                5 => self.voxel_props.0.as_entire_binding(),
             ),
         });
     }

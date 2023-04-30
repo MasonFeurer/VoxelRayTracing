@@ -12,7 +12,7 @@ use crate::gpu::{debug::Egui, ColoredMesh, Gpu, GpuMesh};
 use crate::input::{InputState, Key};
 use crate::math::dda::HitResult;
 use crate::player::Player;
-use crate::world::{Voxel, World};
+use crate::world::{voxel, DefaultWorldGen, Voxel, World};
 use glam::{Mat4, UVec2, Vec3};
 use std::time::SystemTime;
 use winit::event::*;
@@ -139,17 +139,23 @@ struct State {
 
     resize_output_tex: bool,
     output_tex_h: u32,
+
+    world_gen: DefaultWorldGen,
 }
 impl State {
     fn new(window: Window, gpu: Gpu) -> Self {
         let settings = Settings::default();
 
+        world::load_default_props(unsafe { &mut world::VOXEL_PROPS });
+
         let mut world = unsafe {
             let world = Box::<World>::new_zeroed();
             world.assume_init()
         };
-        world.init(7);
-        world.populate();
+        let world_depth = 7;
+        world.init(world_depth);
+        let world_gen = DefaultWorldGen::new(fastrand::i64(..), 1.0, 1.0);
+        world.populate_with(&world_gen);
 
         let aspect = window.aspect();
 
@@ -162,6 +168,10 @@ impl State {
         let shaders = Shaders::new(&gpu.device, gpu.surface_config.format, output_tex_size);
         shaders.raytracer.world.write(&gpu.queue, &world);
         shaders.raytracer.settings.write(&gpu.queue, &settings);
+        shaders
+            .raytracer
+            .voxel_props
+            .write(&gpu.queue, unsafe { &world::VOXEL_PROPS });
         shaders
             .color_shader
             .model_mat
@@ -180,13 +190,14 @@ impl State {
             player,
             hit_result: None,
             world,
-            voxel_in_hand: Voxel::DIRT,
+            world_gen,
+            voxel_in_hand: voxel::DIRT,
             last_second: SystemTime::now(),
             fps: 0,
             fps_temp: 0,
             svo_mesh: None,
             show_svo: false,
-            world_depth: 7,
+            world_depth,
 
             output_tex_h,
             resize_output_tex: false,
@@ -237,25 +248,34 @@ impl State {
         self.hit_result = self.player.cast_ray(&self.world);
 
         if input.key_pressed(Key::Key1) {
-            self.voxel_in_hand = Voxel::DIRT;
+            self.voxel_in_hand = voxel::DIRT;
         }
         if input.key_pressed(Key::Key2) {
-            self.voxel_in_hand = Voxel::GRASS;
+            self.voxel_in_hand = voxel::GRASS;
         }
         if input.key_pressed(Key::Key3) {
-            self.voxel_in_hand = Voxel::STONE;
+            self.voxel_in_hand = voxel::STONE;
         }
         if input.key_pressed(Key::Key4) {
-            self.voxel_in_hand = Voxel::GOLD;
+            self.voxel_in_hand = voxel::GOLD;
         }
         if input.key_pressed(Key::Key5) {
-            self.voxel_in_hand = Voxel::MIRROR;
+            self.voxel_in_hand = voxel::MIRROR;
         }
         if input.key_pressed(Key::Key6) {
-            self.voxel_in_hand = Voxel::WATER;
+            self.voxel_in_hand = voxel::WATER;
         }
         if input.key_pressed(Key::Key7) {
-            self.voxel_in_hand = Voxel::FIRE;
+            self.voxel_in_hand = voxel::MAGMA;
+        }
+        if input.key_pressed(Key::Key8) {
+            self.voxel_in_hand = voxel::BARK;
+        }
+        if input.key_pressed(Key::Key9) {
+            self.voxel_in_hand = voxel::MUD;
+        }
+        if input.key_pressed(Key::Key0) {
+            self.voxel_in_hand = voxel::CLAY;
         }
 
         if !self.window.cursor_locked {
@@ -263,7 +283,7 @@ impl State {
         }
 
         if let Some(hit) = self.hit_result && input.left_button_pressed() {
-            self.world.set_voxel(hit.pos, Voxel::AIR);
+            self.world.set_voxel(hit.pos, voxel::AIR);
             self.shaders.raytracer.world.write(&self.gpu.queue, &self.world);
             if self.show_svo {
                 self.svo_mesh = create_svo_mesh(&self.gpu, &self.world);
@@ -354,20 +374,6 @@ impl State {
 
         value_f32(ui, "speed", &mut self.player.speed, 0.1, 3.0);
 
-        label(
-            ui,
-            &format!("window aspect: {}", self.window.aspect()),
-            white,
-        );
-        label(
-            ui,
-            &format!(
-                "output texture aspect: {}",
-                self.shaders.output_texture.aspect()
-            ),
-            white,
-        );
-
         let prev_show_svo = self.show_svo;
         toggle_bool(ui, "sho svo", &mut self.show_svo);
         if self.show_svo && !prev_show_svo {
@@ -375,9 +381,12 @@ impl State {
         }
 
         value_u32(ui, "world depth", &mut self.world_depth, 2, 11);
+        value_f32(ui, "terrain scale", &mut self.world_gen.scale, 0.1, 10.0);
+        value_f32(ui, "terrain freq", &mut self.world_gen.freq, 0.1, 10.0);
+
         if ui.button("regenerate").clicked() {
             self.world.init(self.world_depth);
-            self.world.populate();
+            self.world.populate_with(&self.world_gen);
             self.shaders
                 .raytracer
                 .world

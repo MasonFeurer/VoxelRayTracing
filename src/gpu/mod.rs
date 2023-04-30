@@ -38,8 +38,8 @@ impl Gpu {
                 &DeviceDescriptor {
                     features: Features::empty(),
                     limits: Limits {
-                        max_storage_buffer_binding_size: 2_000_000_000,
-                        max_buffer_size: 2_000_000_000,
+                        max_storage_buffer_binding_size: 4_000_000_000,
+                        max_buffer_size: 4_000_000_000,
                         ..Default::default()
                     },
                     label: None,

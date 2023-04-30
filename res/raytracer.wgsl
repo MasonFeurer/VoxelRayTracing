@@ -32,11 +32,19 @@ struct World {
     nodes: array<Node>,
 }
 
+struct VoxelProps {
+    color: vec3<f32>,
+    pass_chance: f32,
+    emission: f32,
+    reflect_chance: f32,
+}
+
 @group(0) @binding(0) var output_texture_: texture_storage_2d<rgba8unorm, write>;
 @group(0) @binding(1) var<uniform> cam_data_: CamData;
 @group(0) @binding(2) var<uniform> settings_: Settings;
 @group(0) @binding(3) var<storage, read> world_: World;
 @group(0) @binding(4) var<storage, read> rand_src_: array<f32, 128>;
+@group(0) @binding(5) var<storage, read> voxel_props_: array<VoxelProps>;
 
 var<private> rand_float_idx__: i32 = 0;
 
@@ -49,58 +57,6 @@ const MAGMA: u32 = 5u;
 const WATER: u32 = 6u;
 const SAND: u32 = 10u;
 
-var<private> voxel_colors__: array<vec4<f32>, 15> = array<vec4<f32>, 15>(
-    vec4<f32>(1.0, 1.0, 0.0, 0.0), // AIR
-    vec4<f32>(0.4, 0.4, 0.4, 1.0), // STONE
-    vec4<f32>(0.4, 0.2, 0.0, 1.0), // DIRT
-    vec4<f32>(0.1, 0.7, 0.1, 1.0), // GRASS
-    vec4<f32>(1.0, 0.9, 0.2, 1.0), // FIRE
-    vec4<f32>(0.8, 0.0, 0.0, 1.0), // MAGMA
-    vec4<f32>(0.0, 0.0, 1.0, 0.2), // WATER
-    vec4<f32>(1.0, 1.0, 1.0, 1.0), // WOOD TODO
-    vec4<f32>(1.0, 1.0, 1.0, 1.0), // BARK TODO
-    vec4<f32>(1.0, 1.0, 1.0, 1.0), // LEAVES TODO
-    vec4<f32>(0.9, 0.9, 0.5, 1.0), // SAND
-    vec4<f32>(1.0, 1.0, 1.0, 1.0), // MUD TODO
-    vec4<f32>(1.0, 1.0, 1.0, 1.0), // CLAY TODO
-    vec4<f32>(1.0, 1.0, 0.0, 1.0), // GOLD
-    vec4<f32>(1.0, 1.0, 1.0, 1.0), // MIRROR
-);
-var<private> voxel_surface_scatter__: array<f32, 15> = array<f32, 15>(
-    0.0, // AIR
-    0.8, // STONE
-    0.8, // DIRT
-    0.8, // GRASS
-    0.0, // FIRE
-    0.2, // MAGMA
-    0.2, // WATER
-    0.8, // WOOD
-    0.8, // BARK
-    0.8, // LEAVES
-    0.3, // SAND
-    0.3, // MUD
-    0.3, // CLAY
-    0.0, // GOLD
-    0.0, // MIRROR
-);
-var<private> voxel_reflection__: array<f32, 15> = array<f32, 15>(
-    0.0, // AIR
-    0.0, // STONE
-    0.0, // DIRT
-    0.0, // GRASS
-    0.0, // FIRE
-    0.0, // MAGMA
-    0.0, // WATER
-    0.0, // WOOD
-    0.0, // BARK
-    0.0, // LEAVES
-    0.2, // SAND
-    0.3, // MUD
-    0.3, // CLAY
-    0.5, // GOLD
-    1.0, // MIRROR
-);
-
 fn rand_float() -> f32 {
     let f = rand_src_[rand_float_idx__];
     rand_float_idx__ += 1;
@@ -110,16 +66,38 @@ fn rand_float() -> f32 {
     return f;
 }
 
+fn rng_next(state: ptr<function, u32>) -> f32 {
+    *state = *state * 747796405u + 2891336453u;
+    var result = ((*state >> ((*state >> 28u) + 4u)) ^ *state) * 277803737u;
+    result = (result >> 22u) ^ result;
+    return f32(result) / 4294967295.0;
+}
+fn rng_next_norm(state: ptr<function, u32>) -> f32 {
+    let theta = 2.0 * 3.14159265 * rng_next(state);
+    let rho = sqrt(-2.0 * log(rng_next(state)));
+    return rho * cos(theta);
+}
+fn rng_next_dir(state: ptr<function, u32>) -> vec3<f32> {
+    let x = rng_next_norm(state);
+    let y = rng_next_norm(state);
+    let z = rng_next_norm(state);
+    return normalize(vec3(x, y, z));
+}
+fn rng_next_hem_dir(state: ptr<function, u32>, norm: vec3<f32>) -> vec3<f32> {
+    let dir = rng_next_dir(state);
+    return dir * sign(dot(norm, dir));
+}
+
 struct Ray {
     origin: vec3<f32>,
     dir: vec3<f32>,
 }
 struct HitResult {
 	hit: bool,
-    color: vec4<f32>,
+    color: vec3<f32>,
     norm: vec3<f32>,
     pos: vec3<f32>,
-    reflection: f32,
+    reflect_chance: f32,
 }
 
 fn get_node(idx: u32) -> Node {
@@ -169,7 +147,7 @@ fn find_node(pos: vec3<f32>) -> FoundNode {
     return out;
 }
 
-fn cast_ray(start_ray: Ray) -> HitResult {
+fn cast_ray(rng: ptr<function, u32>, start_ray: Ray) -> HitResult {
     let dir = start_ray.dir;
     let mask = vec3<f32>(dir > 0.0);
     let imask = 1.0 - mask;
@@ -180,7 +158,7 @@ fn cast_ray(start_ray: Ray) -> HitResult {
     let world_max = vec3(f32(world_.size));
     
     var result: HitResult;
-    result.color = settings_.sky_color;
+    result.color = settings_.sky_color.xyz;
     
     if any(ray_pos <= world_min) | any(ray_pos >= world_max) {
         return result;
@@ -202,8 +180,9 @@ fn cast_ray(start_ray: Ray) -> HitResult {
         iter_count += 1u;
         
         let found_node = find_node(ray_pos);
-        if node_voxel(get_node(found_node.idx)) != AIR {
-            voxel = node_voxel(get_node(found_node.idx));
+        voxel = node_voxel(get_node(found_node.idx));
+        
+        if voxel_props_[voxel].pass_chance != 1.0 {
             break;
         }
         let node_min = vec3<f32>(found_node.min);
@@ -221,10 +200,10 @@ fn cast_ray(start_ray: Ray) -> HitResult {
     }
     
     result.norm = norm;
-    result.color = voxel_colors__[voxel];
+    result.color = voxel_props_[voxel].color;
     result.hit = true;
     result.pos = ray_pos;
-    result.reflection = voxel_reflection__[voxel];
+    result.reflect_chance = voxel_props_[voxel].reflect_chance;
     
     if result.norm.x != 0.0 {
         result.color *= 0.5;
@@ -258,36 +237,47 @@ fn overlay_color(back: vec4<f32>, front: vec4<f32>, factor: f32) -> vec4<f32> {
 
 @compute @workgroup_size(8, 8, 1)
 fn update(@builtin(global_invocation_id) inv_id: vec3<u32>) {
-    let screen_pos: vec2<i32> = vec2(i32(inv_id.x), i32(inv_id.y));
+    let screen_pos = vec2<i32>(inv_id.xy);
+    var rng = inv_id.y * u32(cam_data_.proj_size.x) + inv_id.x;
 
 	var ray = create_ray_from_screen(screen_pos);
-    var result = cast_ray(ray);
+    var result = cast_ray(&rng, ray);
     var reflect_count: u32 = 0u;
-    
-    while result.reflection > 0.0 && reflect_count < settings_.max_reflections {
-        reflect_count = reflect_count + 1u;
-        
-        let factor = result.reflection;
-        let original_color = result.color;
-        
-        var new_ray: Ray;
-        new_ray.dir = ray.dir - 2.0 * result.norm * dot(result.norm, ray.dir);
-        new_ray.origin = result.pos + new_ray.dir * 0.01;
-    
-        result = cast_ray(new_ray);
-        result.color = overlay_color(original_color, result.color, factor);
-    }
+
+//    while reflect_count < settings_.max_reflections {
+//        reflect_count += 1u;
+//        
+//        let original_color = vec4(result.color, 1.0);
+//        
+//        var specular_ray: Ray;
+//        specular_ray.dir = ray.dir - 2.0 * result.norm * dot(result.norm, ray.dir);
+//        specular_ray.origin = result.pos + specular_ray.dir * 0.01;
+//        
+//        var scattered_ray: Ray;
+//        scattered_ray.dir = rng_next_hem_dir(&rng, result.norm);
+//        scattered_ray.origin = result.pos + scattered_ray.dir * 0.01;
+//        
+//        result = cast_ray(&rng, specular_ray);
+//    
+//        result.color = overlay_color(original_color, vec4(result.color, 1.0), 0.5).xyz;
+//        
+//        break;
+//        // if rng_next(&rng) > result.reflect_chance {
+//        //     break;
+//        // }
+//    }
     if result.hit && settings_.shadows == 1u {
         var to_sun: Ray;
         to_sun.dir = normalize(settings_.sun_pos - result.pos);
         to_sun.origin = result.pos + result.norm * 0.001;
-        let to_sun_result = cast_ray(to_sun);
+        let to_sun_result = cast_ray(&rng, to_sun);
         if to_sun_result.hit {
             result.color *= 0.6;
         }
     }
+    result.color = result.color;
     
-    textureStore(output_texture_, screen_pos, result.color);
+    textureStore(output_texture_, screen_pos, vec4(result.color, 1.0));
 }
 
 //typedef struct Pos2 {

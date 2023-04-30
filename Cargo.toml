@@ -10,7 +10,7 @@ env_logger = "0.10"
 log = "0.4.17"
 pollster = "0.3.0"
 fastrand = "^1.0"
-glam = "0.23"
+glam = "0.24"
 
 egui = "0.21"
 egui-wgpu = "0.21"

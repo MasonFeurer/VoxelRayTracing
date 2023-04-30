@@ -1,36 +1,39 @@
 pub mod open_simplex;
 
 use crate::math::aabb::Aabb;
-use glam::{IVec3, Vec2};
+use glam::{IVec3, Vec2, Vec3};
 use open_simplex::{init_gradients, MultiNoiseMap, NoiseMap};
+
+pub mod voxel {
+    use super::Voxel;
+    pub const AIR: Voxel = Voxel(0);
+    pub const STONE: Voxel = Voxel(1);
+    pub const DIRT: Voxel = Voxel(2);
+    pub const GRASS: Voxel = Voxel(3);
+    pub const FIRE: Voxel = Voxel(4);
+    pub const MAGMA: Voxel = Voxel(5);
+    pub const WATER: Voxel = Voxel(6);
+    pub const WOOD: Voxel = Voxel(7);
+    pub const BARK: Voxel = Voxel(8);
+    pub const LEAVES: Voxel = Voxel(9);
+    pub const SAND: Voxel = Voxel(10);
+    pub const MUD: Voxel = Voxel(11);
+    pub const CLAY: Voxel = Voxel(12);
+    pub const GOLD: Voxel = Voxel(13);
+    pub const MIRROR: Voxel = Voxel(14);
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Voxel(pub u8);
 impl Voxel {
-    pub const AIR: Self = Self(0);
-    pub const STONE: Self = Self(1);
-    pub const DIRT: Self = Self(2);
-    pub const GRASS: Self = Self(3);
-    pub const FIRE: Self = Self(4);
-    pub const MAGMA: Self = Self(5);
-    pub const WATER: Self = Self(6);
-    pub const WOOD: Self = Self(7);
-    pub const BARK: Self = Self(8);
-    pub const LEAVES: Self = Self(9);
-    pub const SAND: Self = Self(10);
-    pub const MUD: Self = Self(11);
-    pub const CLAY: Self = Self(12);
-    pub const GOLD: Self = Self(13);
-    pub const MIRROR: Self = Self(14);
-
     #[inline(always)]
     pub fn is_empty(self) -> bool {
-        self == Self::AIR || self == Self::WATER
+        self == voxel::AIR || self == voxel::WATER
     }
     #[inline(always)]
     pub fn is_solid(self) -> bool {
-        self != Self::AIR && self != Self::WATER
+        self != voxel::AIR && self != voxel::WATER
     }
 
     pub fn display(self) -> &'static str {
@@ -56,6 +59,70 @@ static VOXEL_DISPLAY_NAMES: &[&str] = &[
     "gold",
     "mirror",
 ];
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+// color: vec3<f32>,
+// pass_chance: f32,
+// emission: f32,
+// reflect_chance: f32,
+pub struct VoxelProps {
+    color: [f32; 3],
+    pass_chance: f32,
+    emission: f32,
+    reflect_chance: f32,
+}
+impl VoxelProps {
+    const DEFAULT: Self = Self {
+        color: [0.0; 3],
+        pass_chance: 0.0,
+        emission: 0.0,
+        reflect_chance: 0.0,
+    };
+
+    const fn color(mut self, color: [f32; 3]) -> Self {
+        self.color = color;
+        self
+    }
+
+    const fn emit(mut self, emission: f32) -> Self {
+        self.emission = emission;
+        self
+    }
+
+    const fn pass(mut self, pass_chance: f32) -> Self {
+        self.pass_chance = pass_chance;
+        self
+    }
+
+    const fn reflect(mut self, reflect_chance: f32) -> Self {
+        self.reflect_chance = reflect_chance;
+        self
+    }
+}
+
+pub static mut VOXEL_PROPS: [VoxelProps; 256] = [VoxelProps::DEFAULT; 256];
+
+pub fn load_default_props(props: &mut [VoxelProps]) {
+    const DEFAULT: VoxelProps = VoxelProps::DEFAULT;
+    use voxel::*;
+
+    props[AIR.0 as usize] = DEFAULT.pass(1.0);
+    props[STONE.0 as usize] = DEFAULT.color([0.4; 3]);
+    props[DIRT.0 as usize] = DEFAULT.color([0.4, 0.2, 0.0]);
+    props[GRASS.0 as usize] = DEFAULT.color([0.1, 0.7, 0.1]);
+    props[FIRE.0 as usize] = DEFAULT.color([1.0, 0.9, 0.2]).emit(0.5);
+    props[MAGMA.0 as usize] = DEFAULT.color([0.75, 0.18, 0.01]).emit(0.8).reflect(0.5);
+    props[WATER.0 as usize] = DEFAULT.color([0.0, 0.0, 1.0]).pass(0.5).reflect(0.5);
+    props[WOOD.0 as usize] = DEFAULT;
+    props[BARK.0 as usize] = DEFAULT.color([0.86, 0.85, 0.82]);
+    props[LEAVES.0 as usize] = DEFAULT.color([0.23, 0.52, 0.0]);
+    props[SAND.0 as usize] = DEFAULT.color([0.99, 0.92, 0.53]).reflect(0.2);
+    props[MUD.0 as usize] = DEFAULT.color([0.22, 0.13, 0.02]).reflect(0.4);
+    props[CLAY.0 as usize] = DEFAULT.color([0.35, 0.30, 0.25]).reflect(0.4);
+    props[GOLD.0 as usize] = DEFAULT.color([0.83, 0.68, 0.22]).reflect(0.7);
+    props[MIRROR.0 as usize] = DEFAULT.reflect(1.0);
+}
 
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
@@ -165,7 +232,7 @@ impl Node {
     pub fn split(&mut self, first_child: u32) {
         self.set_split_flag(true);
         self.first_child = first_child;
-        self.set_voxel(Voxel::MAGMA);
+        self.set_voxel(voxel::MAGMA);
     }
 
     pub fn simplify(&mut self, result: Voxel) {
@@ -174,7 +241,11 @@ impl Node {
     }
 }
 
-const MAX_NODES: usize = 90_000_000;
+pub trait WorldPopulator {
+    fn populate(&self, min: IVec3, max: IVec3, world: &mut World);
+}
+
+const MAX_NODES: usize = 20_000_000;
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
@@ -191,7 +262,7 @@ impl World {
         self.max_depth = max_depth;
         self.size = 1 << max_depth;
         self.start_search = 1;
-        self.nodes[0] = Node::new(Voxel::AIR, 0, false);
+        self.nodes[0] = Node::new(voxel::AIR, 0, false);
         for node in &mut self.nodes[1..] {
             node.set_free_flag(true);
         }
@@ -345,27 +416,11 @@ impl World {
         0
     }
 
-    pub fn populate(&mut self) {
-        let seed = fastrand::i64(..);
-        let mut gen = WorldGen::new(seed);
-        gen.populate([0, self.size as i32], [0, self.size as i32], self);
+    pub fn populate_with<P: WorldPopulator>(&mut self, p: &P) {
+        let min = IVec3::ZERO;
+        let max = IVec3::splat(self.size as i32);
+        p.populate(min, max, self);
     }
-    // pub fn populate(&mut self) {
-    //     for x in 0..self.size as i32 {
-    //         for y in 0..self.size as i32 {
-    //             for z in 0..3 {
-    //                 self.set_voxel(IVec3 { x, y, z }, Voxel::STONE);
-    //             }
-    //         }
-    //     }
-    //     for x in 0..self.size as i32 {
-    //         for z in 0..self.size as i32 {
-    //             for y in 0..3 {
-    //                 self.set_voxel(IVec3 { x, y, z }, Voxel::DIRT);
-    //             }
-    //         }
-    //     }
-    // }
 
     pub fn get_collisions_w(&self, aabb: &Aabb) -> Vec<Aabb> {
         let mut aabbs = Vec::new();
@@ -378,7 +433,7 @@ impl World {
                 for z in from.z..to.z {
                     let pos = IVec3 { x, y, z };
 
-                    let voxel = self.get_voxel(pos).unwrap_or(Voxel::AIR);
+                    let voxel = self.get_voxel(pos).unwrap_or(voxel::AIR);
 
                     if !voxel.is_empty() {
                         let min = pos.as_vec3();
@@ -392,15 +447,37 @@ impl World {
     }
 }
 
-pub struct WorldGen {
+pub struct DebugWorldGen;
+impl WorldPopulator for DebugWorldGen {
+    fn populate(&self, min: IVec3, max: IVec3, world: &mut World) {
+        for x in min.x..max.x {
+            for y in min.y..max.y {
+                for z in 0..3 {
+                    world.set_voxel(IVec3 { x, y, z }, voxel::STONE);
+                }
+            }
+        }
+        for x in min.x..max.x {
+            for z in min.z..max.z {
+                for y in 0..3 {
+                    world.set_voxel(IVec3 { x, y, z }, voxel::DIRT);
+                }
+            }
+        }
+    }
+}
+
+pub struct DefaultWorldGen {
     pub seed: i64,
 
     pub height_map: MultiNoiseMap,
     pub height_scale_map: MultiNoiseMap,
     pub height_freq_map: MultiNoiseMap,
+    pub scale: f32,
+    pub freq: f32,
 }
-impl WorldGen {
-    pub fn new(seed: i64) -> Self {
+impl DefaultWorldGen {
+    pub fn new(seed: i64, scale: f32, freq: f32) -> Self {
         init_gradients();
         let height_scale_map =
             MultiNoiseMap::new(&[NoiseMap::new(seed.wrapping_mul(47828974), 0.005, 2.0)]);
@@ -419,36 +496,78 @@ impl WorldGen {
             height_map,
             height_scale_map,
             height_freq_map,
+            scale,
+            freq,
         }
     }
 
     pub fn get_terrain_h(&self, pos: Vec2) -> f32 {
-        let height_scale = self.height_scale_map.get(pos);
-        let height_freq = self.height_freq_map.get(pos) * 2.0;
+        let height_scale = self.height_scale_map.get(pos) * self.scale;
+        let height_freq = self.height_freq_map.get(pos) * self.freq;
         self.height_map.get(pos * height_freq) * height_scale
     }
 
-    pub fn populate(&mut self, x: [i32; 2], z: [i32; 2], world: &mut World) {
-        for x in x[0]..x[1] {
-            for z in z[0]..z[1] {
-                let y = self.get_terrain_h(Vec2::new(x as f32, z as f32)) as i32;
+    pub fn spawn_tree(&self, world: &mut World, surface: IVec3) {
+        let h = fastrand::u32(6..14) as i32;
+        for i in 0..h {
+            world.set_voxel(surface + IVec3::new(0, i, 0), voxel::BARK);
+        }
+        self.sphere(
+            world,
+            surface + IVec3::new(0, h as i32, 0),
+            4,
+            voxel::LEAVES,
+        );
+    }
+
+    pub fn sphere(&self, world: &mut World, pos: IVec3, r: u32, voxel: Voxel) {
+        let pos_center = pos.as_vec3() + Vec3::splat(0.5);
+        let min = pos - IVec3::splat(r as i32);
+        let max = pos + IVec3::splat(r as i32);
+        let r_sq = r as f32 * r as f32;
+
+        for x in min.x..max.x {
+            for y in min.y..max.y {
+                for z in min.z..max.z {
+                    let block_center = IVec3 { x, y, z }.as_vec3() + Vec3::splat(0.5);
+                    if (block_center - pos_center).length_squared() >= r_sq {
+                        continue;
+                    }
+                    world.set_voxel(IVec3 { x, y, z }, voxel);
+                }
+            }
+        }
+    }
+}
+impl WorldPopulator for DefaultWorldGen {
+    fn populate(&self, min: IVec3, max: IVec3, world: &mut World) {
+        for x in min.x..max.x {
+            for z in min.z..max.z {
+                let noise_pos = Vec2::new(x as f32, z as f32) + Vec2::splat(0.5);
+
+                let y = self.get_terrain_h(noise_pos) as i32;
+                let surface_pos = IVec3 { x, y, z };
 
                 // set stone
                 world.set_voxels(
                     IVec3::new(x, 0, z),
                     IVec3::new(x + 1, y - 3, z + 1),
-                    Voxel::STONE,
+                    voxel::STONE,
                 );
 
                 // set dirt
                 world.set_voxels(
                     IVec3::new(x, y - 3, z),
                     IVec3::new(x + 1, y, z + 1),
-                    Voxel::DIRT,
+                    voxel::DIRT,
                 );
 
                 // set surface
-                world.set_voxel(IVec3::new(x, y, z), Voxel::GRASS);
+                world.set_voxel(surface_pos, voxel::GRASS);
+
+                if fastrand::u32(0..300) == 0 {
+                    self.spawn_tree(world, surface_pos);
+                }
             }
         }
     }
