@@ -21,6 +21,7 @@ pub mod voxel {
     pub const CLAY: Voxel = Voxel(12);
     pub const GOLD: Voxel = Voxel(13);
     pub const MIRROR: Voxel = Voxel(14);
+    pub const BRIGHT: Voxel = Voxel(15);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -58,6 +59,7 @@ static VOXEL_DISPLAY_NAMES: &[&str] = &[
     "clay",
     "gold",
     "mirror",
+    "bright",
 ];
 
 #[derive(Clone, Copy)]
@@ -122,6 +124,7 @@ pub fn load_default_props(props: &mut [VoxelProps]) {
     props[CLAY.0 as usize] = DEFAULT.color([0.35, 0.30, 0.25]).reflect(0.4);
     props[GOLD.0 as usize] = DEFAULT.color([0.83, 0.68, 0.22]).reflect(0.7);
     props[MIRROR.0 as usize] = DEFAULT.reflect(1.0);
+    props[BRIGHT.0 as usize] = DEFAULT.color([1.0; 3]).emit(1.0);
 }
 
 #[derive(Debug, Clone, Copy)]

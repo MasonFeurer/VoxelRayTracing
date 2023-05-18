@@ -7,13 +7,17 @@ pub mod math;
 pub mod player;
 pub mod world;
 
+// Intersesting WorldGen settings:
+// scale: 5.4
+// freq: 1.3
+
 use crate::gpu::shaders::{Settings, Shaders};
-use crate::gpu::{debug::Egui, ColoredMesh, Gpu, GpuMesh};
+use crate::gpu::{debug::Egui, Gpu};
 use crate::input::{InputState, Key};
 use crate::math::dda::HitResult;
 use crate::player::Player;
 use crate::world::{voxel, DefaultWorldGen, Voxel, World};
-use glam::{Mat4, UVec2, Vec3};
+use glam::{UVec2, Vec3};
 use std::time::SystemTime;
 use winit::event::*;
 use winit::event_loop::{ControlFlow, EventLoop};
@@ -71,55 +75,6 @@ impl Window {
     }
 }
 
-fn create_svo_mesh(gpu: &Gpu, world: &World) -> Option<GpuMesh> {
-    if world.count_nodes() >= 1_000_000 {
-        println!("Too many nodes for a debug mesh");
-        return None;
-    }
-    fn show_node(
-        out: &mut ColoredMesh,
-        world: &World,
-        node_idx: u32,
-        depth: u32,
-        center: Vec3,
-        size: f32,
-    ) {
-        let node = world.get_node(node_idx);
-        let c = depth as f32 / 8.0;
-        out.cube_frame(center - size * 0.5, center + size * 0.5, [c, c, c, 1.0]);
-        if !node.is_split() {
-            return;
-        }
-        for idx in 0..8 {
-            let dir = Vec3::new(
-                (((idx & 0b001) >> 0) * 2) as f32 - 1.0,
-                (((idx & 0b010) >> 1) * 2) as f32 - 1.0,
-                (((idx & 0b100) >> 2) * 2) as f32 - 1.0,
-            );
-            let center = center + dir * (size * 0.25);
-            show_node(
-                out,
-                world,
-                node.get_child(idx),
-                depth + 1,
-                center,
-                size * 0.5,
-            )
-        }
-    }
-
-    let mut out = ColoredMesh::default();
-    show_node(
-        &mut out,
-        world,
-        world.root_idx,
-        0,
-        Vec3::splat(world.size as f32 * 0.5),
-        world.size as f32,
-    );
-    Some(out.upload(gpu))
-}
-
 struct State {
     window: Window,
     gpu: Gpu,
@@ -133,18 +88,22 @@ struct State {
     last_second: SystemTime,
     fps: u32,
     fps_temp: u32,
-    svo_mesh: Option<GpuMesh>,
-    show_svo: bool,
     world_depth: u32,
 
     resize_output_tex: bool,
     output_tex_h: u32,
 
     world_gen: DefaultWorldGen,
+    sun_angle: f32,
+    frame_count: u32,
 }
 impl State {
     fn new(window: Window, gpu: Gpu) -> Self {
-        let settings = Settings::default();
+        let mut settings = Settings::default();
+        settings.samples_per_pixel = 1;
+        settings.max_ray_bounces = 3;
+        settings.max_ray_steps = 100;
+        settings.sky_color = [0.3, 0.7, 1.0];
 
         world::load_default_props(unsafe { &mut world::VOXEL_PROPS });
 
@@ -159,11 +118,18 @@ impl State {
 
         let aspect = window.aspect();
 
-        let output_tex_h = 800;
+        let output_tex_h = 600;
 
         let output_tex_size = UVec2::new((output_tex_h as f32 * aspect) as u32, output_tex_h);
 
         let player = Player::new(Vec3::new(10.0, 80.0, 10.0), 0.2);
+
+        settings.sun_pos = Vec3::new(
+            0.0f32.to_radians().sin() * 500.0,
+            0.0f32.to_radians().cos() * 500.0,
+            world.size as f32 * 0.5,
+        )
+        .to_array();
 
         let shaders = Shaders::new(&gpu.device, gpu.surface_config.format, output_tex_size);
         shaders.raytracer.world.write(&gpu.queue, &world);
@@ -172,14 +138,7 @@ impl State {
             .raytracer
             .voxel_props
             .write(&gpu.queue, unsafe { &world::VOXEL_PROPS });
-        shaders
-            .color_shader
-            .model_mat
-            .write(&gpu.queue, &Mat4::IDENTITY);
-        shaders
-            .color_shader
-            .proj_mat
-            .write(&gpu.queue, &player.create_proj_mat(aspect));
+        shaders.raytracer.frame_count.write(&gpu.queue, &0);
 
         Self {
             window,
@@ -195,12 +154,12 @@ impl State {
             last_second: SystemTime::now(),
             fps: 0,
             fps_temp: 0,
-            svo_mesh: None,
-            show_svo: false,
             world_depth,
 
             output_tex_h,
             resize_output_tex: false,
+            sun_angle: 0.0,
+            frame_count: 0,
         }
     }
 
@@ -217,7 +176,16 @@ impl State {
         }
 
         if self.window.cursor_locked {
+            let prev_pos = self.player.pos;
+            let prev_rot = self.player.rot;
             self.player.update(1.0, input, &self.world);
+
+            if prev_pos != self.player.pos || prev_rot != self.player.rot {
+                // self.shaders.output_texture.clear(&self.gpu);
+                self.shaders
+                    .resize_output_tex(&self.gpu.device, self.shaders.output_texture.size());
+                self.frame_count = 0;
+            }
         }
 
         let size = self.shaders.output_texture.size().as_vec2();
@@ -225,10 +193,6 @@ impl State {
             .raytracer
             .cam_data
             .write(&self.gpu.queue, &self.player.create_cam_data(size));
-        self.shaders
-            .color_shader
-            .view_mat
-            .write(&self.gpu.queue, &self.player.create_inv_view_mat());
 
         if input.key_pressed(Key::T) {
             self.window.toggle_cursor_locked();
@@ -236,14 +200,6 @@ impl State {
         if input.key_pressed(Key::F) {
             self.window.toggle_fullscreen();
         }
-        let mut rand_floats = [0.0; 128];
-        for i in 0..rand_floats.len() {
-            rand_floats[i] = fastrand::f32();
-        }
-        self.shaders
-            .raytracer
-            .rand_src
-            .write(&self.gpu.queue, &rand_floats);
 
         self.hit_result = self.player.cast_ray(&self.world);
 
@@ -260,7 +216,8 @@ impl State {
             self.voxel_in_hand = voxel::GOLD;
         }
         if input.key_pressed(Key::Key5) {
-            self.voxel_in_hand = voxel::MIRROR;
+            // self.voxel_in_hand = voxel::MIRROR;
+            self.voxel_in_hand = voxel::BRIGHT;
         }
         if input.key_pressed(Key::Key6) {
             self.voxel_in_hand = voxel::WATER;
@@ -285,140 +242,14 @@ impl State {
         if let Some(hit) = self.hit_result && input.left_button_pressed() {
             self.world.set_voxel(hit.pos, voxel::AIR);
             self.shaders.raytracer.world.write(&self.gpu.queue, &self.world);
-            if self.show_svo {
-                self.svo_mesh = create_svo_mesh(&self.gpu, &self.world);
-            }
+            self.shaders.resize_output_tex(&self.gpu.device, self.shaders.output_texture.size());
+            self.frame_count = 0;
         }
         if let Some(hit) = self.hit_result && input.right_button_pressed() {
             self.world.set_voxel(hit.pos + hit.face, self.voxel_in_hand);
             self.shaders.raytracer.world.write(&self.gpu.queue, &self.world);
-            if self.show_svo {
-                self.svo_mesh = create_svo_mesh(&self.gpu, &self.world);
-            }
-        }
-    }
-
-    fn resize(&mut self, new_size: UVec2) {
-        let prev_output_aspect = self.shaders.output_texture.aspect();
-
-        self.gpu.resize(new_size);
-
-        self.shaders.raytracer.cam_data.write(
-            &self.gpu.queue,
-            &self.player.create_cam_data(self.window.size().as_vec2()),
-        );
-        self.shaders.color_shader.proj_mat.write(
-            &self.gpu.queue,
-            &self.player.create_proj_mat(self.window.aspect()),
-        );
-
-        if prev_output_aspect != self.window.aspect() {
-            self.resize_output_tex = true;
-        }
-    }
-
-    fn debug_ui(&mut self, ui: &mut egui::Ui) {
-        use egui::*;
-
-        const SPACING: f32 = 5.0;
-        fn value_f32(ui: &mut Ui, label: &str, v: &mut f32, min: f32, max: f32) -> bool {
-            ui.add_space(SPACING);
-            ui.label(label);
-            ui.add(Slider::new(v, min..=max)).changed()
-        }
-        fn value_u32(ui: &mut Ui, label: &str, v: &mut u32, min: u32, max: u32) -> bool {
-            ui.add_space(SPACING);
-            ui.label(label);
-            ui.add(Slider::new(v, min..=max)).changed()
-        }
-        fn color_picker(ui: &mut Ui, label: &str, color: &mut [f32; 4]) -> bool {
-            ui.add_space(SPACING);
-            ui.label(label);
-            ui.color_edit_button_rgba_premultiplied(color).changed()
-        }
-        fn toggle_bool(ui: &mut Ui, label: &str, v: &mut bool) -> bool {
-            ui.add_space(SPACING);
-            let result = ui.checkbox(v, label).changed();
-            result
-        }
-        fn toggle(ui: &mut Ui, label: &str, v: &mut u32) -> bool {
-            ui.add_space(SPACING);
-            let mut b = *v == 1;
-            let result = ui.checkbox(&mut b, label).changed();
-            *v = b as u32;
-            result
-        }
-        fn label(ui: &mut Ui, label: &str, color: Color32) {
-            ui.label(RichText::new(label).color(color));
-        }
-
-        let in_hand = self.voxel_in_hand;
-        let [red, green, blue, white] = [
-            Color32::from_rgb(255, 150, 0),
-            Color32::from_rgb(0, 255, 0),
-            Color32::from_rgb(0, 255, 255),
-            Color32::WHITE,
-        ];
-
-        ui.add_space(3.0);
-        label(ui, &format!("fps: {}", self.fps), white);
-        ui.add_space(3.0);
-        label(ui, &format!("in hand: {:?}", in_hand.display()), white);
-        ui.add_space(3.0);
-        label(ui, &format!("on ground: {}", self.player.on_ground), white);
-
-        ui.add_space(3.0);
-        label(ui, &format!("X: {:#}", self.player.pos.x), red);
-        label(ui, &format!("Y: {:#}", self.player.pos.y), green);
-        label(ui, &format!("Z: {:#}", self.player.pos.z), blue);
-
-        value_f32(ui, "speed", &mut self.player.speed, 0.1, 3.0);
-
-        let prev_show_svo = self.show_svo;
-        toggle_bool(ui, "sho svo", &mut self.show_svo);
-        if self.show_svo && !prev_show_svo {
-            self.svo_mesh = create_svo_mesh(&self.gpu, &self.world);
-        }
-
-        value_u32(ui, "world depth", &mut self.world_depth, 2, 11);
-        value_f32(ui, "terrain scale", &mut self.world_gen.scale, 0.1, 10.0);
-        value_f32(ui, "terrain freq", &mut self.world_gen.freq, 0.1, 10.0);
-
-        if ui.button("regenerate").clicked() {
-            self.world.init(self.world_depth);
-            self.world.populate_with(&self.world_gen);
-            self.shaders
-                .raytracer
-                .world
-                .write(&self.gpu.queue, &self.world);
-        }
-
-        ui.separator();
-        ui.heading("shader");
-
-        let Settings {
-            max_ray_steps,
-            sky_color,
-            max_reflections,
-            shadows,
-            ..
-        } = &mut self.settings;
-
-        let mut changed = false;
-        changed |= value_u32(ui, "ray max steps", max_ray_steps, 0, 300);
-        changed |= value_u32(ui, "max reflections", max_reflections, 0, 100);
-        changed |= toggle(ui, "shadows", shadows);
-        changed |= color_picker(ui, "sky color", sky_color);
-
-        if value_u32(ui, "vertical samples", &mut self.output_tex_h, 50, 2000) {
-            self.resize_output_tex = true;
-        }
-
-        if changed {
-            self.shaders
-                .raytracer
-                .settings
-                .write(&self.gpu.queue, &self.settings);
+            self.shaders.resize_output_tex(&self.gpu.device, self.shaders.output_texture.size());
+            self.frame_count = 0;
         }
     }
 
@@ -439,6 +270,12 @@ impl State {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("#encoder"),
             });
+
+        self.frame_count += 1;
+        self.shaders
+            .raytracer
+            .frame_count
+            .write(&self.gpu.queue, &self.frame_count);
 
         // --- raytracer pass ---
         {
@@ -474,27 +311,6 @@ impl State {
             pass.set_pipeline(&self.shaders.output_tex_shader.pipeline);
             pass.set_bind_group(0, &self.shaders.output_tex_shader.bind_group, &[]);
             pass.draw(0..6, 0..1);
-        }
-
-        // --- draw SVO mesh with color shader ---
-        if let Some(mesh) = &self.svo_mesh && self.show_svo {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("#svo-mesh-pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: true,
-                    },
-                })],
-                depth_stencil_attachment: None,
-            });
-            pass.set_pipeline(&self.shaders.color_shader.pipeline);
-            pass.set_bind_group(0, &self.shaders.color_shader.bind_group, &[]);
-            pass.set_vertex_buffer(0, mesh.vertex_buf.slice(..));
-            pass.set_index_buffer(mesh.index_buf.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(0..mesh.index_count, 0, 0..1);
         }
 
         // --- egui ---
@@ -554,6 +370,27 @@ impl State {
             egui_output.textures_delta.free
         };
 
+        // --- copy output_texture to prev_output_texture ---
+        encoder.copy_texture_to_texture(
+            wgpu::ImageCopyTexture {
+                texture: &self.shaders.output_texture.0,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::ImageCopyTexture {
+                texture: &self.shaders.prev_output_texture.0,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::Extent3d {
+                width: self.shaders.output_texture.size().x,
+                height: self.shaders.output_texture.size().y,
+                depth_or_array_layers: 1,
+            },
+        );
+
         // --- submit passes ---
         self.gpu.queue.submit(std::iter::once(encoder.finish()));
         output.present();
@@ -573,6 +410,138 @@ impl State {
         }
 
         Ok(())
+    }
+
+    fn resize(&mut self, new_size: UVec2) {
+        let prev_output_aspect = self.shaders.output_texture.aspect();
+
+        self.gpu.resize(new_size);
+
+        self.shaders.raytracer.cam_data.write(
+            &self.gpu.queue,
+            &self.player.create_cam_data(self.window.size().as_vec2()),
+        );
+
+        if prev_output_aspect != self.window.aspect() {
+            self.resize_output_tex = true;
+        }
+    }
+
+    fn debug_ui(&mut self, ui: &mut egui::Ui) {
+        use egui::*;
+
+        const SPACING: f32 = 5.0;
+        fn value_f32(ui: &mut Ui, label: &str, v: &mut f32, min: f32, max: f32) -> bool {
+            ui.add_space(SPACING);
+            ui.label(label);
+            ui.add(Slider::new(v, min..=max)).changed()
+        }
+        fn value_u32(ui: &mut Ui, label: &str, v: &mut u32, min: u32, max: u32) -> bool {
+            ui.add_space(SPACING);
+            ui.label(label);
+            ui.add(Slider::new(v, min..=max)).changed()
+        }
+        fn color_picker(ui: &mut Ui, label: &str, color: &mut [f32; 3]) -> bool {
+            let mut rgba = [color[0], color[1], color[2], 1.0];
+            ui.add_space(SPACING);
+            ui.label(label);
+            let r = ui.color_edit_button_rgba_premultiplied(&mut rgba).changed();
+            color.clone_from_slice(&rgba[0..3]);
+            r
+        }
+        #[allow(dead_code)]
+        fn toggle_bool(ui: &mut Ui, label: &str, v: &mut bool) -> bool {
+            ui.add_space(SPACING);
+            let result = ui.checkbox(v, label).changed();
+            result
+        }
+        #[allow(dead_code)]
+        fn toggle(ui: &mut Ui, label: &str, v: &mut u32) -> bool {
+            ui.add_space(SPACING);
+            let mut b = *v == 1;
+            let result = ui.checkbox(&mut b, label).changed();
+            *v = b as u32;
+            result
+        }
+        fn label(ui: &mut Ui, label: &str, color: Color32) {
+            ui.label(RichText::new(label).color(color));
+        }
+
+        let in_hand = self.voxel_in_hand;
+        let red = Color32::from_rgb(255, 150, 0);
+        let green = Color32::from_rgb(0, 255, 0);
+        let blue = Color32::from_rgb(0, 255, 255);
+        let white = Color32::WHITE;
+
+        ui.add_space(3.0);
+        label(ui, &format!("fps: {}", self.fps), white);
+        ui.add_space(3.0);
+        label(ui, &format!("in hand: {:?}", in_hand.display()), white);
+        ui.add_space(3.0);
+        label(ui, &format!("on ground: {}", self.player.on_ground), white);
+
+        ui.add_space(3.0);
+        label(ui, &format!("X: {:#}", self.player.pos.x), red);
+        label(ui, &format!("Y: {:#}", self.player.pos.y), green);
+        label(ui, &format!("Z: {:#}", self.player.pos.z), blue);
+
+        value_f32(ui, "speed", &mut self.player.speed, 0.1, 3.0);
+
+        ui.separator();
+
+        ui.collapsing("world", |ui| {
+            value_u32(ui, "world depth", &mut self.world_depth, 2, 11);
+            value_f32(ui, "terrain scale", &mut self.world_gen.scale, 0.1, 10.0);
+            value_f32(ui, "terrain freq", &mut self.world_gen.freq, 0.1, 10.0);
+
+            if ui.button("regenerate").clicked() {
+                self.world.init(self.world_depth);
+                self.world.populate_with(&self.world_gen);
+                self.shaders
+                    .raytracer
+                    .world
+                    .write(&self.gpu.queue, &self.world);
+            }
+        });
+
+        ui.separator();
+
+        let mut changed = false;
+        ui.collapsing("shader", |ui| {
+            let Settings {
+                samples_per_pixel,
+                max_ray_steps,
+                max_ray_bounces,
+                sky_color,
+                sun_pos,
+                ..
+            } = &mut self.settings;
+
+            changed |= value_u32(ui, "max ray steps", max_ray_steps, 0, 300);
+            changed |= value_u32(ui, "max ray bounces", max_ray_bounces, 0, 30);
+            changed |= value_u32(ui, "samples/pixel", samples_per_pixel, 1, 30);
+            changed |= color_picker(ui, "sky color", sky_color);
+            if value_f32(ui, "sun pos", &mut self.sun_angle, 0.0, 360.0) {
+                changed = true;
+                *sun_pos = Vec3::new(
+                    self.sun_angle.to_radians().sin() * 500.0,
+                    self.sun_angle.to_radians().cos() * 500.0,
+                    self.world.size as f32 * 0.5,
+                )
+                .to_array();
+                self.resize_output_tex = true;
+            }
+            if value_u32(ui, "vertical samples", &mut self.output_tex_h, 50, 2000) {
+                self.resize_output_tex = true;
+            }
+        });
+
+        if changed {
+            self.shaders
+                .raytracer
+                .settings
+                .write(&self.gpu.queue, &self.settings);
+        }
     }
 }
 

@@ -1,8 +1,7 @@
 pub mod debug;
 pub mod shaders;
 
-use crate::gpu::shaders::ColoredVertex;
-use glam::{UVec2, Vec3};
+use glam::UVec2;
 
 use wgpu::*;
 
@@ -36,7 +35,7 @@ impl Gpu {
         let (device, queue) = adapter
             .request_device(
                 &DeviceDescriptor {
-                    features: Features::empty(),
+                    features: Features::default(),
                     limits: Limits {
                         max_storage_buffer_binding_size: 4_000_000_000,
                         max_buffer_size: 4_000_000_000,
@@ -104,69 +103,5 @@ impl GpuMesh {
             vertex_count: vertices.len() as u32,
             index_count: indices.len() as u32,
         }
-    }
-}
-
-#[derive(Default)]
-pub struct ColoredMesh {
-    pub vertices: Vec<ColoredVertex>,
-    pub indices: Vec<u32>,
-}
-impl ColoredMesh {
-    pub fn upload(&self, gpu: &Gpu) -> GpuMesh {
-        GpuMesh::new(gpu, &self.vertices, &self.indices)
-    }
-
-    pub fn quad(&mut self, points: [Vec3; 4], color: [f32; 4]) {
-        let idx = self.vertices.len() as u32;
-        self.vertices.push(ColoredVertex::new(points[0], color));
-        self.vertices.push(ColoredVertex::new(points[1], color));
-        self.vertices.push(ColoredVertex::new(points[2], color));
-        self.vertices.push(ColoredVertex::new(points[3], color));
-        self.indices
-            .extend(&[idx, idx + 1, idx + 2, idx + 2, idx + 3, idx]);
-    }
-
-    pub fn line(&mut self, from: Vec3, to: Vec3, color: [f32; 4]) {
-        let axis = (to - from).abs().normalize();
-        let perp = match axis {
-            d if d == Vec3::X => [Vec3::Y, Vec3::Z],
-            d if d == Vec3::Y => [Vec3::X, Vec3::Z],
-            d if d == Vec3::Z => [Vec3::Y, Vec3::X],
-            _ => return,
-        };
-        let offset = 0.02;
-        let quad0 = [
-            from - perp[0] * offset,
-            to - perp[0] * offset,
-            to + perp[0] * offset,
-            from + perp[0] * offset,
-        ];
-        let quad1 = [
-            from - perp[1] * offset,
-            to - perp[1] * offset,
-            to + perp[1] * offset,
-            from + perp[1] * offset,
-        ];
-        self.quad(quad0, color);
-        self.quad(quad1, color);
-    }
-
-    pub fn cube_frame(&mut self, min: Vec3, max: Vec3, color: [f32; 4]) {
-        let (a, b) = (min, max);
-        self.line(Vec3::new(a.x, a.y, a.z), Vec3::new(b.x, a.y, a.z), color);
-        self.line(Vec3::new(b.x, a.y, a.z), Vec3::new(b.x, b.y, a.z), color);
-        self.line(Vec3::new(b.x, b.y, a.z), Vec3::new(a.x, b.y, a.z), color);
-        self.line(Vec3::new(a.x, b.y, a.z), Vec3::new(a.x, a.y, a.z), color);
-
-        self.line(Vec3::new(a.x, a.y, b.z), Vec3::new(b.x, a.y, b.z), color);
-        self.line(Vec3::new(b.x, a.y, b.z), Vec3::new(b.x, b.y, b.z), color);
-        self.line(Vec3::new(b.x, b.y, b.z), Vec3::new(a.x, b.y, b.z), color);
-        self.line(Vec3::new(a.x, b.y, b.z), Vec3::new(a.x, a.y, b.z), color);
-
-        self.line(Vec3::new(a.x, a.y, a.z), Vec3::new(a.x, a.y, b.z), color);
-        self.line(Vec3::new(a.x, b.y, a.z), Vec3::new(a.x, b.y, b.z), color);
-        self.line(Vec3::new(b.x, b.y, a.z), Vec3::new(b.x, b.y, b.z), color);
-        self.line(Vec3::new(b.x, a.y, a.z), Vec3::new(b.x, a.y, b.z), color);
     }
 }

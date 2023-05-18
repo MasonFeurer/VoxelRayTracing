@@ -1,5 +1,6 @@
 @group(0) @binding(0) var tex: texture_2d<f32>;
 @group(0) @binding(1) var tex_s: sampler;
+@group(0) @binding(2) var<uniform> frame_averages: u32;
 
 struct FsInput {
 	@builtin(position) pos: vec4<f32>,
