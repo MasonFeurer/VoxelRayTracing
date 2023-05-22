@@ -12,6 +12,6 @@ In [releases](./releases), you can find binaries for MacOS.
 Or you can build and run from source with:
 ```sh
 git clone "https://github.com/MasonFeurer/VoxelRayTracing.git"
-cd VoxelRayTracing
+rustup default nightly
 cargo run --release
 ```
