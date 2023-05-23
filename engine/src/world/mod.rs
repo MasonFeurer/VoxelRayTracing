@@ -78,7 +78,10 @@ pub struct Material {
     pub empty: u32,
     pub scatter: f32,
     pub emission: f32,
-    pub specular_chance: f32,
+    pub polish_bounce_chance: f32,
+    pub _padding0: u32,
+    pub polish_color: [f32; 3],
+    pub polish_scatter: f32,
 }
 impl Material {
     pub const ZERO: Self = Self {
@@ -86,28 +89,63 @@ impl Material {
         empty: 0,
         scatter: 0.0,
         emission: 0.0,
-        specular_chance: 0.0,
+        polish_bounce_chance: 0.0,
+        _padding0: 0,
+        polish_color: [0.0; 3],
+        polish_scatter: 0.0,
     };
+
+    pub const fn new(
+        empty: u32,
+        color: [f32; 3],
+        emission: f32,
+        scatter: f32,
+        polish_bounce_chance: f32,
+        polish_color: [f32; 3],
+        polish_scatter: f32,
+    ) -> Self {
+        Self {
+            empty,
+            color,
+            emission,
+            scatter,
+            polish_bounce_chance,
+            polish_color,
+            polish_scatter,
+            _padding0: 0,
+        }
+    }
 }
 
 #[rustfmt::skip]
 pub static DEFAULT_VOXEL_MATERIALS: &[Material] = &[
-    Material { empty: 1, color: [0.00, 0.00, 0.00], emission: 0.0, scatter: 0.0, specular_chance: 0.0 },
-    Material { empty: 0, color: [0.40, 0.40, 0.40], emission: 0.0, scatter: 0.8, specular_chance: 0.0 },
-    Material { empty: 0, color: [0.40, 0.20, 0.00], emission: 0.0, scatter: 1.0, specular_chance: 0.0 },
-    Material { empty: 0, color: [0.10, 0.70, 0.10], emission: 0.0, scatter: 1.0, specular_chance: 0.0 },
-    Material { empty: 0, color: [1.00, 0.90, 0.20], emission: 2.0, scatter: 0.0, specular_chance: 0.0 },
-    Material { empty: 0, color: [0.75, 0.18, 0.01], emission: 1.0, scatter: 1.0, specular_chance: 0.2 },
-    Material { empty: 0, color: [0.00, 0.00, 1.00], emission: 0.0, scatter: 0.0, specular_chance: 0.5 },
-    Material { empty: 0, color: [0.00, 0.00, 0.00], emission: 0.0, scatter: 1.0, specular_chance: 0.0 },
-    Material { empty: 0, color: [0.86, 0.85, 0.82], emission: 0.0, scatter: 1.0, specular_chance: 0.0 },
-    Material { empty: 0, color: [0.23, 0.52, 0.00], emission: 0.0, scatter: 1.0, specular_chance: 0.0 },
-    Material { empty: 0, color: [0.99, 0.92, 0.53], emission: 0.0, scatter: 0.9, specular_chance: 0.0 },
-    Material { empty: 0, color: [0.22, 0.13, 0.02], emission: 0.0, scatter: 0.8, specular_chance: 0.4 },
-    Material { empty: 0, color: [0.35, 0.30, 0.25], emission: 0.0, scatter: 0.8, specular_chance: 0.4 },
-    Material { empty: 0, color: [0.83, 0.68, 0.22], emission: 0.0, scatter: 0.3, specular_chance: 0.0 },
-    Material { empty: 0, color: [1.00, 1.00, 1.00], emission: 0.0, scatter: 0.0, specular_chance: 0.0 },
-    Material { empty: 0, color: [1.00, 1.00, 1.00], emission: 1.0, scatter: 1.0, specular_chance: 0.0 },
+    Material::new(1, [0.00, 0.00, 0.00], 0.0, 0.0, 0.0, [1.0; 3], 0.0),
+    Material::new(0, [0.40, 0.40, 0.40], 0.0, 0.8, 0.0, [1.0; 3], 0.0),
+    Material::new(0, [0.40, 0.20, 0.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
+    Material::new(0, [0.10, 0.70, 0.10], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
+    Material::new(0, [1.00, 0.90, 0.20], 2.0, 0.0, 0.0, [1.0; 3], 0.0),
+    Material::new(0, [0.75, 0.18, 0.01], 1.0, 1.0, 0.2, [1.0; 3], 0.0),
+    Material::new(0, [0.00, 0.00, 1.00], 0.0, 0.0, 0.5, [1.0; 3], 0.0),
+    Material::new(0, [0.00, 0.00, 0.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
+    Material::new(0, [0.86, 0.85, 0.82], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
+    Material::new(0, [0.23, 0.52, 0.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
+    Material::new(0, [0.99, 0.92, 0.53], 0.0, 0.9, 0.0, [1.0; 3], 0.0),
+    Material::new(0, [0.22, 0.13, 0.02], 0.0, 0.8, 0.4, [1.0; 3], 0.0),
+    Material::new(0, [0.35, 0.30, 0.25], 0.0, 0.8, 0.4, [1.0; 3], 0.0),
+    Material::new(0, [0.83, 0.68, 0.22], 0.0, 0.3, 0.0, [1.0; 3], 0.0),
+    Material::new(0, [1.00, 1.00, 1.00], 0.0, 0.0, 0.0, [1.0; 3], 0.0),
+    // BRIGHT
+    Material::new(0, [1.00, 1.00, 1.00], 5.0, 1.0, 0.0, [1.0; 3], 0.0),
+    // ORANGE_TILE
+    Material::new(0, [0.87, 0.41, 0.01], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
+    // POLISHED_BLACK_TILES
+    Material::new(0, [0.10, 0.10, 0.10], 0.0, 0.1, 0.9, [1.0; 3], 0.0),
+    // SMOOTH_ROCK
+    Material::new(0, [0.60, 0.60, 0.60], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
+    // WOOD_FLOORING
+    Material::new(0, [1.00, 0.00, 1.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
+    // POLISHED_BLACK_FLOORING
+    Material::new(0, [0.07, 0.07, 0.07], 0.0, 0.1, 0.8, [1.0; 3], 0.0),
 ];
 
 #[derive(Debug, Clone, Copy)]

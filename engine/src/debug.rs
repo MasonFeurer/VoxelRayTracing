@@ -1,4 +1,5 @@
 use crate::gpu::shaders::Settings as ShaderSettings;
+use crate::world::Material;
 use crate::State;
 use egui::*;
 use glam::Vec3;
@@ -88,6 +89,7 @@ pub fn debug_ui(state: &mut State, ui: &mut Ui) {
             max_ray_bounces,
             sky_color,
             sun_pos,
+            sun_intensity,
             ..
         } = &mut state.settings;
 
@@ -95,6 +97,7 @@ pub fn debug_ui(state: &mut State, ui: &mut Ui) {
         changed |= value_u32(ui, "max ray bounces", max_ray_bounces, 0, 30);
         changed |= value_u32(ui, "samples/pixel", samples_per_pixel, 1, 30);
         changed |= color_picker(ui, "sky color", sky_color);
+        changed |= value_f32(ui, "sun intensity", sun_intensity, 0.0, 100.0);
         if value_f32(ui, "sun pos", &mut state.sun_angle, 0.0, 360.0) {
             changed = true;
             *sun_pos = Vec3::new(
@@ -107,6 +110,35 @@ pub fn debug_ui(state: &mut State, ui: &mut Ui) {
         }
         if value_u32(ui, "vertical samples", &mut state.output_tex_h, 50, 2000) {
             state.resize_output_tex = true;
+        }
+    });
+
+    ui.collapsing("visuals", |ui| {
+        let mut changed2 = false;
+
+        let Material {
+            color,
+            scatter,
+            emission,
+            polish_bounce_chance,
+            polish_color,
+            polish_scatter,
+            ..
+        } = &mut state.voxel_materials[in_hand.0 as usize];
+
+        changed2 |= value_f32(ui, "scatter", scatter, 0.0, 1.0);
+        changed2 |= value_f32(ui, "emission", emission, 0.0, 10.0);
+        changed2 |= value_f32(ui, "polish bounce chance", polish_bounce_chance, 0.0, 1.0);
+        changed2 |= value_f32(ui, "polish scatter", polish_scatter, 0.0, 1.0);
+        changed2 |= color_picker(ui, "color", color);
+        changed2 |= color_picker(ui, "polish color", polish_color);
+
+        if changed2 {
+            state.shaders.raytracer.voxel_materials.write_slice(
+                &state.gpu.queue,
+                0,
+                &state.voxel_materials,
+            );
         }
     });
 

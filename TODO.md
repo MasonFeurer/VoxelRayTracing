@@ -9,3 +9,4 @@
 - world saving / loading (maybe loading MC worlds)
 - Improve memory footprint of world
 - Have breaking/placing blocks not ensue re-uploading the entire world to the GPU
+- Implement denoiser

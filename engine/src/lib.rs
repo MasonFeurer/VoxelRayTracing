@@ -18,7 +18,7 @@ use crate::gpu::{debug::Egui, Gpu};
 use crate::input::{InputState, Key};
 use crate::math::dda::HitResult;
 use crate::player::Player;
-use crate::world::{DefaultWorldGen, Voxel, World};
+use crate::world::{DefaultWorldGen, Material, Voxel, World};
 use glam::{UVec2, Vec3};
 use std::time::SystemTime;
 use winit::event_loop::EventLoop;
@@ -121,6 +121,7 @@ pub struct State {
     pub world_gen: DefaultWorldGen,
     pub sun_angle: f32,
     pub frame_count: u32,
+    pub voxel_materials: Vec<Material>,
 }
 impl State {
     pub fn new(window: Window, gpu: Gpu) -> Self {
@@ -128,7 +129,8 @@ impl State {
         settings.samples_per_pixel = 1;
         settings.max_ray_bounces = 3;
         settings.max_ray_steps = 100;
-        settings.sky_color = [0.3, 0.7, 1.0];
+        settings.sun_intensity = 4.0;
+        settings.sky_color = [0.81, 0.93, 1.0];
 
         let world_depth = 7;
 
@@ -155,10 +157,11 @@ impl State {
         let shaders = Shaders::new(&gpu.device, gpu.surface_config.format, output_tex_size);
         shaders.raytracer.world.write(&gpu.queue, &world);
         shaders.raytracer.settings.write(&gpu.queue, &settings);
+        let voxel_materials = DEFAULT_VOXEL_MATERIALS.to_vec();
         shaders
             .raytracer
             .voxel_materials
-            .write_slice(&gpu.queue, 0, DEFAULT_VOXEL_MATERIALS);
+            .write_slice(&gpu.queue, 0, &voxel_materials);
         shaders.raytracer.frame_count.write(&gpu.queue, &0);
 
         Self {
@@ -181,6 +184,7 @@ impl State {
             resize_output_tex: false,
             sun_angle: 0.0,
             frame_count: 0,
+            voxel_materials,
         }
     }
 
@@ -223,7 +227,7 @@ impl State {
 
         self.hit_result = self.player.cast_ray(&self.world);
 
-        if input.key_pressed(Key::Right) && self.inv_sel < 20 {
+        if input.key_pressed(Key::Right) && self.inv_sel < 19 {
             self.inv_sel += 1;
         }
         if input.key_pressed(Key::Left) && self.inv_sel > 0 {

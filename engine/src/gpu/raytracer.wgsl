@@ -9,6 +9,7 @@ struct Settings {
     samples_per_pixel: u32,
     max_ray_steps: u32,
     max_ray_bounces: u32,
+    sun_intensity: f32,
     sky_color: vec3<f32>,
     sun_pos: vec3<f32>,
 }
@@ -37,7 +38,9 @@ struct Material {
     empty: u32,
     scatter: f32,
     emission: f32,
-    specular_chance: f32,
+    polish_bounce_chance: f32,
+    polish_color: vec3<f32>,
+    polish_scatter: f32,
 }
 
 @group(0) @binding(0) var output_texture_: texture_storage_2d<rgba8unorm, write>;
@@ -188,18 +191,18 @@ fn ray_color(rng: ptr<function, u32>, ray: Ray) -> vec3<f32> {
             break;
         }
         
-        // var specular_ray: Ray;
-        // specular_ray.dir = ray.dir - 2.0 * rs.norm * dot(rs.norm, ray.dir);
-        // specular_ray.origin = rs.pos + specular_ray.dir * 0.001;
+        let is_polish_bounce = rng_next(rng) <= rs.material.polish_bounce_chance;
         
-        var scattered_ray: Ray;
-        scattered_ray.dir = normalize(rs.norm + rng_next_dir(rng));
-        // scattered_ray.dir = rng_next_hem_dir(rng, rs.norm);
-        scattered_ray.origin = rs.pos + scattered_ray.dir * 0.001;
+        let specular_dir = ray.dir - 2.0 * rs.norm * dot(rs.norm, ray.dir);
+        let scattered_dir = normalize(rs.norm + rng_next_dir(rng));
         
-        ray = scattered_ray;
+        let scatter = mix(rs.material.scatter, rs.material.polish_scatter, f32(is_polish_bounce));
+        
+        ray.dir = normalize(mix(specular_dir, scattered_dir, scatter));
+        ray.origin = rs.pos + ray.dir * 0.001;
+        
         incoming_light += (rs.material.color * rs.material.emission) * ray_color;
-        ray_color *= rs.material.color;
+        ray_color *= mix(rs.material.color, rs.material.polish_color, f32(is_polish_bounce));
         
         bounce_count += 1u;
     }
@@ -218,7 +221,7 @@ fn ray_sky(ray: Ray) -> vec3<f32> {
     
     let sun = f32(dot(ray.dir, sun_dir) > (1.0 - sun_size) && ground_to_sky_t >= 1.0);
     
-    return mix(void_color, sky_gradient, ground_to_sky_t) + sun * 3.0;
+    return mix(void_color, sky_gradient, ground_to_sky_t) + sun * settings_.sun_intensity;
 }
 
 fn ray_world(rng: ptr<function, u32>, start_ray: Ray) -> HitResult2 {
