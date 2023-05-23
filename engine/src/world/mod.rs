@@ -26,6 +26,11 @@ impl Voxel {
     pub const GOLD: u8 = 13;
     pub const MIRROR: u8 = 14;
     pub const BRIGHT: u8 = 15;
+    pub const ORANGE_TILE: u8 = 16;
+    pub const POLISHED_BLACK_TILES: u8 = 17;
+    pub const SMOOTH_ROCK: u8 = 18;
+    pub const WOOD_FLOORING: u8 = 19;
+    pub const POLISHED_BLACK_FLOORING: u8 = 20;
 }
 
 impl Voxel {
@@ -56,6 +61,11 @@ impl Voxel {
             Self::GOLD => "gold",
             Self::MIRROR => "mirror",
             Self::BRIGHT => "bright",
+            Self::ORANGE_TILE => "orange tile",
+            Self::POLISHED_BLACK_TILES => "polished black tiles",
+            Self::SMOOTH_ROCK => "smooth rock",
+            Self::WOOD_FLOORING => "wood flooring",
+            Self::POLISHED_BLACK_FLOORING => "polished black flooring",
             _ => "{unknown}",
         }
     }

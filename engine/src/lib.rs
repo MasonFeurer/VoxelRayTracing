@@ -77,6 +77,29 @@ impl Window {
     }
 }
 
+pub static INVENTORY: &[Voxel] = &[
+    Voxel(Voxel::STONE),
+    Voxel(Voxel::DIRT),
+    Voxel(Voxel::GRASS),
+    Voxel(Voxel::FIRE),
+    Voxel(Voxel::MAGMA),
+    Voxel(Voxel::WATER),
+    Voxel(Voxel::WOOD),
+    Voxel(Voxel::BARK),
+    Voxel(Voxel::LEAVES),
+    Voxel(Voxel::SAND),
+    Voxel(Voxel::MUD),
+    Voxel(Voxel::CLAY),
+    Voxel(Voxel::GOLD),
+    Voxel(Voxel::MIRROR),
+    Voxel(Voxel::BRIGHT),
+    Voxel(Voxel::ORANGE_TILE),
+    Voxel(Voxel::POLISHED_BLACK_TILES),
+    Voxel(Voxel::SMOOTH_ROCK),
+    Voxel(Voxel::WOOD_FLOORING),
+    Voxel(Voxel::POLISHED_BLACK_FLOORING),
+];
+
 pub struct State {
     pub window: Window,
     pub gpu: Gpu,
@@ -86,7 +109,7 @@ pub struct State {
     pub player: Player,
     pub hit_result: Option<HitResult>,
     pub world: Box<World>,
-    pub voxel_in_hand: Voxel,
+    pub inv_sel: u8,
     pub last_second: SystemTime,
     pub fps: u32,
     pub fps_temp: u32,
@@ -148,7 +171,7 @@ impl State {
             hit_result: None,
             world,
             world_gen,
-            voxel_in_hand: Voxel(Voxel::DIRT),
+            inv_sel: 19,
             last_second: SystemTime::now(),
             fps: 0,
             fps_temp: 0,
@@ -200,36 +223,11 @@ impl State {
 
         self.hit_result = self.player.cast_ray(&self.world);
 
-        if input.key_pressed(Key::Key1) {
-            self.voxel_in_hand = Voxel(Voxel::DIRT);
+        if input.key_pressed(Key::Right) && self.inv_sel < 20 {
+            self.inv_sel += 1;
         }
-        if input.key_pressed(Key::Key2) {
-            self.voxel_in_hand = Voxel(Voxel::GRASS);
-        }
-        if input.key_pressed(Key::Key3) {
-            self.voxel_in_hand = Voxel(Voxel::STONE);
-        }
-        if input.key_pressed(Key::Key4) {
-            self.voxel_in_hand = Voxel(Voxel::GOLD);
-        }
-        if input.key_pressed(Key::Key5) {
-            // self.voxel_in_hand = Voxel(Voxel::MIRROR);
-            self.voxel_in_hand = Voxel(Voxel::BRIGHT);
-        }
-        if input.key_pressed(Key::Key6) {
-            self.voxel_in_hand = Voxel(Voxel::WATER);
-        }
-        if input.key_pressed(Key::Key7) {
-            self.voxel_in_hand = Voxel(Voxel::MAGMA);
-        }
-        if input.key_pressed(Key::Key8) {
-            self.voxel_in_hand = Voxel(Voxel::BARK);
-        }
-        if input.key_pressed(Key::Key9) {
-            self.voxel_in_hand = Voxel(Voxel::MUD);
-        }
-        if input.key_pressed(Key::Key0) {
-            self.voxel_in_hand = Voxel(Voxel::CLAY);
+        if input.key_pressed(Key::Left) && self.inv_sel > 0 {
+            self.inv_sel -= 1;
         }
 
         if !self.window.cursor_locked {
@@ -246,7 +244,8 @@ impl State {
             }
         }
         if let Some(hit) = self.hit_result && input.right_button_pressed() {
-            if let Ok(()) = self.world.set_voxel(hit.pos + hit.face, self.voxel_in_hand) {
+            let voxel_in_hand = INVENTORY[self.inv_sel as usize];
+            if let Ok(()) = self.world.set_voxel(hit.pos + hit.face, voxel_in_hand) {
                 self.shaders.raytracer.world.write(&self.gpu.queue, &self.world);
                 self.shaders.resize_output_tex(&self.gpu.device, self.shaders.output_texture.size());
                 self.frame_count = 0;

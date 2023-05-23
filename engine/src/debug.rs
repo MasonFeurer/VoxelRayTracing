@@ -41,7 +41,7 @@ pub fn debug_ui(state: &mut State, ui: &mut Ui) {
         ui.label(RichText::new(label).color(color));
     }
 
-    let in_hand = state.voxel_in_hand;
+    let in_hand = crate::INVENTORY[state.inv_sel as usize];
     let red = Color32::from_rgb(255, 150, 0);
     let green = Color32::from_rgb(0, 255, 0);
     let blue = Color32::from_rgb(0, 255, 255);
@@ -51,8 +51,6 @@ pub fn debug_ui(state: &mut State, ui: &mut Ui) {
     label(ui, &format!("fps: {}", state.fps), white);
     ui.add_space(3.0);
     label(ui, &format!("in hand: {:?}", in_hand.display_name()), white);
-    ui.add_space(3.0);
-    label(ui, &format!("on ground: {}", state.player.on_ground), white);
 
     ui.add_space(3.0);
     label(ui, &format!("X: {:#}", state.player.pos.x), red);
