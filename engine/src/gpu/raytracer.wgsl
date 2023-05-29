@@ -7,7 +7,6 @@ struct CamData {
 
 struct Settings {
     samples_per_pixel: u32,
-    max_ray_steps: u32,
     max_ray_bounces: u32,
     sun_intensity: f32,
     sky_color: vec3<f32>,
@@ -226,8 +225,6 @@ fn ray_sky(ray: Ray) -> vec3<f32> {
 
 fn ray_world(rng: ptr<function, u32>, start_ray: Ray) -> HitResult2 {
     let dir = start_ray.dir;
-    // TODO: move `mask`, `imask`, and `unit_step_size` to `update`.
-    //       It only needs to be calculated per pixel.
     let mask = vec3<f32>(dir > 0.0);
     let imask = 1.0 - mask;
     
@@ -254,7 +251,7 @@ fn ray_world(rng: ptr<function, u32>, start_ray: Ray) -> HitResult2 {
     var norm: vec3<f32>;
     
     var iter_count: u32 = 0u;
-    while iter_count < 50u {
+    while iter_count < 100u {
         iter_count += 1u;
         
         let found_node = find_node(ray_pos);

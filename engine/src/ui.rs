@@ -148,7 +148,6 @@ fn left_panel_ui(
     ui.collapsing("shader", |ui| {
         let ShaderSettings {
             samples_per_pixel,
-            max_ray_steps,
             max_ray_bounces,
             sky_color,
             sun_pos,
@@ -156,7 +155,6 @@ fn left_panel_ui(
             ..
         } = &mut state.settings;
 
-        changed |= value_u32(ui, "max ray steps", max_ray_steps, 0, 300);
         changed |= value_u32(ui, "max ray bounces", max_ray_bounces, 0, 30);
         changed |= value_u32(ui, "samples/pixel", samples_per_pixel, 1, 30);
         changed |= color_picker(ui, "sky color", sky_color);

@@ -80,7 +80,6 @@ impl GameState {
         let mut settings = Settings::default();
         settings.samples_per_pixel = 1;
         settings.max_ray_bounces = 3;
-        settings.max_ray_steps = 100;
         settings.sun_intensity = 4.0;
         settings.sky_color = [0.81, 0.93, 1.0];
 
