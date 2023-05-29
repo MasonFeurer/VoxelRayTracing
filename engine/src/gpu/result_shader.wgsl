@@ -33,5 +33,9 @@ fn vs_main(@builtin(vertex_index) index: u32) -> FsInput {
 
 @fragment
 fn fs_main(in: FsInput) -> @location(0) vec4<f32> {
-	return textureSample(tex, tex_s, in.tex_coord);
+	let crosshair_mask = f32(distance(vec2(0.5, 0.5), in.tex_coord) < 0.003);
+	return 
+		textureSample(tex, tex_s, in.tex_coord) * (1.0 - crosshair_mask) +
+		vec4(5.0, 5.0, 5.0, 1.0) * crosshair_mask
+	;
 }
