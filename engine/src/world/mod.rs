@@ -1,7 +1,6 @@
 pub mod open_simplex;
 
-use crate::math::aabb::Aabb;
-use crate::utils::BitField;
+use crate::math::{aabb::Aabb, BitField};
 use glam::{IVec3, Vec2, Vec3};
 use open_simplex::{init_gradients, MultiNoiseMap, NoiseMap};
 

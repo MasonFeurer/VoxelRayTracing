@@ -1,4 +1,4 @@
-use crate::gpu::shaders::CamData;
+use crate::gpu::CamData;
 use crate::input::{InputState, Key};
 use crate::math::aabb::Aabb;
 use crate::math::dda::{axis_rot_to_ray, cast_ray, HitResult};

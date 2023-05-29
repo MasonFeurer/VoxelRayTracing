@@ -44,12 +44,12 @@ struct Material {
 }
 
 @group(0) @binding(0) var output_texture_: texture_storage_2d<rgba8unorm, write>;
-@group(0) @binding(6) var prev_output_texture_: texture_2d<f32>;
-@group(0) @binding(1) var<uniform> cam_data_: CamData;
-@group(0) @binding(2) var<uniform> settings_: Settings;
-@group(0) @binding(3) var<storage, read> world_: World;
-@group(0) @binding(4) var<storage, read> voxel_mats: array<Material>;
-@group(0) @binding(5) var<uniform> frame_count_: u32;
+@group(0) @binding(1) var prev_output_texture_: texture_2d<f32>;
+@group(0) @binding(2) var<uniform> cam_data_: CamData;
+@group(0) @binding(3) var<uniform> settings_: Settings;
+@group(0) @binding(4) var<storage, read> world_: World;
+@group(0) @binding(5) var<storage, read> voxel_mats: array<Material>;
+@group(0) @binding(6) var<uniform> frame_count_: u32;
 
 const AIR: u32 = 0u;
 const STONE: u32 = 1u;

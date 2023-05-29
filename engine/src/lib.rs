@@ -1,81 +1,21 @@
 #![feature(new_uninit)]
 #![feature(let_chains)]
 
-pub mod debug;
 pub mod gpu;
 pub mod input;
 pub mod math;
 pub mod player;
-pub mod utils;
+pub mod ui;
 pub mod world;
 
-// Intersesting WorldGen settings:
-// scale: 5.4
-// freq: 1.3
-
-use crate::gpu::shaders::{Settings, Shaders};
-use crate::gpu::{debug::Egui, Gpu};
+use crate::gpu::{egui::Egui, Gpu, GpuResources, Settings};
 use crate::input::{InputState, Key};
 use crate::math::dda::HitResult;
 use crate::player::Player;
 use crate::world::{DefaultWorldGen, Material, Voxel, World};
 use glam::{UVec2, Vec3};
-use std::time::SystemTime;
-use winit::event_loop::EventLoop;
-use winit::window::Window as WinitWindow;
-use winit::window::{CursorGrabMode, Fullscreen, WindowBuilder};
+use winit::window::Window;
 use world::DEFAULT_VOXEL_MATERIALS;
-
-pub struct Window {
-    pub winit: WinitWindow,
-    pub cursor_locked: bool,
-}
-impl Window {
-    pub fn new(event_loop: &EventLoop<()>) -> Self {
-        let winit = WindowBuilder::new()
-            .with_title("Voxel Ray Tracing")
-            .build(&event_loop)
-            .unwrap();
-
-        Self {
-            winit,
-            cursor_locked: false,
-        }
-    }
-
-    pub fn size(&self) -> UVec2 {
-        <[u32; 2]>::from(self.winit.inner_size()).into()
-    }
-
-    pub fn aspect(&self) -> f32 {
-        self.size().x as f32 / self.size().y as f32
-    }
-
-    pub fn toggle_fullscreen(&mut self) {
-        self.winit.set_fullscreen(match self.winit.fullscreen() {
-            Some(_) => None,
-            None => Some(Fullscreen::Borderless(None)),
-        });
-    }
-    pub fn set_cursor_locked(&mut self, locked: bool) {
-        if locked == self.cursor_locked {
-            return;
-        }
-        let grab_mode = match (locked, cfg!(target_os = "macos")) {
-            (false, _) => CursorGrabMode::None,
-            (_, true) => CursorGrabMode::Locked,
-            (_, false) => CursorGrabMode::Confined,
-        };
-        if let Err(err) = self.winit.set_cursor_grab(grab_mode) {
-            println!("error locking cursor: {err:?}");
-        }
-        self.winit.set_cursor_visible(!locked);
-        self.cursor_locked = locked;
-    }
-    pub fn toggle_cursor_locked(&mut self) {
-        self.set_cursor_locked(!self.cursor_locked)
-    }
-}
 
 pub static INVENTORY: &[Voxel] = &[
     Voxel(Voxel::STONE),
@@ -100,31 +40,43 @@ pub static INVENTORY: &[Voxel] = &[
     Voxel(Voxel::POLISHED_BLACK_FLOORING),
 ];
 
-pub struct State {
-    pub window: Window,
+pub struct FrameInput {
+    pub fps: u32,
+    pub prev_win_size: UVec2,
+    pub win_size: UVec2,
+}
+
+#[derive(Default)]
+pub struct UpdateResult {
+    pub hit_result: Option<HitResult>,
+    pub world_changed: bool,
+    pub player_moved: bool,
+}
+
+pub struct GameState {
     pub gpu: Gpu,
-    pub shaders: Shaders,
+    pub gpu_res: GpuResources,
     pub settings: Settings,
 
     pub player: Player,
-    pub hit_result: Option<HitResult>,
-    pub world: Box<World>,
     pub inv_sel: u8,
-    pub last_second: SystemTime,
-    pub fps: u32,
-    pub fps_temp: u32,
-    pub world_depth: u32,
 
-    pub resize_output_tex: bool,
-    pub output_tex_h: u32,
+    pub world: Box<World>,
+    pub world_depth: u32,
+    pub world_dirty: bool,
+
+    pub resize_result_tex: bool,
+    pub vertical_samples: u32,
 
     pub world_gen: DefaultWorldGen,
     pub sun_angle: f32,
     pub frame_count: u32,
     pub voxel_materials: Vec<Material>,
 }
-impl State {
-    pub fn new(window: Window, gpu: Gpu) -> Self {
+impl GameState {
+    pub fn new(win_size: UVec2, gpu: Gpu) -> Self {
+        let win_aspect = win_size.x as f32 / win_size.y as f32;
+
         let mut settings = Settings::default();
         settings.samples_per_pixel = 1;
         settings.max_ray_bounces = 3;
@@ -133,17 +85,17 @@ impl State {
         settings.sky_color = [0.81, 0.93, 1.0];
 
         let world_depth = 7;
+        let vertical_samples = 600;
 
         let mut world = World::new_boxed(world_depth);
 
         let world_gen = DefaultWorldGen::new(fastrand::i64(..), 1.0, 1.0);
         _ = world.populate_with(&world_gen);
 
-        let aspect = window.aspect();
-
-        let output_tex_h = 600;
-
-        let output_tex_size = UVec2::new((output_tex_h as f32 * aspect) as u32, output_tex_h);
+        let result_tex_size = UVec2::new(
+            (vertical_samples as f32 * win_aspect) as u32,
+            vertical_samples,
+        );
 
         let player = Player::new(Vec3::new(10.0, 80.0, 10.0), 0.2);
 
@@ -154,78 +106,52 @@ impl State {
         )
         .to_array();
 
-        let shaders = Shaders::new(&gpu.device, gpu.surface_config.format, output_tex_size);
-        shaders.raytracer.world.write(&gpu.queue, &world);
-        shaders.raytracer.settings.write(&gpu.queue, &settings);
+        let gpu_res = GpuResources::new(&gpu, gpu.surface_config.format, result_tex_size);
+        gpu_res.buffers.world.write(&gpu, &world);
+        gpu_res.buffers.settings.write(&gpu, &settings);
+
         let voxel_materials = DEFAULT_VOXEL_MATERIALS.to_vec();
-        shaders
-            .raytracer
+        gpu_res
+            .buffers
             .voxel_materials
-            .write_slice(&gpu.queue, 0, &voxel_materials);
-        shaders.raytracer.frame_count.write(&gpu.queue, &0);
+            .write_slice(&gpu, 0, &voxel_materials);
 
         Self {
-            window,
             gpu,
-            shaders,
+            gpu_res,
             settings,
 
             player,
-            hit_result: None,
-            world,
-            world_gen,
             inv_sel: 19,
-            last_second: SystemTime::now(),
-            fps: 0,
-            fps_temp: 0,
-            world_depth,
+            world,
 
-            output_tex_h,
-            resize_output_tex: false,
+            world_gen,
+            world_depth,
+            world_dirty: false,
+
+            vertical_samples,
+            resize_result_tex: false,
             sun_angle: 0.0,
             frame_count: 0,
             voxel_materials,
         }
     }
 
-    pub fn update(&mut self, input: &InputState) {
-        if self.resize_output_tex {
-            self.resize_output_tex = false;
+    pub fn update(&mut self, input: &InputState) -> UpdateResult {
+        let mut output = UpdateResult::default();
 
-            let aspect = self.window.aspect();
-            let size = UVec2::new(
-                (self.output_tex_h as f32 * aspect) as u32,
-                self.output_tex_h,
-            );
-            self.shaders.resize_output_tex(&self.gpu.device, size)
+        let result_tex_size = self.gpu_res.result_texture.size().as_vec2();
+
+        let prev_pos = self.player.pos;
+        let prev_rot = self.player.rot;
+        self.player.update(1.0, input, &self.world);
+
+        if prev_pos != self.player.pos || prev_rot != self.player.rot {
+            output.player_moved = true;
         }
 
-        if self.window.cursor_locked {
-            let prev_pos = self.player.pos;
-            let prev_rot = self.player.rot;
-            self.player.update(1.0, input, &self.world);
-
-            if prev_pos != self.player.pos || prev_rot != self.player.rot {
-                self.shaders
-                    .resize_output_tex(&self.gpu.device, self.shaders.output_texture.size());
-                self.frame_count = 0;
-            }
-        }
-
-        let size = self.shaders.output_texture.size().as_vec2();
-        self.shaders
-            .raytracer
-            .cam_data
-            .write(&self.gpu.queue, &self.player.create_cam_data(size));
-
-        if input.key_pressed(Key::T) {
-            self.window.toggle_cursor_locked();
-        }
-        if input.key_pressed(Key::F) {
-            self.window.toggle_fullscreen();
-        }
-
-        self.hit_result = self.player.cast_ray(&self.world);
+        let cam_data = self.player.create_cam_data(result_tex_size);
+        self.gpu_res.buffers.cam_data.write(&self.gpu, &cam_data);
 
         if input.key_pressed(Key::Right) && self.inv_sel < 19 {
             self.inv_sel += 1;
@@ -234,115 +160,114 @@ impl State {
             self.inv_sel -= 1;
         }
 
-        if !self.window.cursor_locked {
-            return;
-        }
+        let hit_result = self.player.cast_ray(&self.world);
 
-        if let Some(hit) = self.hit_result && input.left_button_pressed() {
+        if let Some(hit) = hit_result && input.left_button_pressed() {
             if let Ok(()) = self.world.set_voxel(hit.pos, Voxel(Voxel::AIR)) {
-                self.shaders.raytracer.world.write(&self.gpu.queue, &self.world);
-                self.shaders.resize_output_tex(&self.gpu.device, self.shaders.output_texture.size());
+                self.gpu_res.buffers.world.write(&self.gpu, &self.world);
+                self.gpu_res.resize_result_texture(&self.gpu, self.gpu_res.result_texture.size());
                 self.frame_count = 0;
             } else {
                 println!("failed to set voxel");
             }
         }
-        if let Some(hit) = self.hit_result && input.right_button_pressed() {
+        if let Some(hit) = hit_result && input.right_button_pressed() {
             let voxel_in_hand = INVENTORY[self.inv_sel as usize];
             if let Ok(()) = self.world.set_voxel(hit.pos + hit.face, voxel_in_hand) {
-                self.shaders.raytracer.world.write(&self.gpu.queue, &self.world);
-                self.shaders.resize_output_tex(&self.gpu.device, self.shaders.output_texture.size());
+                self.gpu_res.buffers.world.write(&self.gpu, &self.world);
+                self.gpu_res.resize_result_texture(&self.gpu, self.gpu_res.result_texture.size());
                 self.frame_count = 0;
             } else {
                 println!("failed to set voxel");
             }
+        }
+
+        output.hit_result = hit_result;
+        output
+    }
+
+    fn on_resize(&mut self, new_size: UVec2) {
+        println!("on_resize");
+        let prev_result_size = self.gpu_res.result_texture.size();
+        let new_aspect = new_size.x as f32 / new_size.y as f32;
+        let prev_aspect = prev_result_size.x as f32 / prev_result_size.y as f32;
+
+        self.gpu.resize(new_size);
+
+        if prev_aspect != new_aspect {
+            let result_size = UVec2::new(
+                (self.vertical_samples as f32 * new_aspect) as u32,
+                self.vertical_samples,
+            );
+
+            self.gpu_res.resize_result_texture(&self.gpu, result_size);
         }
     }
 
-    pub fn render(&mut self, egui: &mut Egui) -> Result<(), wgpu::SurfaceError> {
-        // --- get surface and create encoder ---
-        let output = self.gpu.surface.get_current_texture()?;
-        let surface_size = UVec2::new(
-            self.gpu.surface_config.width,
-            self.gpu.surface_config.height,
-        );
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        let mut encoder = self
-            .gpu
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("#encoder"),
-            });
-
-        self.frame_count += 1;
-        self.shaders
-            .raytracer
-            .frame_count
-            .write(&self.gpu.queue, &self.frame_count);
-
-        // --- raytracer pass ---
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("#raytracer-pass"),
-            });
-            pass.set_pipeline(&self.shaders.raytracer.pipeline);
-            pass.set_bind_group(0, &self.shaders.raytracer.bind_group, &[]);
-
-            let [buffer_w, buffer_h]: [u32; 2] = self.shaders.output_texture.size().into();
-            pass.dispatch_workgroups(buffer_w / 8, buffer_h / 8, 1);
+    pub fn frame(
+        &mut self,
+        window: &Window,
+        update: &UpdateResult,
+        frame: &FrameInput,
+        _input: &InputState,
+        egui: &mut Egui,
+    ) -> Result<(), wgpu::SurfaceError> {
+        if frame.win_size != frame.prev_win_size {
+            self.on_resize(frame.win_size);
         }
 
-        // --- output tex shader pass ---
+        let (output, view) = self.gpu.get_output()?;
+        let surface_size = self.gpu.surface_size();
+        let mut encoder = self.gpu.create_command_encoder();
+        let result_tex_size = self.gpu_res.result_texture.size();
+
         {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("#output-tex-shader-pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 1.0,
-                            g: 0.0,
-                            b: 0.0,
-                            a: 1.0,
-                        }),
-                        store: true,
-                    },
-                })],
-                depth_stencil_attachment: None,
-            });
-            pass.set_pipeline(&self.shaders.output_tex_shader.pipeline);
-            pass.set_bind_group(0, &self.shaders.output_tex_shader.bind_group, &[]);
-            pass.draw(0..6, 0..1);
+            if update.world_changed || update.player_moved {
+                self.frame_count = 0;
+                self.gpu_res
+                    .resize_result_texture(&self.gpu, result_tex_size);
+            }
+
+            let buffers = &self.gpu_res.buffers;
+
+            if update.world_changed {
+                buffers.world.write(&self.gpu, &self.world);
+            }
+
+            self.frame_count += 1;
+            buffers.frame_count.write(&self.gpu, &self.frame_count);
+
+            let cam_data = self.player.create_cam_data(result_tex_size.as_vec2());
+            buffers.cam_data.write(&self.gpu, &cam_data);
+
+            // for WorldChance { idx, len } in &update.world_changes {
+            //     let nodes = self.world.nodes[idx..idx + len];
+            //     buffers.world.write_world_nodes(idx, nodes);
+            // }
         }
+
+        let workgroups = result_tex_size / 8;
+        self.gpu_res.raytracer.encode_pass(&mut encoder, workgroups);
+
+        self.gpu_res.result_shader.encode_pass(&mut encoder, &view);
 
         // --- egui ---
         let egui_textures_free = {
             // --- create scene ---
-            let egui_input = egui.winit.take_egui_input(&self.window.winit);
+            let egui_input = egui.winit.take_egui_input(window);
+
             let egui_output = egui.ctx.run(egui_input, |ctx| {
-                let mut style: egui::Style = (*ctx.style()).clone();
-                style.visuals.widgets.noninteractive.fg_stroke.color = egui::Color32::WHITE;
-                style.visuals.widgets.noninteractive.bg_stroke.color = egui::Color32::WHITE;
-                style.visuals.widgets.inactive.fg_stroke.color = egui::Color32::WHITE;
-                style.visuals.widgets.active.fg_stroke.color = egui::Color32::WHITE;
-                style.visuals.widgets.hovered.fg_stroke.color = egui::Color32::WHITE;
-                ctx.set_style(style);
-
-                let mut frame = egui::containers::Frame::side_top_panel(&ctx.style());
-                frame.fill = frame.fill.linear_multiply(0.9);
-
-                egui::SidePanel::left("top").frame(frame).show(&ctx, |ui| {
-                    crate::debug::debug_ui(self, ui);
-                });
+                let rs = crate::ui::draw_ui(self, frame, update, ctx);
+                if rs.clear_result {
+                    self.frame_count = 0;
+                    self.gpu_res
+                        .resize_result_texture(&self.gpu, result_tex_size);
+                }
             });
             let egui_prims = egui.ctx.tessellate(egui_output.shapes);
             let screen_desc = egui_wgpu::renderer::ScreenDescriptor {
                 size_in_pixels: surface_size.into(),
-                pixels_per_point: egui_winit::native_pixels_per_point(&self.window.winit),
+                pixels_per_point: egui_winit::native_pixels_per_point(window),
             };
 
             // --- update buffers ---
@@ -376,23 +301,23 @@ impl State {
             egui_output.textures_delta.free
         };
 
-        // --- copy output_texture to prev_output_texture ---
+        // --- copy result_texture to prev_result_texture ---
         encoder.copy_texture_to_texture(
             wgpu::ImageCopyTexture {
-                texture: &self.shaders.output_texture.0,
+                texture: &self.gpu_res.result_texture.handle,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
             wgpu::ImageCopyTexture {
-                texture: &self.shaders.prev_output_texture.0,
+                texture: &self.gpu_res.prev_result_texture.handle,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
             wgpu::Extent3d {
-                width: self.shaders.output_texture.size().x,
-                height: self.shaders.output_texture.size().y,
+                width: self.gpu_res.result_texture.size().x,
+                height: self.gpu_res.result_texture.size().y,
                 depth_or_array_layers: 1,
             },
         );
@@ -401,35 +326,13 @@ impl State {
         self.gpu.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
+        // TODO: try freeing textures in the egui scope ^^^^^
+
         // --- free egui textures ---
         for id in egui_textures_free {
             egui.wgpu.free_texture(&id);
         }
 
-        // --- update fps counter ---
-        self.fps_temp += 1;
-        let now = SystemTime::now();
-        if now.duration_since(self.last_second).unwrap().as_secs() >= 1 {
-            self.last_second = now;
-            self.fps = self.fps_temp;
-            self.fps_temp = 0;
-        }
-
         Ok(())
-    }
-
-    pub fn resize(&mut self, new_size: UVec2) {
-        let prev_output_aspect = self.shaders.output_texture.aspect();
-
-        self.gpu.resize(new_size);
-
-        self.shaders.raytracer.cam_data.write(
-            &self.gpu.queue,
-            &self.player.create_cam_data(self.window.size().as_vec2()),
-        );
-
-        if prev_output_aspect != self.window.aspect() {
-            self.resize_output_tex = true;
-        }
     }
 }

@@ -1,3 +1,6 @@
+- MOVE SCREENSHOT ON DESKTOP TO `./SCREENSHOTS`
+- A CROSSHAIR
+- MORE INTERESTING TERRAIN
 - Make world infinite
 - Improve performance
 - Allow user to enable simpler shader for low-end hardware

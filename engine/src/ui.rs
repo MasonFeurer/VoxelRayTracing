@@ -1,10 +1,45 @@
-use crate::gpu::shaders::Settings as ShaderSettings;
+use crate::gpu::Settings as ShaderSettings;
 use crate::world::Material;
-use crate::State;
+use crate::{FrameInput, GameState, UpdateResult};
 use egui::*;
 use glam::Vec3;
 
-pub fn debug_ui(state: &mut State, ui: &mut Ui) {
+#[derive(Default)]
+pub struct UiResult {
+    pub clear_result: bool,
+}
+
+pub fn draw_ui(
+    state: &mut GameState,
+    frame_i: &FrameInput,
+    update: &UpdateResult,
+    ctx: &Context,
+) -> UiResult {
+    let mut style: Style = (*ctx.style()).clone();
+    style.visuals.widgets.noninteractive.fg_stroke.color = Color32::WHITE;
+    style.visuals.widgets.noninteractive.bg_stroke.color = Color32::WHITE;
+    style.visuals.widgets.inactive.fg_stroke.color = Color32::WHITE;
+    style.visuals.widgets.active.fg_stroke.color = Color32::WHITE;
+    style.visuals.widgets.hovered.fg_stroke.color = Color32::WHITE;
+    ctx.set_style(style);
+
+    let mut frame = containers::Frame::side_top_panel(&ctx.style());
+    frame.fill = frame.fill.linear_multiply(0.9);
+
+    let mut result = UiResult::default();
+    egui::SidePanel::left("left").frame(frame).show(ctx, |ui| {
+        left_panel_ui(state, frame_i, update, ui, &mut result);
+    });
+    result
+}
+
+fn left_panel_ui(
+    state: &mut GameState,
+    frame: &FrameInput,
+    _update: &UpdateResult,
+    ui: &mut Ui,
+    result: &mut UiResult,
+) {
     const SPACING: f32 = 5.0;
     fn value_f32(ui: &mut Ui, label: &str, v: &mut f32, min: f32, max: f32) -> bool {
         ui.add_space(SPACING);
@@ -48,10 +83,40 @@ pub fn debug_ui(state: &mut State, ui: &mut Ui) {
     let blue = Color32::from_rgb(0, 255, 255);
     let white = Color32::WHITE;
 
+    let win_aspect = frame.win_size.x as f32 / frame.win_size.y as f32;
+    let result_tex_size = state.gpu_res.result_texture.size();
+    let result_tex_aspect = result_tex_size.x as f32 / result_tex_size.y as f32;
+
     ui.add_space(3.0);
-    label(ui, &format!("fps: {}", state.fps), white);
+    label(ui, &format!("fps: {}", frame.fps), white);
     ui.add_space(3.0);
     label(ui, &format!("in hand: {:?}", in_hand.display_name()), white);
+    ui.add_space(3.0);
+    label(
+        ui,
+        &format!(
+            "win size: {}x{} ({:.2})",
+            frame.win_size.x, frame.win_size.y, win_aspect
+        ),
+        white,
+    );
+    label(
+        ui,
+        &format!(
+            "surface size: {}x{}",
+            state.gpu.surface_config.width, state.gpu.surface_config.height
+        ),
+        white,
+    );
+    ui.add_space(3.0);
+    label(
+        ui,
+        &format!(
+            "tex size: {}x{} ({:.2})",
+            result_tex_size.x, result_tex_size.y, result_tex_aspect
+        ),
+        white,
+    );
 
     ui.add_space(3.0);
     label(ui, &format!("X: {:#}", state.player.pos.x), red);
@@ -71,11 +136,9 @@ pub fn debug_ui(state: &mut State, ui: &mut Ui) {
             state.world.set_max_depth(state.world_depth);
             state.world.clear();
             _ = state.world.populate_with(&state.world_gen);
-            state
-                .shaders
-                .raytracer
-                .world
-                .write(&state.gpu.queue, &state.world);
+
+            state.gpu_res.buffers.world.write(&state.gpu, &state.world);
+            result.clear_result = true;
         }
     });
 
@@ -106,12 +169,20 @@ pub fn debug_ui(state: &mut State, ui: &mut Ui) {
                 state.world.size as f32 * 0.5,
             )
             .to_array();
-            state.resize_output_tex = true;
+            result.clear_result = true;
         }
-        if value_u32(ui, "vertical samples", &mut state.output_tex_h, 50, 2000) {
-            state.resize_output_tex = true;
+        if value_u32(
+            ui,
+            "vertical samples",
+            &mut state.vertical_samples,
+            50,
+            2000,
+        ) {
+            result.clear_result = true;
         }
     });
+
+    ui.separator();
 
     ui.collapsing("visuals", |ui| {
         let mut changed2 = false;
@@ -134,8 +205,8 @@ pub fn debug_ui(state: &mut State, ui: &mut Ui) {
         changed2 |= color_picker(ui, "polish color", polish_color);
 
         if changed2 {
-            state.shaders.raytracer.voxel_materials.write_slice(
-                &state.gpu.queue,
+            state.gpu_res.buffers.voxel_materials.write_slice(
+                &state.gpu,
                 0,
                 &state.voxel_materials,
             );
@@ -143,10 +214,7 @@ pub fn debug_ui(state: &mut State, ui: &mut Ui) {
     });
 
     if changed {
-        state
-            .shaders
-            .raytracer
-            .settings
-            .write(&state.gpu.queue, &state.settings);
+        let settings = &state.settings;
+        state.gpu_res.buffers.settings.write(&state.gpu, settings);
     }
 }
