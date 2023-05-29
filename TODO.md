@@ -1,4 +1,3 @@
-- MOVE SCREENSHOT ON DESKTOP TO `./SCREENSHOTS`
 - MORE INTERESTING TERRAIN
 - Make world infinite
 - Improve performance

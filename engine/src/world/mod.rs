@@ -235,7 +235,7 @@ pub trait WorldPopulator {
     fn populate(&self, min: IVec3, max: IVec3, world: &mut World) -> Result<(), ()>;
 }
 
-const MAX_NODES: usize = 20_000_000;
+const MAX_NODES: usize = 300_000_000;
 
 #[derive(Clone)]
 #[repr(C)]

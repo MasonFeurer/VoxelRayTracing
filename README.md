@@ -2,9 +2,11 @@
 My voxel rendering engine that makes use of ray tracing.
 
 ## Screenshots
-![Screenshot](./screenshots/ss-230226-202607.png)
+![Screenshot](./screenshots/ss-230522-190347.png)
 
 ![Screenshot](./screenshots/ss-230424-075112.png)
+
+![Screenshot](./screenshots/ss-230529-101936.png)
 
 ## Running
 In [releases](./releases), you can find binaries for MacOS.
