@@ -18,26 +18,26 @@ use winit::window::Window;
 use world::DEFAULT_VOXEL_MATERIALS;
 
 pub static INVENTORY: &[Voxel] = &[
-    Voxel(Voxel::STONE),
-    Voxel(Voxel::DIRT),
-    Voxel(Voxel::GRASS),
-    Voxel(Voxel::FIRE),
-    Voxel(Voxel::MAGMA),
-    Voxel(Voxel::WATER),
-    Voxel(Voxel::WOOD),
-    Voxel(Voxel::BARK),
-    Voxel(Voxel::LEAVES),
-    Voxel(Voxel::SAND),
-    Voxel(Voxel::MUD),
-    Voxel(Voxel::CLAY),
-    Voxel(Voxel::GOLD),
-    Voxel(Voxel::MIRROR),
-    Voxel(Voxel::BRIGHT),
-    Voxel(Voxel::ORANGE_TILE),
-    Voxel(Voxel::POLISHED_BLACK_TILES),
-    Voxel(Voxel::SMOOTH_ROCK),
-    Voxel(Voxel::WOOD_FLOORING),
-    Voxel(Voxel::POLISHED_BLACK_FLOORING),
+    Voxel::STONE,
+    Voxel::DIRT,
+    Voxel::GRASS,
+    Voxel::FIRE,
+    Voxel::MAGMA,
+    Voxel::WATER,
+    Voxel::WOOD,
+    Voxel::BARK,
+    Voxel::LEAVES,
+    Voxel::SAND,
+    Voxel::MUD,
+    Voxel::CLAY,
+    Voxel::GOLD,
+    Voxel::MIRROR,
+    Voxel::BRIGHT,
+    Voxel::ORANGE_TILE,
+    Voxel::POLISHED_BLACK_TILES,
+    Voxel::SMOOTH_ROCK,
+    Voxel::WOOD_FLOORING,
+    Voxel::POLISHED_BLACK_FLOORING,
 ];
 
 pub struct FrameInput {
@@ -67,6 +67,7 @@ pub struct GameState {
 
     pub resize_result_tex: bool,
     pub vertical_samples: u32,
+    pub new_raytracer: bool,
 
     pub world_gen: DefaultWorldGen,
     pub sun_angle: f32,
@@ -88,7 +89,7 @@ impl GameState {
 
         let mut world = World::new_boxed(world_depth);
 
-        let world_gen = DefaultWorldGen::new(fastrand::i64(..), 1.0, 1.0);
+        let world_gen = DefaultWorldGen::new(fastrand::i64(..), 1.0, 1.0, 0.001);
         _ = world.populate_with(&world_gen);
 
         let result_tex_size = UVec2::new(
@@ -130,6 +131,7 @@ impl GameState {
 
             vertical_samples,
             resize_result_tex: false,
+            new_raytracer: false,
             sun_angle: 0.0,
             frame_count: 0,
             voxel_materials,
@@ -162,7 +164,7 @@ impl GameState {
         let hit_result = self.player.cast_ray(&self.world);
 
         if let Some(hit) = hit_result && input.left_button_pressed() {
-            if let Ok(()) = self.world.set_voxel(hit.pos, Voxel(Voxel::AIR)) {
+            if let Ok(()) = self.world.set_voxel(hit.pos, Voxel::AIR) {
                 self.gpu_res.buffers.world.write(&self.gpu, &self.world);
                 self.gpu_res.resize_result_texture(&self.gpu, self.gpu_res.result_texture.size());
                 self.frame_count = 0;
@@ -245,8 +247,15 @@ impl GameState {
             // }
         }
 
-        let workgroups = result_tex_size / 8;
-        self.gpu_res.raytracer.encode_pass(&mut encoder, workgroups);
+        if self.new_raytracer {
+            let workgroups = result_tex_size / 8;
+            self.gpu_res
+                .raytracer2
+                .encode_pass(&mut encoder, workgroups);
+        } else {
+            let workgroups = result_tex_size / 8;
+            self.gpu_res.raytracer.encode_pass(&mut encoder, workgroups);
+        }
 
         self.gpu_res.result_shader.encode_pass(&mut encoder, &view);
 

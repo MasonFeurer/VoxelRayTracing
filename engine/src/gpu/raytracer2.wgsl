@@ -49,12 +49,11 @@ struct Material {
 }
 
 @group(0) @binding(0) var output_texture_: texture_storage_2d<rgba8unorm, write>;
-@group(0) @binding(1) var prev_output_texture_: texture_2d<f32>;
-@group(0) @binding(2) var<uniform> cam_data_: CamData;
-@group(0) @binding(3) var<uniform> settings_: Settings;
-@group(0) @binding(4) var<storage, read> world_: World;
-@group(0) @binding(5) var<storage, read> voxel_mats: array<Material>;
-@group(0) @binding(6) var<uniform> frame_count_: u32;
+@group(0) @binding(1) var<uniform> cam_data_: CamData;
+@group(0) @binding(2) var<uniform> settings_: Settings;
+@group(0) @binding(3) var<storage, read> world_: World;
+@group(0) @binding(4) var<storage, read> voxel_mats: array<Material>;
+@group(0) @binding(5) var<uniform> frame_count_: u32;
 
 const AIR: u32 = 0u;
 const STONE: u32 = 1u;
@@ -86,37 +85,6 @@ fn rng_next_hem_dir(state: ptr<function, u32>, norm: vec3<f32>) -> vec3<f32> {
     let dir = rng_next_dir(state);
     return dir * sign(dot(norm, dir));
 }
-
-// fn guassian_weight(x: vec3<f32>, y: vec3<f32>, sigma: f32) -> f32 {
-//     let dist_sq = dot(x - y, x - y);
-//     return exp(-dist_sq / (2.0 * sigma * sigma));
-// }
-
-// fn bilateral_filter(center_color: vec3<f32>, center_coords: vec3<i32>) -> vec4<f32> {
-//     var result = vec3(0.0);
-//     var weight_sum = 0.0;
-//     
-//     var i: i32 = -KERNAL_SIZE;
-//     while i <= KERNAL_SIZE {
-//         var j: i32 = -KERNAL_SIZE;
-//         while j <= KERNAL_SIZE {
-//             let current_coords: vec2<i32> = center_coords + vec2(i, j);
-//             let current_color: vec3<f32> = texelFetch(inputTexture, current_coords, 0).rgb;
-//             
-//             let color_weight: f32 = guassian_weight(center_color, current_color, SIGMA_COLOR);
-//             let spatial_weight: f32 = guassian_weight(vec3(center_coords), vec3(current_coords), SIGMA_SPACE);
-//             let weight: f32 = color_weight * spatial_weight;
-//             
-//             result += current_color * weight;
-//             weight_sum += weight;
-//             
-//             j += 1;
-//         }
-//         i += 1;
-//     }
-//     
-//     return vec4(result / weight_sum, 1.0);
-// }
 
 struct Ray {
     origin: vec3<f32>,
@@ -175,35 +143,11 @@ fn find_node(pos: vec3<f32>) -> FoundNode {
 }
 
 fn ray_color(rng: ptr<function, u32>, ray: Ray) -> vec3<f32> {
-    var ray = ray;
-    var ray_color: vec3<f32> = vec3(1.0);
-    var incoming_light: vec3<f32> = vec3(0.0);
+    let rs = ray_world(rng, ray);
+    let sky_color = ray_sky(ray);
+    let vox_color = rs.material.color;
     
-    var bounce_count = 0u;
-    while bounce_count < settings_.max_ray_bounces {
-        let rs = ray_world(rng, ray);
-        if !rs.hit {
-            let color = ray_sky(ray);
-            incoming_light += color * ray_color;
-            break;
-        }
-        
-        let is_polish_bounce = rng_next(rng) <= rs.material.polish_bounce_chance;
-        
-        let specular_dir = ray.dir - 2.0 * rs.norm * dot(rs.norm, ray.dir);
-        let scattered_dir = normalize(rs.norm + rng_next_dir(rng));
-        
-        let scatter = mix(rs.material.scatter, rs.material.polish_scatter, f32(is_polish_bounce));
-        
-        ray.dir = normalize(mix(specular_dir, scattered_dir, scatter));
-        ray.origin = rs.pos + ray.dir * 0.001;
-        
-        incoming_light += (rs.material.color * rs.material.emission) * ray_color;
-        ray_color *= mix(rs.material.color, rs.material.polish_color, f32(is_polish_bounce));
-        
-        bounce_count += 1u;
-    }
-    return incoming_light;
+    return vox_color * f32(rs.hit) + sky_color * f32(!rs.hit);
 }
 
 fn ray_sky(ray: Ray) -> vec3<f32> {
@@ -297,20 +241,9 @@ fn create_ray_from_screen(screen_pos: vec2<i32>) -> Ray {
 fn update(@builtin(global_invocation_id) inv_id: vec3<u32>) {
     let screen_pos = vec2<i32>(inv_id.xy);
     var rng = inv_id.y * u32(cam_data_.proj_size.x) + inv_id.x + frame_count_ * 27927421u;
-
+    
     let ray = create_ray_from_screen(screen_pos);
+    let color = ray_color(&rng, ray);
     
-    var color = vec3(0.0);
-    var ray_count = 0u;
-    while ray_count < settings_.samples_per_pixel {
-        color += ray_color(&rng, ray);
-        ray_count += 1u;
-    }
-    color /= f32(ray_count);
-    
-    let old_render = textureLoad(prev_output_texture_, screen_pos, 0);
-    let weight = 1.0 / f32(frame_count_ + 1u);
-    let result = old_render * (1.0 - weight) + vec4(color, 1.0) * weight;
-    
-    textureStore(output_texture_, screen_pos, result);
+    textureStore(output_texture_, screen_pos, vec4(color, 1.0));
 }

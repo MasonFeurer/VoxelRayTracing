@@ -9,41 +9,41 @@ use open_simplex::{init_gradients, MultiNoiseMap, NoiseMap};
 pub struct Voxel(pub u8);
 
 impl Voxel {
-    pub const AIR: u8 = 0;
-    pub const STONE: u8 = 1;
-    pub const DIRT: u8 = 2;
-    pub const GRASS: u8 = 3;
-    pub const FIRE: u8 = 4;
-    pub const MAGMA: u8 = 5;
-    pub const WATER: u8 = 6;
-    pub const WOOD: u8 = 7;
-    pub const BARK: u8 = 8;
-    pub const LEAVES: u8 = 9;
-    pub const SAND: u8 = 10;
-    pub const MUD: u8 = 11;
-    pub const CLAY: u8 = 12;
-    pub const GOLD: u8 = 13;
-    pub const MIRROR: u8 = 14;
-    pub const BRIGHT: u8 = 15;
-    pub const ORANGE_TILE: u8 = 16;
-    pub const POLISHED_BLACK_TILES: u8 = 17;
-    pub const SMOOTH_ROCK: u8 = 18;
-    pub const WOOD_FLOORING: u8 = 19;
-    pub const POLISHED_BLACK_FLOORING: u8 = 20;
+    pub const AIR: Self = Self(0);
+    pub const STONE: Self = Self(1);
+    pub const DIRT: Self = Self(2);
+    pub const GRASS: Self = Self(3);
+    pub const FIRE: Self = Self(4);
+    pub const MAGMA: Self = Self(5);
+    pub const WATER: Self = Self(6);
+    pub const WOOD: Self = Self(7);
+    pub const BARK: Self = Self(8);
+    pub const LEAVES: Self = Self(9);
+    pub const SAND: Self = Self(10);
+    pub const MUD: Self = Self(11);
+    pub const CLAY: Self = Self(12);
+    pub const GOLD: Self = Self(13);
+    pub const MIRROR: Self = Self(14);
+    pub const BRIGHT: Self = Self(15);
+    pub const ORANGE_TILE: Self = Self(16);
+    pub const POLISHED_BLACK_TILES: Self = Self(17);
+    pub const SMOOTH_ROCK: Self = Self(18);
+    pub const WOOD_FLOORING: Self = Self(19);
+    pub const POLISHED_BLACK_FLOORING: Self = Self(20);
 }
 
 impl Voxel {
     #[inline(always)]
     pub fn is_empty(self) -> bool {
-        self.0 == Self::AIR || self.0 == Self::WATER
+        self == Self::AIR || self == Self::WATER
     }
     #[inline(always)]
     pub fn is_solid(self) -> bool {
-        self.0 != Self::AIR && self.0 != Voxel::WATER
+        self != Self::AIR && self != Voxel::WATER
     }
 
     pub fn display_name(self) -> &'static str {
-        match self.0 {
+        match self {
             Self::AIR => "air",
             Self::STONE => "stone",
             Self::DIRT => "dirt",
@@ -147,55 +147,97 @@ pub static DEFAULT_VOXEL_MATERIALS: &[Material] = &[
     Material::new(0, [0.07, 0.07, 0.07], 0.0, 0.1, 0.8, [1.0; 3], 0.0),
 ];
 
+/// Represents a node in the sparse voxel octree (SVO) that is the world.
+///
+/// ## Underlying Implementation
+/// There are a lot of nodes in a world,
+/// so I've tried to make them use as little memory as I could.
+/// Each node consumes 4 bytes of memory, a single 32-bit integer.
+/// Here are the different states of the bits:
+///
+/// 00______________________________
+/// node is not used
+///
+/// 10______________________________
+/// (invalid state)
+///
+/// 01______________________aaaaaaaa
+/// this node represents a single voxel
+/// a(8) = voxel type
+///
+/// 11aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+/// this node splits into 8 smaller nodes
+/// a(30) = index of first child (all 8 child nodes would be sequential in the array).
+/// NOTE: the index of the first child will aLways be one more than a multiple of 8,
+/// so a(30) actually represrents `(child_index - 1) / 8`.
+///
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct Node {
-    data: BitField,
-    first_child: u32,
-}
+pub struct Node(BitField);
 impl Node {
-    pub fn new(voxel: Voxel, first_child: u32, is_split: bool) -> Self {
-        let mut rs = Self {
-            data: BitField::ZERO,
-            first_child,
-        };
-        rs.set_split_flag(is_split);
+    pub const ZERO: Self = Self(BitField::ZERO);
+
+    pub fn new_leaf(voxel: Voxel) -> Self {
+        let mut rs = Self::ZERO;
         rs.set_voxel(voxel);
+        rs.set_used_flag(true);
+        rs
+    }
+
+    pub fn new_split(first_child: u32) -> Self {
+        let mut rs = Self::ZERO;
+        rs.set_first_child(first_child);
+        rs.set_split_flag(true);
+        rs.set_used_flag(true);
         rs
     }
 
     #[inline(always)]
-    pub fn get_voxel(self) -> Voxel {
-        Voxel(self.data.get(8, 8) as u8)
+    pub fn set_used_flag(&mut self, f: bool) {
+        self.0.set(f as u32, 1, 30)
     }
     #[inline(always)]
-    pub fn set_voxel(&mut self, voxel: Voxel) {
-        self.data.set(voxel.0 as u32, 8, 8)
-    }
-
-    #[inline(always)]
-    pub fn set_free_flag(&mut self, f: bool) {
-        self.data.set(f as u32, 1, 1)
-    }
-    #[inline(always)]
-    pub fn is_free(self) -> bool {
-        self.data.get(1, 1) == 1
+    pub fn is_used(self) -> bool {
+        self.0.get(1, 30) == 1
     }
 
     #[inline(always)]
     pub fn set_split_flag(&mut self, f: bool) {
-        self.data.set(f as u32, 1, 0)
+        self.0.set(f as u32, 1, 31)
     }
     #[inline(always)]
     pub fn is_split(self) -> bool {
-        self.data.get(1, 0) == 1
+        self.0.get(1, 31) == 1
+    }
+
+    #[inline(always)]
+    pub fn get_voxel(self) -> Voxel {
+        Voxel(self.0.get(8, 0) as u8)
+    }
+    #[inline(always)]
+    pub fn set_voxel(&mut self, voxel: Voxel) {
+        self.0.set(voxel.0 as u32, 8, 0)
+    }
+
+    #[inline(always)]
+    pub fn set_first_child(&mut self, first_child: u32) {
+        debug_assert!(first_child == 0 || ((first_child - 1) % 8) == 0);
+        let first_child = (first_child - 1) / 8; // TODO replace with bitshift
+
+        self.0.set(first_child, 30, 0)
+    }
+    #[inline(always)]
+    pub fn first_child(self) -> u32 {
+        self.0.get(30, 0) * 8 + 1
     }
 
     #[inline(always)]
     pub fn get_child(self, idx: u32) -> u32 {
-        self.first_child + idx
+        self.first_child() + idx
     }
 
+    /// Tests if this is a node with childeren that can be simplified into a node representing a single voxel,
+    /// requiring all child nodes to represent the same voxel type.
     pub fn can_simplify(self, world: &World) -> bool {
         // If this node isn't split, this node can't be simplified
         if !self.is_split() {
@@ -208,10 +250,9 @@ impl Node {
             }
         }
         // If any childeren are not the same voxel, this node can't be simplified
-        for child_idx in 0..7 {
-            if world.get_node(self.get_child(child_idx)).get_voxel()
-                != world.get_node(self.get_child(child_idx + 1)).get_voxel()
-            {
+        let child_voxel = world.get_node(self.get_child(0)).get_voxel();
+        for child in 1..8 {
+            if world.get_node(self.get_child(child)).get_voxel() != child_voxel {
                 return false;
             }
         }
@@ -221,10 +262,10 @@ impl Node {
 
     pub fn split(&mut self, first_child: u32) {
         self.set_split_flag(true);
-        self.first_child = first_child;
-        self.set_voxel(Voxel(Voxel::MAGMA));
+        self.set_first_child(first_child);
     }
 
+    /// Call if `Self::can_simplify` returns `true`.
     pub fn simplify(&mut self, result: Voxel) {
         self.set_split_flag(false);
         self.set_voxel(result);
@@ -240,7 +281,6 @@ const MAX_NODES: usize = 300_000_000;
 #[derive(Clone)]
 #[repr(C)]
 pub struct World {
-    pub root_idx: u32,
     pub size: u32,
     pub max_depth: u32,
     pub start_search: u32,
@@ -262,11 +302,10 @@ impl World {
     }
 
     pub fn clear(&mut self) {
-        self.root_idx = 0;
         self.start_search = 1;
-        self.nodes[0] = Node::new(Voxel(Voxel::AIR), 0, false);
+        self.nodes[0] = Node::new_leaf(Voxel::AIR);
         for node in &mut self.nodes[1..] {
-            node.set_free_flag(true);
+            node.set_used_flag(false);
         }
     }
 }
@@ -276,12 +315,12 @@ struct FoundNode {
     depth: u32,
 }
 
-/// Find and mutate the SVO nodes that make up this world.
+/// Find and mutate the SVO nodes that make up the world.
 impl World {
     fn find_node(&self, pos: IVec3, max_depth: u32) -> FoundNode {
         let mut center = IVec3::splat(self.size as i32 / 2);
         let mut size = self.size;
-        let mut node_idx = self.root_idx;
+        let mut node_idx = 0;
         let mut depth: u32 = 0;
 
         loop {
@@ -307,24 +346,6 @@ impl World {
         }
     }
 
-    pub fn count_nodes(&self) -> u32 {
-        fn count_node(world: &World, node: u32) -> u32 {
-            let node = world.get_node(node);
-            if !node.is_split() {
-                return 1;
-            }
-            count_node(world, node.get_child(0))
-                + count_node(world, node.get_child(1))
-                + count_node(world, node.get_child(2))
-                + count_node(world, node.get_child(3))
-                + count_node(world, node.get_child(4))
-                + count_node(world, node.get_child(5))
-                + count_node(world, node.get_child(6))
-                + count_node(world, node.get_child(7))
-        }
-        count_node(self, self.root_idx)
-    }
-
     fn get_node(&self, idx: u32) -> Node {
         self.nodes[idx as usize]
     }
@@ -338,7 +359,7 @@ impl World {
             self.start_search = start;
         }
         for idx in start..start + 8 {
-            self.nodes[idx as usize].set_free_flag(true);
+            self.nodes[idx as usize].set_used_flag(false);
         }
     }
 
@@ -348,7 +369,7 @@ impl World {
             return Err(());
         }
 
-        while !self.get_node(result).is_free() {
+        while self.get_node(result).is_used() {
             result += 8;
             if result + 8 >= self.nodes.len() as u32 {
                 return Err(());
@@ -357,7 +378,7 @@ impl World {
         self.start_search = result + 8;
 
         for idx in result..result + 8 {
-            self.nodes[idx as usize] = Node::new(voxel, 0, false);
+            self.nodes[idx as usize] = Node::new_leaf(voxel);
         }
         Ok(result)
     }
@@ -439,7 +460,7 @@ impl World {
                 for z in from.z..to.z {
                     let pos = IVec3 { x, y, z };
 
-                    let voxel = self.get_voxel(pos).unwrap_or(Voxel(Voxel::AIR));
+                    let voxel = self.get_voxel(pos).unwrap_or(Voxel::AIR);
 
                     if !voxel.is_empty() {
                         let min = pos.as_vec3();
@@ -459,14 +480,14 @@ impl WorldPopulator for DebugWorldGen {
         for x in min.x..max.x {
             for y in min.y..max.y {
                 for z in 0..3 {
-                    world.set_voxel(IVec3 { x, y, z }, Voxel(Voxel::STONE))?;
+                    world.set_voxel(IVec3 { x, y, z }, Voxel::STONE)?;
                 }
             }
         }
         for x in min.x..max.x {
             for z in min.z..max.z {
                 for y in 0..3 {
-                    world.set_voxel(IVec3 { x, y, z }, Voxel(Voxel::DIRT))?;
+                    world.set_voxel(IVec3 { x, y, z }, Voxel::DIRT)?;
                 }
             }
         }
@@ -482,9 +503,14 @@ pub struct DefaultWorldGen {
     pub height_freq_map: MultiNoiseMap,
     pub scale: f32,
     pub freq: f32,
+    pub tree_freq: f32,
 }
 impl DefaultWorldGen {
-    pub fn new(seed: i64, scale: f32, freq: f32) -> Self {
+    pub fn clone_w_seed(&self, seed: i64) -> Self {
+        Self::new(seed, self.scale, self.freq, self.tree_freq)
+    }
+
+    pub fn new(seed: i64, scale: f32, freq: f32, tree_freq: f32) -> Self {
         init_gradients();
         let height_scale_map =
             MultiNoiseMap::new(&[NoiseMap::new(seed.wrapping_mul(47828974), 0.005, 2.0)]);
@@ -505,6 +531,7 @@ impl DefaultWorldGen {
             height_freq_map,
             scale,
             freq,
+            tree_freq,
         }
     }
 
@@ -517,13 +544,13 @@ impl DefaultWorldGen {
     fn spawn_tree(&self, world: &mut World, surface: IVec3) -> Result<(), ()> {
         let h = fastrand::u32(6..14) as i32;
         for i in 0..h {
-            world.set_voxel(surface + IVec3::new(0, i, 0), Voxel(Voxel::BARK))?;
+            world.set_voxel(surface + IVec3::new(0, i, 0), Voxel::BARK)?;
         }
         self.sphere(
             world,
             surface + IVec3::new(0, h as i32, 0),
             4,
-            Voxel(Voxel::LEAVES),
+            Voxel::LEAVES,
         )
     }
 
@@ -560,20 +587,20 @@ impl WorldPopulator for DefaultWorldGen {
                 world.set_voxels(
                     IVec3::new(x, 0, z),
                     IVec3::new(x + 1, y - 3, z + 1),
-                    Voxel(Voxel::STONE),
+                    Voxel::STONE,
                 )?;
 
                 // set dirt
                 world.set_voxels(
                     IVec3::new(x, y - 3, z),
                     IVec3::new(x + 1, y, z + 1),
-                    Voxel(Voxel::DIRT),
+                    Voxel::DIRT,
                 )?;
 
                 // set surface
-                world.set_voxel(surface_pos, Voxel(Voxel::GRASS))?;
+                world.set_voxel(surface_pos, Voxel::GRASS)?;
 
-                if fastrand::u32(0..300) == 0 {
+                if fastrand::f32() < self.tree_freq {
                     self.spawn_tree(world, surface_pos)?;
                 }
             }

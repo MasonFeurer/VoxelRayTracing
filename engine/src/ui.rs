@@ -66,7 +66,7 @@ fn left_panel_ui(
         result
     }
     #[allow(dead_code)]
-    fn toggle(ui: &mut Ui, label: &str, v: &mut u32) -> bool {
+    fn toggle_u32(ui: &mut Ui, label: &str, v: &mut u32) -> bool {
         ui.add_space(SPACING);
         let mut b = *v == 1;
         let result = ui.checkbox(&mut b, label).changed();
@@ -128,14 +128,26 @@ fn left_panel_ui(
     ui.separator();
 
     ui.collapsing("world", |ui| {
-        value_u32(ui, "world depth", &mut state.world_depth, 2, 11);
+        ui.label(&format!("world size: {0}x{0}", state.world.size));
+        value_u32(ui, "world depth", &mut state.world_depth, 2, 12);
         value_f32(ui, "terrain scale", &mut state.world_gen.scale, 0.1, 10.0);
         value_f32(ui, "terrain freq", &mut state.world_gen.freq, 0.1, 10.0);
+        value_f32(ui, "tree freq", &mut state.world_gen.tree_freq, 0.0, 0.2);
 
         if ui.button("regenerate").clicked() {
+            state.world_gen = state.world_gen.clone_w_seed(fastrand::i64(..));
             state.world.set_max_depth(state.world_depth);
             state.world.clear();
             _ = state.world.populate_with(&state.world_gen);
+
+            state.gpu_res.buffers.world.write(&state.gpu, &state.world);
+            result.clear_result = true;
+        }
+        if ui.button("generate debug world").clicked() {
+            let gen = crate::world::DebugWorldGen;
+            state.world.set_max_depth(state.world_depth);
+            state.world.clear();
+            _ = state.world.populate_with(&gen);
 
             state.gpu_res.buffers.world.write(&state.gpu, &state.world);
             result.clear_result = true;
@@ -155,6 +167,7 @@ fn left_panel_ui(
             ..
         } = &mut state.settings;
 
+        toggle_bool(ui, "new raytracer", &mut state.new_raytracer);
         changed |= value_u32(ui, "max ray bounces", max_ray_bounces, 0, 30);
         changed |= value_u32(ui, "samples/pixel", samples_per_pixel, 1, 30);
         changed |= color_picker(ui, "sky color", sky_color);

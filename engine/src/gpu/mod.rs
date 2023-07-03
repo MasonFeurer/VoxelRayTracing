@@ -8,6 +8,7 @@ use texture::Texture;
 use wgpu::*;
 
 static RAYTRACER_SRC: &str = include_str!("raytracer.wgsl");
+static RAYTRACER2_SRC: &str = include_str!("raytracer2.wgsl");
 static RESULT_SHADER_SRC: &str = include_str!("result_shader.wgsl");
 
 const RESULT_TEX_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
@@ -179,11 +180,11 @@ pub struct Raytracer {
     pub bind_group: BindGroup,
 }
 impl Raytracer {
-    pub fn new(gpu: &Gpu, tex: &Texture, prev_tex: &Texture, buffers: &Buffers) -> Self {
+    pub fn new(src: &str, gpu: &Gpu, tex: &Texture, prev_tex: &Texture, buffers: &Buffers) -> Self {
         let device = &gpu.device;
         let shader_module = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("#raytracer.shader-module"),
-            source: ShaderSource::Wgsl(RAYTRACER_SRC.into()),
+            source: ShaderSource::Wgsl(src.into()),
         });
         let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("#raytracer.bind-group-layout"),
@@ -269,6 +270,88 @@ impl Raytracer {
     }
 }
 
+pub struct Raytracer2 {
+    pub pipeline: ComputePipeline,
+    pub bind_group_layout: BindGroupLayout,
+    pub bind_group: BindGroup,
+}
+impl Raytracer2 {
+    pub fn new(src: &str, gpu: &Gpu, tex: &Texture, buffers: &Buffers) -> Self {
+        let device = &gpu.device;
+        let shader_module = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("#raytracer.shader-module"),
+            source: ShaderSource::Wgsl(src.into()),
+        });
+        let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("#raytracer.bind-group-layout"),
+            entries: &bind_group_layout_entries!(
+                0 => (COMPUTE) BindingType::StorageTexture {
+                    access: StorageTextureAccess::WriteOnly,
+                    format: RESULT_TEX_FORMAT,
+                    view_dimension: TextureViewDimension::D2,
+                },
+                1 => (COMPUTE) uniform_binding_type(),
+                2 => (COMPUTE) uniform_binding_type(),
+                3 => (COMPUTE) storage_binding_type(true),
+                4 => (COMPUTE) storage_binding_type(true),
+                5 => (COMPUTE) uniform_binding_type(),
+            ),
+        });
+        let bind_group = Self::create_bind_group(gpu, &bind_group_layout, tex, buffers);
+
+        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("#raytracer.pipeline-layout"),
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
+        let pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("#raytracer.pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &shader_module,
+            entry_point: "update",
+        });
+
+        Self {
+            pipeline,
+            bind_group,
+            bind_group_layout,
+        }
+    }
+
+    pub fn create_bind_group(
+        gpu: &Gpu,
+        layout: &BindGroupLayout,
+        output_tex: &Texture,
+        buffers: &Buffers,
+    ) -> BindGroup {
+        gpu.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("#raytracer2.bind-broup"),
+            layout,
+            entries: &bind_group_entries!(
+                0 => BindingResource::TextureView(&output_tex.view),
+                1 => buffers.cam_data.0.as_entire_binding(),
+                2 => buffers.settings.0.as_entire_binding(),
+                3 => buffers.world.0.as_entire_binding(),
+                4 => buffers.voxel_materials.0.as_entire_binding(),
+                5 => buffers.frame_count.0.as_entire_binding(),
+            ),
+        })
+    }
+
+    pub fn recreate_bind_group(&mut self, gpu: &Gpu, tex: &Texture, buffers: &Buffers) {
+        self.bind_group = Self::create_bind_group(gpu, &self.bind_group_layout, tex, buffers);
+    }
+
+    pub fn encode_pass(&self, encoder: &mut CommandEncoder, workgroups: UVec2) {
+        let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("#raytracer-pass"),
+        });
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &self.bind_group, &[]);
+        pass.dispatch_workgroups(workgroups.x, workgroups.y, 1);
+    }
+}
+
 pub struct Buffers {
     pub cam_data: SimpleBuffer<CamData>,
     pub settings: SimpleBuffer<Settings>,
@@ -324,6 +407,7 @@ pub struct GpuResources {
 
     pub result_shader: ResultShader,
     pub raytracer: Raytracer,
+    pub raytracer2: Raytracer2,
 }
 impl GpuResources {
     pub fn new(gpu: &Gpu, surface_format: TextureFormat, result_size: UVec2) -> Self {
@@ -349,7 +433,14 @@ impl GpuResources {
         );
 
         let result_shader = ResultShader::new(gpu, &result_texture, surface_format);
-        let raytracer = Raytracer::new(gpu, &result_texture, &prev_result_texture, &buffers);
+        let raytracer = Raytracer::new(
+            RAYTRACER_SRC,
+            gpu,
+            &result_texture,
+            &prev_result_texture,
+            &buffers,
+        );
+        let raytracer2 = Raytracer2::new(RAYTRACER2_SRC, gpu, &result_texture, &buffers);
 
         Self {
             result_texture,
@@ -358,6 +449,7 @@ impl GpuResources {
             buffers,
             result_shader,
             raytracer,
+            raytracer2,
         }
     }
 
@@ -376,6 +468,8 @@ impl GpuResources {
             &self.prev_result_texture,
             &self.buffers,
         );
+        self.raytracer2
+            .recreate_bind_group(gpu, &self.result_texture, &self.buffers);
     }
 }
 

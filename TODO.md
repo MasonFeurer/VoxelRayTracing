@@ -1,4 +1,6 @@
+- Pre-compute global illumination in a low-res pass
 - MORE INTERESTING TERRAIN
+- Generate world on GPU
 - Make world infinite
 - Improve performance
 - Allow user to enable simpler shader for low-end hardware
@@ -7,6 +9,5 @@
 - Add distance fog or LOD
 - remove weird visual artifacts created by the raytracer
 - world saving / loading (maybe loading MC worlds)
-- Improve memory footprint of world
 - Have breaking/placing blocks not ensue re-uploading the entire world to the GPU
 - Implement denoiser
