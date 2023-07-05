@@ -167,7 +167,7 @@ fn left_panel_ui(
             ..
         } = &mut state.settings;
 
-        toggle_bool(ui, "new raytracer", &mut state.new_raytracer);
+        toggle_bool(ui, "path tracing", &mut state.path_tracing);
         changed |= value_u32(ui, "max ray bounces", max_ray_bounces, 0, 30);
         changed |= value_u32(ui, "samples/pixel", samples_per_pixel, 1, 30);
         changed |= color_picker(ui, "sky color", sky_color);

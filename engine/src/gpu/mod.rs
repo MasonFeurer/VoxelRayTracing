@@ -8,7 +8,7 @@ use texture::Texture;
 use wgpu::*;
 
 static RAYTRACER_SRC: &str = include_str!("raytracer.wgsl");
-static RAYTRACER2_SRC: &str = include_str!("raytracer2.wgsl");
+static RAYTRACER2_SRC: &str = include_str!("simple_rt.wgsl");
 static RESULT_SHADER_SRC: &str = include_str!("result_shader.wgsl");
 
 const RESULT_TEX_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
@@ -270,20 +270,20 @@ impl Raytracer {
     }
 }
 
-pub struct Raytracer2 {
+pub struct SimpleRt {
     pub pipeline: ComputePipeline,
     pub bind_group_layout: BindGroupLayout,
     pub bind_group: BindGroup,
 }
-impl Raytracer2 {
+impl SimpleRt {
     pub fn new(src: &str, gpu: &Gpu, tex: &Texture, buffers: &Buffers) -> Self {
         let device = &gpu.device;
         let shader_module = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("#raytracer.shader-module"),
+            label: Some("#simple-rt.shader-module"),
             source: ShaderSource::Wgsl(src.into()),
         });
         let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("#raytracer.bind-group-layout"),
+            label: Some("#simple-rt.bind-group-layout"),
             entries: &bind_group_layout_entries!(
                 0 => (COMPUTE) BindingType::StorageTexture {
                     access: StorageTextureAccess::WriteOnly,
@@ -300,12 +300,12 @@ impl Raytracer2 {
         let bind_group = Self::create_bind_group(gpu, &bind_group_layout, tex, buffers);
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("#raytracer.pipeline-layout"),
+            label: Some("#simple-rt.pipeline-layout"),
             bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
         let pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some("#raytracer.pipeline"),
+            label: Some("#simple-rt.pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader_module,
             entry_point: "update",
@@ -325,7 +325,7 @@ impl Raytracer2 {
         buffers: &Buffers,
     ) -> BindGroup {
         gpu.device.create_bind_group(&BindGroupDescriptor {
-            label: Some("#raytracer2.bind-broup"),
+            label: Some("#simple_rt.bind-broup"),
             layout,
             entries: &bind_group_entries!(
                 0 => BindingResource::TextureView(&output_tex.view),
@@ -407,7 +407,7 @@ pub struct GpuResources {
 
     pub result_shader: ResultShader,
     pub raytracer: Raytracer,
-    pub raytracer2: Raytracer2,
+    pub simple_rt: SimpleRt,
 }
 impl GpuResources {
     pub fn new(gpu: &Gpu, surface_format: TextureFormat, result_size: UVec2) -> Self {
@@ -440,7 +440,7 @@ impl GpuResources {
             &prev_result_texture,
             &buffers,
         );
-        let raytracer2 = Raytracer2::new(RAYTRACER2_SRC, gpu, &result_texture, &buffers);
+        let simple_rt = SimpleRt::new(RAYTRACER2_SRC, gpu, &result_texture, &buffers);
 
         Self {
             result_texture,
@@ -449,7 +449,7 @@ impl GpuResources {
             buffers,
             result_shader,
             raytracer,
-            raytracer2,
+            simple_rt,
         }
     }
 
@@ -468,7 +468,7 @@ impl GpuResources {
             &self.prev_result_texture,
             &self.buffers,
         );
-        self.raytracer2
+        self.simple_rt
             .recreate_bind_group(gpu, &self.result_texture, &self.buffers);
     }
 }

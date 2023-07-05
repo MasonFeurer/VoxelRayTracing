@@ -67,7 +67,7 @@ pub struct GameState {
 
     pub resize_result_tex: bool,
     pub vertical_samples: u32,
-    pub new_raytracer: bool,
+    pub path_tracing: bool,
 
     pub world_gen: DefaultWorldGen,
     pub sun_angle: f32,
@@ -131,7 +131,7 @@ impl GameState {
 
             vertical_samples,
             resize_result_tex: false,
-            new_raytracer: false,
+            path_tracing: false,
             sun_angle: 0.0,
             frame_count: 0,
             voxel_materials,
@@ -247,14 +247,12 @@ impl GameState {
             // }
         }
 
-        if self.new_raytracer {
-            let workgroups = result_tex_size / 8;
-            self.gpu_res
-                .raytracer2
-                .encode_pass(&mut encoder, workgroups);
-        } else {
+        if self.path_tracing {
             let workgroups = result_tex_size / 8;
             self.gpu_res.raytracer.encode_pass(&mut encoder, workgroups);
+        } else {
+            let workgroups = result_tex_size / 8;
+            self.gpu_res.simple_rt.encode_pass(&mut encoder, workgroups);
         }
 
         self.gpu_res.result_shader.encode_pass(&mut encoder, &view);
