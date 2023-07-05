@@ -3,7 +3,6 @@
 - Generate world on GPU
 - Make world infinite
 - Improve performance
-- Allow user to enable simpler shader for low-end hardware
 - Make player appear in reflections
 - Add textures
 - Add distance fog or LOD

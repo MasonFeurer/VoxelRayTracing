@@ -220,6 +220,15 @@ fn ray_world(rng: ptr<function, u32>, start_ray: Ray) -> HitResult {
     result.pos = ray_pos;
     result.norm = norm;
     result.material = voxel_mats[voxel];
+    if result.norm.x != 0.0 {
+        result.material.color *= 0.5;
+    }
+    if result.norm.z != 0.0 {
+        result.material.color *= 0.7;
+    }
+    if result.norm.y == -1.0 {
+        result.material.color *= 0.2;
+    }
     return result;
 }
 
