@@ -265,9 +265,13 @@ impl GameState {
             let egui_output = egui.ctx.run(egui_input, |ctx| {
                 let rs = crate::ui::draw_ui(self, frame, update, ctx);
                 if rs.clear_result {
+                    let aspect = result_tex_size.x as f32 / result_tex_size.y as f32;
                     self.frame_count = 0;
-                    self.gpu_res
-                        .resize_result_texture(&self.gpu, result_tex_size);
+                    let result_size = UVec2::new(
+                        (self.vertical_samples as f32 * aspect) as u32,
+                        self.vertical_samples,
+                    );
+                    self.gpu_res.resize_result_texture(&self.gpu, result_size);
                 }
             });
             let egui_prims = egui.ctx.tessellate(egui_output.shapes);
