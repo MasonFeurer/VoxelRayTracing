@@ -1,3 +1,10 @@
+//!
+//! 2014 OpenSimplex Noise in Java.
+//! by Kurt Spencer
+//!
+//! Ported to Rust by Mason Feurer (Excluding 4D) (Added `NoiseMap` and `MultiNoiseMap`).
+//! I have no idea how this thing works, just translated the control flow.
+//!
 use glam::Vec2;
 
 #[derive(Clone)]
@@ -43,18 +50,10 @@ impl MultiNoiseMap {
     }
 }
 
-///
-/// 2014 OpenSimplex Noise in Java.
-/// by Kurt Spencer
-///
-/// Ported to Rust by Mason Feurer (Excluding 4D)
-/// I have no idea how this thing works, just translated the control flow.
-///
-
-pub const STRETCH_CONSTANT_2D: f64 = -0.211324865405187; // (1/(2+1).sqrt()-1)/2;
-pub const SQUISH_CONSTANT_2D: f64 = 0.366025403784439; // ((2+1).sqrt()-1)/2;
-pub const STRETCH_CONSTANT_3D: f64 = -1.0 / 6.0; // (1/(3+1).sqrt()-1)/3;
-pub const SQUISH_CONSTANT_3D: f64 = 1.0 / 3.0; // ((3+1).sqrt()-1)/3;
+const STRETCH_CONSTANT_2D: f64 = -0.211324865405187; // (1/(2+1).sqrt()-1)/2;
+const SQUISH_CONSTANT_2D: f64 = 0.366025403784439; // ((2+1).sqrt()-1)/2;
+const STRETCH_CONSTANT_3D: f64 = -1.0 / 6.0; // (1/(3+1).sqrt()-1)/3;
+const SQUISH_CONSTANT_3D: f64 = 1.0 / 3.0; // ((3+1).sqrt()-1)/3;
 
 const PSIZE: usize = 2048;
 const PMASK: usize = 2047;
@@ -859,7 +858,7 @@ impl OpenSimplexNoise {
 }
 
 #[derive(Clone, Copy)]
-pub struct Grad2 {
+struct Grad2 {
     dx: f64,
     dy: f64,
 }
@@ -867,7 +866,7 @@ impl Grad2 {
     const ZERO: Self = Grad2 { dx: 0.0, dy: 0.0 };
 }
 #[derive(Clone, Copy)]
-pub struct Grad3 {
+struct Grad3 {
     dx: f64,
     dy: f64,
     dz: f64,

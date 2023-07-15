@@ -3,7 +3,7 @@ use crate::input::{InputState, Key};
 use crate::math::aabb::Aabb;
 use crate::math::dda::{axis_rot_to_ray, cast_ray, HitResult};
 use crate::world::World;
-use glam::{Mat4, Vec2, Vec3};
+use glam::{vec3, BVec3, Mat4, Vec2, Vec3};
 
 const GRAVITY: f32 = -0.020;
 
@@ -52,7 +52,7 @@ impl Player {
 
     pub fn create_aabb(&self) -> Aabb {
         const WIDTH: f32 = 0.6;
-        const HEIGHT: f32 = 1.8;
+        const HEIGHT: f32 = 4.8;
 
         Aabb::new(
             self.pos - Vec3::new(WIDTH, 0.0, WIDTH) * 0.5,
@@ -124,7 +124,7 @@ impl Player {
     }
 
     pub fn eye_pos(&self) -> Vec3 {
-        self.pos + Vec3::new(0.0, 1.6, 0.0)
+        self.pos + Vec3::new(0.0, 4.6, 0.0)
     }
 
     pub fn create_view_mat(&self) -> Mat4 {
@@ -157,34 +157,53 @@ impl Player {
         }
     }
 
-    fn attempt_movement(&mut self, world: &World, mut a: Vec3) {
+    fn attempt_movement(&mut self, world: &World, mv: Vec3) {
         if self.flying {
-            self.pos += a;
+            self.pos += mv;
             return;
         }
 
-        let a_orig = a;
-
-        let self_aabb = self.create_aabb();
-        let aabbs = world.get_collisions_w(&self_aabb.expand(a));
-
-        for aabb in &aabbs {
-            a.y = aabb.clip_y_collide(&self_aabb, a.y);
-            a.x = aabb.clip_x_collide(&self_aabb, a.x);
-            a.z = aabb.clip_z_collide(&self_aabb, a.z);
+        struct ClippedMovement {
+            result: Vec3,
+            eq: BVec3,
         }
 
-        if a_orig.x != a.x {
-            self.vel.x = 0.0
+        let clip_movement = |world: &World, bbox: Aabb, mv: Vec3| -> ClippedMovement {
+            let world_bboxs = world.get_collisions_w(&bbox.expand(mv));
+
+            let mut result = mv;
+            for world_bbox in &world_bboxs {
+                result.y = world_bbox.clip_y_collide(&bbox, result.y);
+                result.x = world_bbox.clip_x_collide(&bbox, result.x);
+                result.z = world_bbox.clip_z_collide(&bbox, result.z);
+            }
+            ClippedMovement {
+                result,
+                eq: result.cmpeq(mv),
+            }
+        };
+        let mut bbox = self.create_aabb();
+
+        let ClippedMovement {
+            result: mv_clipped,
+            eq,
+        } = clip_movement(world, bbox, mv);
+
+        self.vel *= vec3(eq.x as i32 as f32, eq.y as i32 as f32, eq.z as i32 as f32);
+
+        if !eq.x || !eq.z {
+            // if we've been stopped in the X or Z direction,
+            // test if we would be able to move forward if we were higher up.
+            bbox.translate(vec3(0.0, 1.05, 0.0));
+
+            // TODO: FIX (the condition here always tests true)
+            if clip_movement(world, bbox, mv).result != Vec3::ZERO {
+                self.pos += vec3(0.0, 1.05, 0.0);
+            }
         }
-        if a_orig.y != a.y {
-            self.vel.y = 0.0
-        }
-        if a_orig.z != a.z {
-            self.vel.z = 0.0
-        }
-        self.on_ground = self.vel.y == 0.0 && a_orig.y < 0.0;
-        self.pos += a;
+
+        self.on_ground = self.vel.y == 0.0 && mv.y < 0.0;
+        self.pos += mv_clipped;
     }
 
     pub fn cast_ray(&self, world: &World) -> Option<HitResult> {

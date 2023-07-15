@@ -1,7 +1,7 @@
 pub mod open_simplex;
 
 use crate::math::{aabb::Aabb, BitField};
-use glam::{IVec3, Vec2, Vec3};
+use glam::{ivec3, vec2, IVec3, Vec2, Vec3};
 use open_simplex::{init_gradients, MultiNoiseMap, NoiseMap};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -18,7 +18,11 @@ impl Voxel {
     pub const WATER: Self = Self(6);
     pub const WOOD: Self = Self(7);
     pub const BARK: Self = Self(8);
-    pub const LEAVES: Self = Self(9);
+    pub const GREEN_LEAVES: Self = Self(9);
+    pub const PINK_LEAVES: Self = Self(21);
+    pub const ORANGE_LEAVES: Self = Self(22);
+    pub const YELLOW_LEAVES: Self = Self(23);
+    pub const RED_LEAVES: Self = Self(24);
     pub const SAND: Self = Self(10);
     pub const MUD: Self = Self(11);
     pub const CLAY: Self = Self(12);
@@ -30,6 +34,14 @@ impl Voxel {
     pub const SMOOTH_ROCK: Self = Self(18);
     pub const WOOD_FLOORING: Self = Self(19);
     pub const POLISHED_BLACK_FLOORING: Self = Self(20);
+
+    pub const ALL_LEAVES: &[Self] = &[
+        Self::GREEN_LEAVES,
+        Self::PINK_LEAVES,
+        Self::ORANGE_LEAVES,
+        Self::YELLOW_LEAVES,
+        Self::RED_LEAVES,
+    ];
 }
 
 impl Voxel {
@@ -53,7 +65,7 @@ impl Voxel {
             Self::WATER => "water",
             Self::WOOD => "wood",
             Self::BARK => "bark",
-            Self::LEAVES => "leaves",
+            Self::GREEN_LEAVES => "green leaves",
             Self::SAND => "sand",
             Self::MUD => "mud",
             Self::CLAY => "clay",
@@ -65,6 +77,10 @@ impl Voxel {
             Self::SMOOTH_ROCK => "smooth rock",
             Self::WOOD_FLOORING => "wood flooring",
             Self::POLISHED_BLACK_FLOORING => "polished black flooring",
+            Self::PINK_LEAVES => "pink leaves",
+            Self::ORANGE_LEAVES => "orange leaves",
+            Self::YELLOW_LEAVES => "yellow leaves",
+            Self::RED_LEAVES => "red leaves",
             _ => "{unknown}",
         }
     }
@@ -127,6 +143,7 @@ pub static DEFAULT_VOXEL_MATERIALS: &[Material] = &[
     Material::new(0, [0.00, 0.00, 1.00], 0.0, 0.0, 0.5, [1.0; 3], 0.0),
     Material::new(0, [0.00, 0.00, 0.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
     Material::new(0, [0.86, 0.85, 0.82], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
+    // GREEN_LEAVES
     Material::new(0, [0.23, 0.52, 0.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
     Material::new(0, [0.99, 0.92, 0.53], 0.0, 0.9, 0.0, [1.0; 3], 0.0),
     Material::new(0, [0.22, 0.13, 0.02], 0.0, 0.8, 0.4, [1.0; 3], 0.0),
@@ -145,6 +162,14 @@ pub static DEFAULT_VOXEL_MATERIALS: &[Material] = &[
     Material::new(0, [1.00, 0.00, 1.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
     // POLISHED_BLACK_FLOORING
     Material::new(0, [0.07, 0.07, 0.07], 0.0, 0.1, 0.8, [1.0; 3], 0.0),
+    // PINK_LEAVES
+    Material::new(0, [0.90, 0.40, 0.40], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
+    // ORANGE_LEAVES
+    Material::new(0, [0.95, 0.20, 0.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
+    // YELLOW_LEAVES
+    Material::new(0, [0.90, 0.90, 0.10], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
+    // RED_LEAVES
+    Material::new(0, [0.95, 0.10, 0.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
 ];
 
 /// Represents a node in the sparse voxel octree (SVO) that is the world.
@@ -155,21 +180,28 @@ pub static DEFAULT_VOXEL_MATERIALS: &[Material] = &[
 /// Each node consumes 4 bytes of memory, a single 32-bit integer.
 /// Here are the different states of the bits:
 ///
+/// ```
 /// 00______________________________
-/// node is not used
+/// ```
+/// Node is not used.
 ///
+/// ```
 /// 10______________________________
-/// (invalid state)
+/// ```
+/// Invalid state.
 ///
-/// 01______________________aaaaaaaa
-/// this node represents a single voxel
-/// a(8) = voxel type
+/// ```
+/// 01______________________xxxxxxxx
+/// ```
+/// Node is a single voxel where x = voxel type.
 ///
-/// 11aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-/// this node splits into 8 smaller nodes
-/// a(30) = index of first child (all 8 child nodes would be sequential in the array).
-/// NOTE: the index of the first child will aLways be one more than a multiple of 8,
-/// so a(30) actually represrents `(child_index - 1) / 8`.
+/// ```
+/// 11xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+/// ```
+/// Node is split into 8 nodes of half size where x points to first child.
+/// All 8 child nodes will be sequential in memory so only the position of the first one is needed.
+/// NOTE: the index of the first child will always be one more than a multiple of 8,
+/// so x actually represrents `(child_index - 1) / 8`.
 ///
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
@@ -278,6 +310,7 @@ pub trait WorldPopulator {
 
 const MAX_NODES: usize = 100_000_000;
 
+/// The structure that holds the entire interactable world, representing all voxels via a SVO.
 #[derive(Clone)]
 #[repr(C)]
 pub struct World {
@@ -333,7 +366,7 @@ impl World {
             }
             size /= 2;
 
-            let gt = IVec3::new(
+            let gt = ivec3(
                 (pos.x >= center.x) as i32,
                 (pos.y >= center.y) as i32,
                 (pos.z >= center.z) as i32,
@@ -423,11 +456,36 @@ impl World {
         self.set_voxel(pos, voxel)
     }
 
-    pub fn set_voxels(&mut self, min: IVec3, max: IVec3, voxel: Voxel) -> Result<(), ()> {
-        for x in min.x..max.x {
-            for y in min.y..max.y {
-                for z in min.z..max.z {
-                    self.set_voxel(IVec3 { x, y, z }, voxel)?;
+    pub fn fill_voxels(&mut self, a: IVec3, b: IVec3, voxel: Voxel) -> Result<(), ()> {
+        let min = ivec3(a.x.min(b.x), a.y.min(b.y), a.z.min(b.z));
+        let max = ivec3(a.x.max(b.x), a.y.max(b.y), a.z.max(b.z));
+
+        for x in min.x..=max.x {
+            for y in min.y..=max.y {
+                for z in min.z..=max.z {
+                    self.set_voxel(ivec3(x, y, z), voxel)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Similar to `fill_voxels`, but the voxels are all placed on top of the surface of the world.
+    pub fn lay_voxels(&mut self, a: IVec3, b: IVec3, voxel: Voxel) -> Result<(), ()> {
+        let min = ivec3(a.x.min(b.x), a.y.min(b.y), a.z.min(b.z));
+        let max = ivec3(a.x.max(b.x), a.y.max(b.y), a.z.max(b.z));
+
+        let h = max.y - min.y + 1;
+        // println!("min: {min:?} max: {max:?} h: {h}");
+
+        for x in min.x..=max.x {
+            for z in min.z..=max.z {
+                // self.set_voxel(ivec3(x, min.y + 5, z), Voxel::MUD)?;
+                let surface = self.surface_at(x, z);
+                // println!("surface at {x} {z} = {surface}");
+                for y in 0..h {
+                    let pos = ivec3(x, surface + y, z);
+                    self.set_voxel(pos, voxel)?;
                 }
             }
         }
@@ -435,12 +493,12 @@ impl World {
     }
 
     pub fn surface_at(&self, x: i32, z: i32) -> i32 {
-        for y in 0..self.size as i32 {
-            if self.get_voxel(IVec3 { x, y, z }).unwrap().is_empty() {
+        for y in 5..self.size as i32 {
+            if self.get_voxel(ivec3(x, y, z)).unwrap().is_empty() {
                 return y;
             }
         }
-        0
+        69
     }
 
     pub fn populate_with<P: WorldPopulator>(&mut self, p: &P) -> Result<(), ()> {
@@ -458,7 +516,7 @@ impl World {
         for x in from.x..to.x {
             for y in from.y..to.y {
                 for z in from.z..to.z {
-                    let pos = IVec3 { x, y, z };
+                    let pos = ivec3(x, y, z);
 
                     let voxel = self.get_voxel(pos).unwrap_or(Voxel::AIR);
 
@@ -480,14 +538,14 @@ impl WorldPopulator for DebugWorldGen {
         for x in min.x..max.x {
             for y in min.y..max.y {
                 for z in 0..3 {
-                    world.set_voxel(IVec3 { x, y, z }, Voxel::STONE)?;
+                    world.set_voxel(ivec3(x, y, z), Voxel::STONE)?;
                 }
             }
         }
         for x in min.x..max.x {
             for z in min.z..max.z {
                 for y in 0..3 {
-                    world.set_voxel(IVec3 { x, y, z }, Voxel::DIRT)?;
+                    world.set_voxel(ivec3(x, y, z), Voxel::DIRT)?;
                 }
             }
         }
@@ -504,13 +562,29 @@ pub struct DefaultWorldGen {
     pub scale: f32,
     pub freq: f32,
     pub tree_freq: f32,
+    pub tree_height: [u32; 2],
+    pub tree_decay: f32,
 }
 impl DefaultWorldGen {
     pub fn clone_w_seed(&self, seed: i64) -> Self {
-        Self::new(seed, self.scale, self.freq, self.tree_freq)
+        Self::new(
+            seed,
+            self.scale,
+            self.freq,
+            self.tree_freq,
+            self.tree_height,
+            self.tree_decay,
+        )
     }
 
-    pub fn new(seed: i64, scale: f32, freq: f32, tree_freq: f32) -> Self {
+    pub fn new(
+        seed: i64,
+        scale: f32,
+        freq: f32,
+        tree_freq: f32,
+        tree_height: [u32; 2],
+        tree_decay: f32,
+    ) -> Self {
         init_gradients();
         let height_scale_map =
             MultiNoiseMap::new(&[NoiseMap::new(seed.wrapping_mul(47828974), 0.005, 2.0)]);
@@ -532,26 +606,73 @@ impl DefaultWorldGen {
             scale,
             freq,
             tree_freq,
+            tree_height,
+            tree_decay,
         }
     }
 
     fn get_terrain_h(&self, pos: Vec2) -> f32 {
         let height_scale = self.height_scale_map.get(pos) * self.scale;
         let height_freq = self.height_freq_map.get(pos) * self.freq;
-        self.height_map.get(pos * height_freq) * height_scale
+        self.height_map.get(pos * height_freq) * height_scale + 10.0
+    }
+
+    fn spawn_standing_tree(&self, world: &mut World, surface: IVec3) -> Result<(), ()> {
+        let h = fastrand::u32(self.tree_height[0]..self.tree_height[1]) as i32;
+        for i in 0..h {
+            world.set_voxel(surface + ivec3(0, i, 0), Voxel::BARK)?;
+        }
+        let leaves = Voxel::ALL_LEAVES[fastrand::usize(0..Voxel::ALL_LEAVES.len())];
+        self.sphere(world, surface + ivec3(0, h as i32, 0), 5, leaves)?;
+
+        // only create a branch if the tree is tall
+        if h < 11 {
+            return Ok(());
+        }
+        let branch_count = fastrand::i32(-3..3) + 3;
+
+        for _ in 0..branch_count {
+            // create a branch
+            let branch_h = h - fastrand::i32(3..8);
+            let branch_len = fastrand::i32(4..8);
+            let branch_dir = rand_cardinal_dir();
+
+            world.fill_voxels(
+                surface + ivec3(0, branch_h, 0),
+                surface + ivec3(0, branch_h, 0) + branch_dir * branch_len,
+                Voxel::BARK,
+            )?;
+
+            self.sphere(
+                world,
+                surface + ivec3(0, branch_h, 0) + branch_dir * branch_len,
+                3,
+                leaves,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn spawn_fallen_tree(&self, world: &mut World, surface: IVec3) -> Result<(), ()> {
+        //let dir = rand_cardinal_dir();
+        let dir = ivec3(0, 0, 1);
+        let h = fastrand::i32(6..18);
+        // println!("SPAWNING FALLEN TREE (dir = {dir:?}) (h = {h})");
+        world.lay_voxels(
+            surface + ivec3(0, 1, 0),
+            surface + ivec3(0, 1, 0) + dir * h,
+            Voxel::BARK,
+        )?;
+        Ok(())
     }
 
     fn spawn_tree(&self, world: &mut World, surface: IVec3) -> Result<(), ()> {
-        let h = fastrand::u32(6..14) as i32;
-        for i in 0..h {
-            world.set_voxel(surface + IVec3::new(0, i, 0), Voxel::BARK)?;
+        if fastrand::f32() < 0.9 {
+            self.spawn_standing_tree(world, surface)
+        } else {
+            self.spawn_fallen_tree(world, surface)
         }
-        self.sphere(
-            world,
-            surface + IVec3::new(0, h as i32, 0),
-            4,
-            Voxel::LEAVES,
-        )
     }
 
     fn sphere(&self, world: &mut World, pos: IVec3, r: u32, voxel: Voxel) -> Result<(), ()> {
@@ -563,11 +684,19 @@ impl DefaultWorldGen {
         for x in min.x..max.x {
             for y in min.y..max.y {
                 for z in min.z..max.z {
-                    let block_center = IVec3 { x, y, z }.as_vec3() + Vec3::splat(0.5);
-                    if (block_center - pos_center).length_squared() >= r_sq {
+                    let block_center = ivec3(x, y, z).as_vec3() + Vec3::splat(0.5);
+                    let dist_sq = (block_center - pos_center).length_squared();
+
+                    if dist_sq >= r_sq {
                         continue;
                     }
-                    world.set_voxel(IVec3 { x, y, z }, voxel)?;
+
+                    let decay_chance = dist_sq / (r_sq * self.tree_decay);
+                    if fastrand::f32() <= decay_chance {
+                        continue;
+                    }
+
+                    world.set_voxel(ivec3(x, y, z), voxel)?;
                 }
             }
         }
@@ -578,24 +707,16 @@ impl WorldPopulator for DefaultWorldGen {
     fn populate(&self, min: IVec3, max: IVec3, world: &mut World) -> Result<(), ()> {
         for x in min.x..max.x {
             for z in min.z..max.z {
-                let noise_pos = Vec2::new(x as f32, z as f32) + Vec2::splat(0.5);
+                let noise_pos = vec2(x as f32, z as f32) + Vec2::splat(0.5);
 
                 let y = self.get_terrain_h(noise_pos) as i32;
-                let surface_pos = IVec3 { x, y, z };
+                let surface_pos = ivec3(x, y, z);
 
                 // set stone
-                world.set_voxels(
-                    IVec3::new(x, 0, z),
-                    IVec3::new(x + 1, y - 3, z + 1),
-                    Voxel::STONE,
-                )?;
+                world.fill_voxels(ivec3(x, 0, z), ivec3(x, y - 4, z), Voxel::STONE)?;
 
                 // set dirt
-                world.set_voxels(
-                    IVec3::new(x, y - 3, z),
-                    IVec3::new(x + 1, y, z + 1),
-                    Voxel::DIRT,
-                )?;
+                world.fill_voxels(ivec3(x, y - 3, z), ivec3(x, y - 1, z), Voxel::DIRT)?;
 
                 // set surface
                 world.set_voxel(surface_pos, Voxel::GRASS)?;
@@ -607,4 +728,13 @@ impl WorldPopulator for DefaultWorldGen {
         }
         Ok(())
     }
+}
+
+fn rand_cardinal_dir() -> IVec3 {
+    [
+        ivec3(-1, 0, 0),
+        ivec3(1, 0, 0),
+        ivec3(0, 0, -1),
+        ivec3(0, 0, 1),
+    ][fastrand::usize(0..4)]
 }

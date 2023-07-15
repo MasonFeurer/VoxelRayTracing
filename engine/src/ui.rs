@@ -2,7 +2,7 @@ use crate::gpu::Settings as ShaderSettings;
 use crate::world::Material;
 use crate::{FrameInput, GameState, UpdateResult};
 use egui::*;
-use glam::Vec3;
+use glam::{ivec3, Vec3};
 
 #[derive(Default)]
 pub struct UiResult {
@@ -118,10 +118,22 @@ fn left_panel_ui(
         white,
     );
 
+    let pos = state.player.pos;
+    let ipos = state.player.pos.as_ivec3();
+
     ui.add_space(3.0);
-    label(ui, &format!("X: {:#}", state.player.pos.x), red);
-    label(ui, &format!("Y: {:#}", state.player.pos.y), green);
-    label(ui, &format!("Z: {:#}", state.player.pos.z), blue);
+    label(ui, &format!("X: {:#}", pos.x), red);
+    label(ui, &format!("Y: {:#}", pos.y), green);
+    label(ui, &format!("Z: {:#}", pos.z), blue);
+
+    let surface_y = state.world.surface_at(ipos.x, ipos.z);
+    let surface = state
+        .world
+        .get_voxel(ivec3(ipos.x, surface_y, ipos.z))
+        .unwrap();
+    ui.add_space(3.0);
+    label(ui, &format!("surface y: {surface_y}"), red);
+    label(ui, &format!("surface: {}", surface.display_name()), green);
 
     value_f32(ui, "speed", &mut state.player.speed, 0.1, 3.0);
 
@@ -133,6 +145,21 @@ fn left_panel_ui(
         value_f32(ui, "terrain scale", &mut state.world_gen.scale, 0.1, 10.0);
         value_f32(ui, "terrain freq", &mut state.world_gen.freq, 0.1, 10.0);
         value_f32(ui, "tree freq", &mut state.world_gen.tree_freq, 0.0, 0.2);
+        value_u32(
+            ui,
+            "tree min height",
+            &mut state.world_gen.tree_height[0],
+            1,
+            50,
+        );
+        value_u32(
+            ui,
+            "tree max height",
+            &mut state.world_gen.tree_height[1],
+            1,
+            50,
+        );
+        value_f32(ui, "tree decay", &mut state.world_gen.tree_decay, 0.0, 16.0);
 
         if ui.button("regenerate").clicked() {
             state.world_gen = state.world_gen.clone_w_seed(fastrand::i64(..));

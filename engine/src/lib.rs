@@ -26,7 +26,7 @@ pub static INVENTORY: &[Voxel] = &[
     Voxel::WATER,
     Voxel::WOOD,
     Voxel::BARK,
-    Voxel::LEAVES,
+    Voxel::GREEN_LEAVES,
     Voxel::SAND,
     Voxel::MUD,
     Voxel::CLAY,
@@ -89,7 +89,7 @@ impl GameState {
 
         let mut world = World::new_boxed(world_depth);
 
-        let world_gen = DefaultWorldGen::new(fastrand::i64(..), 1.0, 1.0, 0.001);
+        let world_gen = DefaultWorldGen::new(fastrand::i64(..), 1.0, 1.0, 0.001, [9, 20], 6.0);
         _ = world.populate_with(&world_gen);
 
         let result_tex_size = UVec2::new(

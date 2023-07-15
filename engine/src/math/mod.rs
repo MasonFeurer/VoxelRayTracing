@@ -9,7 +9,7 @@ pub mod dda;
 /// assert_eq!(field.raw(), 0b00000000_00000010);
 ///
 /// field.set(1, 1, 2);
-/// assert_eq!(a.raw(), 0b00000000_00000110);
+/// assert_eq!(field.raw(), 0b00000000_00000110);
 ///
 /// field.set(0b101, 3, 5);
 /// assert_eq!(field.raw(), 0b00000000_10100110);

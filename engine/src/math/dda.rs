@@ -1,7 +1,7 @@
 use glam::{IVec3, Vec3};
 
 /// Takes a rotation (the rotation around the X, Y, and Z axis), and
-/// creates a normalized vector ray in the facing direction.<p>
+/// creates a normalized vector ray in the facing direction.
 /// the rotation values should be in radians (0..TAU)
 pub fn axis_rot_to_ray(rot: Vec3) -> Vec3 {
     // the Z rotation doesn't effect the ray
