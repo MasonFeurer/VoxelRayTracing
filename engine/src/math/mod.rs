@@ -1,6 +1,8 @@
 pub mod aabb;
 pub mod dda;
 
+use glam::{ivec3, IVec3};
+
 /// # Examples
 /// ```rust
 /// let mut field = vrt_engine::world::BitField::ZERO;
@@ -47,4 +49,70 @@ impl BitField {
         let mask = !(!0 << len) << offset;
         (self.0 & mask) >> offset
     }
+}
+
+pub fn walk_line(mut a: IVec3, b: IVec3) -> Vec<IVec3> {
+    let mut result = Vec::new();
+    result.push(a);
+
+    let dist = (b - a).abs();
+    let step = ivec3(
+        (b.x > a.x) as i32 * 2 - 1,
+        (b.y > a.y) as i32 * 2 - 1,
+        (b.z > a.z) as i32 * 2 - 1,
+    );
+
+    if dist.x >= dist.y && dist.x >= dist.z {
+        let mut p1 = 2 * dist.y - dist.x;
+        let mut p2 = 2 * dist.z - dist.x;
+        while a.x != b.x {
+            a.x += step.x;
+            if p1 >= 0 {
+                a.y += step.y;
+                p1 -= 2 * dist.x;
+            }
+            if p2 >= 0 {
+                a.z += step.z;
+                p2 -= 2 * dist.x;
+            }
+            p1 += 2 * dist.y;
+            p2 += 2 * dist.z;
+            result.push(a);
+        }
+    } else if dist.y >= dist.x && dist.y >= dist.z {
+        let mut p1 = 2 * dist.x - dist.y;
+        let mut p2 = 2 * dist.z - dist.y;
+        while a.y != b.y {
+            a.y += step.y;
+            if p1 >= 0 {
+                a.x += step.x;
+                p1 -= 2 * dist.y;
+            }
+            if p2 >= 0 {
+                a.z += step.z;
+                p2 -= 2 * dist.y;
+            }
+            p1 += 2 * dist.x;
+            p2 += 2 * dist.z;
+            result.push(a);
+        }
+    } else {
+        let mut p1 = 2 * dist.y - dist.z;
+        let mut p2 = 2 * dist.x - dist.z;
+        while a.z != b.z {
+            a.z += step.z;
+            if p1 >= 0 {
+                a.y += step.y;
+                p1 -= 2 * dist.z;
+            }
+            if p2 >= 0 {
+                a.x += step.x;
+                p2 -= 2 * dist.z;
+            }
+            p1 += 2 * dist.y;
+            p2 += 2 * dist.x;
+            result.push(a);
+        }
+    }
+    result
 }

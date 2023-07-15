@@ -1,7 +1,7 @@
 pub mod open_simplex;
 
 use crate::math::{aabb::Aabb, BitField};
-use glam::{ivec3, vec2, IVec3, Vec2, Vec3};
+use glam::{ivec3, vec2, vec3, IVec3, Vec2, Vec3};
 use open_simplex::{init_gradients, MultiNoiseMap, NoiseMap};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -619,36 +619,31 @@ impl DefaultWorldGen {
 
     fn spawn_standing_tree(&self, world: &mut World, surface: IVec3) -> Result<(), ()> {
         let h = fastrand::u32(self.tree_height[0]..self.tree_height[1]) as i32;
-        for i in 0..h {
-            world.set_voxel(surface + ivec3(0, i, 0), Voxel::BARK)?;
-        }
         let leaves = Voxel::ALL_LEAVES[fastrand::usize(0..Voxel::ALL_LEAVES.len())];
         self.sphere(world, surface + ivec3(0, h as i32, 0), 5, leaves)?;
 
         // only create a branch if the tree is tall
-        if h < 11 {
-            return Ok(());
-        }
-        let branch_count = fastrand::i32(-3..3) + 3;
+        let branch_count = if h < 11 { 0 } else { fastrand::i32(0..4) };
 
         for _ in 0..branch_count {
             // create a branch
-            let branch_h = h - fastrand::i32(3..8);
-            let branch_len = fastrand::i32(4..8);
-            let branch_dir = rand_cardinal_dir();
+            let branch_h = h - fastrand::i32(5..(h - 3));
+            let branch_len = fastrand::u32(8..24) as f32 * 0.5;
 
-            world.fill_voxels(
-                surface + ivec3(0, branch_h, 0),
-                surface + ivec3(0, branch_h, 0) + branch_dir * branch_len,
-                Voxel::BARK,
-            )?;
+            let branch_dir = rand_hem_dir(Vec3::Y);
+            let start = ivec3(surface.x, surface.y + branch_h, surface.z);
+            let end = (start.as_vec3() + branch_dir * branch_len).as_ivec3();
 
-            self.sphere(
-                world,
-                surface + ivec3(0, branch_h, 0) + branch_dir * branch_len,
-                3,
-                leaves,
-            )?;
+            self.sphere(world, end, 3, leaves)?;
+
+            let line = crate::math::walk_line(start, end);
+            for pos in line {
+                world.set_voxel(pos, Voxel::BARK)?;
+            }
+        }
+
+        for i in 0..h {
+            world.set_voxel(surface + ivec3(0, i, 0), Voxel::BARK)?;
         }
 
         Ok(())
@@ -730,11 +725,29 @@ impl WorldPopulator for DefaultWorldGen {
     }
 }
 
-fn rand_cardinal_dir() -> IVec3 {
+pub fn rand_cardinal_dir() -> IVec3 {
     [
         ivec3(-1, 0, 0),
         ivec3(1, 0, 0),
         ivec3(0, 0, -1),
         ivec3(0, 0, 1),
     ][fastrand::usize(0..4)]
+}
+
+pub fn rand_dir() -> Vec3 {
+    fn rand_norm() -> f32 {
+        let theta = 2.0 * 3.14159265 * fastrand::f32();
+        let rho = (-2.0 * fastrand::f32().ln()).sqrt();
+        return rho * theta.cos();
+    }
+
+    let x = rand_norm();
+    let y = rand_norm();
+    let z = rand_norm();
+    vec3(x, y, z).normalize()
+}
+
+pub fn rand_hem_dir(norm: Vec3) -> Vec3 {
+    let dir = rand_dir();
+    dir * norm.dot(dir).signum()
 }
