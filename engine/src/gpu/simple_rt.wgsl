@@ -254,7 +254,8 @@ fn ray_world(rng: ptr<function, u32>, start_ray: Ray) -> HitResult {
         }
 
         norm = vec3<f32>(step == axis_dist) * -sign(dir);
-        ray_pos += dir * (step + 0.001);
+        ray_pos += dir * (step + 0.001) * vec3<f32>(step == axis_dist) + 
+            dir * (step) * vec3<f32>(step != axis_dist);
         
         if any(ray_pos < world_min) | any(ray_pos >= world_max) {
             return result;
