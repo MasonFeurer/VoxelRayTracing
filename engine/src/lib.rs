@@ -21,18 +21,22 @@ pub static INVENTORY: &[Voxel] = &[
     Voxel::STONE,
     Voxel::DIRT,
     Voxel::GRASS,
-    Voxel::FIRE,
-    Voxel::MAGMA,
-    Voxel::WATER,
-    Voxel::WOOD,
-    Voxel::BARK,
-    Voxel::GREEN_LEAVES,
     Voxel::SAND,
     Voxel::MUD,
     Voxel::CLAY,
-    Voxel::GOLD,
-    Voxel::MIRROR,
+    Voxel::WOOD,
+    Voxel::BARK,
+    Voxel::GREEN_LEAVES,
+    Voxel::RED_LEAVES,
+    Voxel::ORANGE_LEAVES,
+    Voxel::YELLOW_LEAVES,
+    Voxel::PINK_LEAVES,
+    Voxel::FIRE,
+    Voxel::MAGMA,
+    Voxel::WATER,
     Voxel::BRIGHT,
+    Voxel::MIRROR,
+    Voxel::GOLD,
     Voxel::ORANGE_TILE,
     Voxel::POLISHED_BLACK_TILES,
     Voxel::SMOOTH_ROCK,
@@ -84,8 +88,8 @@ impl GameState {
         settings.sun_intensity = 4.0;
         settings.sky_color = [0.81, 0.93, 1.0];
 
-        let world_depth = 7;
-        let vertical_samples = 600;
+        let world_depth = 8;
+        let vertical_samples = 800;
 
         let mut world = World::new_boxed(world_depth);
 
@@ -122,7 +126,7 @@ impl GameState {
             settings,
 
             player,
-            inv_sel: 19,
+            inv_sel: 0,
             world,
 
             world_gen,
@@ -154,13 +158,6 @@ impl GameState {
         let cam_data = self.player.create_cam_data(result_tex_size);
         self.gpu_res.buffers.cam_data.write(&self.gpu, &cam_data);
 
-        if input.key_pressed(Key::Right) && self.inv_sel < 19 {
-            self.inv_sel += 1;
-        }
-        if input.key_pressed(Key::Left) && self.inv_sel > 0 {
-            self.inv_sel -= 1;
-        }
-
         let hit_result = self.player.cast_ray(&self.world);
 
         if let Some(hit) = hit_result && input.left_button_pressed() {
@@ -188,7 +185,6 @@ impl GameState {
     }
 
     fn on_resize(&mut self, new_size: UVec2) {
-        println!("on_resize");
         let prev_result_size = self.gpu_res.result_texture.size();
         let new_aspect = new_size.x as f32 / new_size.y as f32;
         let prev_aspect = prev_result_size.x as f32 / prev_result_size.y as f32;
@@ -210,11 +206,18 @@ impl GameState {
         window: &Window,
         update: &UpdateResult,
         frame: &FrameInput,
-        _input: &InputState,
+        input: &InputState,
         egui: &mut Egui,
     ) -> Result<(), wgpu::SurfaceError> {
         if frame.win_size != frame.prev_win_size {
             self.on_resize(frame.win_size);
+        }
+
+        if input.key_pressed(Key::Right) && (self.inv_sel as usize) < INVENTORY.len() - 1 {
+            self.inv_sel += 1;
+        }
+        if input.key_pressed(Key::Left) && self.inv_sel > 0 {
+            self.inv_sel -= 1;
         }
 
         let (output, view) = self.gpu.get_output()?;
@@ -241,7 +244,8 @@ impl GameState {
             let cam_data = self.player.create_cam_data(result_tex_size.as_vec2());
             buffers.cam_data.write(&self.gpu, &cam_data);
 
-            // for WorldChance { idx, len } in &update.world_changes {
+            // ( prototype code )
+            // for WorldChange { idx, len } in &update.world_changes {
             //     let nodes = self.world.nodes[idx..idx + len];
             //     buffers.world.write_world_nodes(idx, nodes);
             // }

@@ -56,15 +56,6 @@ struct Material {
 @group(0) @binding(5) var<storage, read> voxel_mats: array<Material>;
 @group(0) @binding(6) var<uniform> frame_count_: u32;
 
-const AIR: u32 = 0u;
-const STONE: u32 = 1u;
-const DIRT: u32 = 2u;
-const GRASS: u32 = 3u;
-const FIRE: u32 = 4u;
-const MAGMA: u32 = 5u;
-const WATER: u32 = 6u;
-const SAND: u32 = 10u;
-
 fn rng_next(state: ptr<function, u32>) -> f32 {
     *state = *state * 747796405u + 2891336453u;
     var result = ((*state >> ((*state >> 28u) + 4u)) ^ *state) * 277803737u;
@@ -86,37 +77,6 @@ fn rng_next_hem_dir(state: ptr<function, u32>, norm: vec3<f32>) -> vec3<f32> {
     let dir = rng_next_dir(state);
     return dir * sign(dot(norm, dir));
 }
-
-// fn guassian_weight(x: vec3<f32>, y: vec3<f32>, sigma: f32) -> f32 {
-//     let dist_sq = dot(x - y, x - y);
-//     return exp(-dist_sq / (2.0 * sigma * sigma));
-// }
-
-// fn bilateral_filter(center_color: vec3<f32>, center_coords: vec3<i32>) -> vec4<f32> {
-//     var result = vec3(0.0);
-//     var weight_sum = 0.0;
-//     
-//     var i: i32 = -KERNAL_SIZE;
-//     while i <= KERNAL_SIZE {
-//         var j: i32 = -KERNAL_SIZE;
-//         while j <= KERNAL_SIZE {
-//             let current_coords: vec2<i32> = center_coords + vec2(i, j);
-//             let current_color: vec3<f32> = texelFetch(inputTexture, current_coords, 0).rgb;
-//             
-//             let color_weight: f32 = guassian_weight(center_color, current_color, SIGMA_COLOR);
-//             let spatial_weight: f32 = guassian_weight(vec3(center_coords), vec3(current_coords), SIGMA_SPACE);
-//             let weight: f32 = color_weight * spatial_weight;
-//             
-//             result += current_color * weight;
-//             weight_sum += weight;
-//             
-//             j += 1;
-//         }
-//         i += 1;
-//     }
-//     
-//     return vec4(result / weight_sum, 1.0);
-// }
 
 struct Ray {
     origin: vec3<f32>,

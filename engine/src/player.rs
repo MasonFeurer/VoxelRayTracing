@@ -5,7 +5,7 @@ use crate::math::dda::{axis_rot_to_ray, cast_ray, HitResult};
 use crate::world::World;
 use glam::{vec3, BVec3, Mat4, Vec2, Vec3};
 
-const GRAVITY: f32 = -0.020;
+const GRAVITY: f32 = -0.040;
 
 #[derive(Clone)]
 pub struct Player {

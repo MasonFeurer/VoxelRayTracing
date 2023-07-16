@@ -2,7 +2,7 @@ use crate::gpu::Settings as ShaderSettings;
 use crate::world::Material;
 use crate::{FrameInput, GameState, UpdateResult};
 use egui::*;
-use glam::{ivec3, Vec3};
+use glam::Vec3;
 
 #[derive(Default)]
 pub struct UiResult {
@@ -83,57 +83,18 @@ fn left_panel_ui(
     let blue = Color32::from_rgb(0, 255, 255);
     let white = Color32::WHITE;
 
-    let win_aspect = frame.win_size.x as f32 / frame.win_size.y as f32;
-    let result_tex_size = state.gpu_res.result_texture.size();
-    let result_tex_aspect = result_tex_size.x as f32 / result_tex_size.y as f32;
-
     ui.add_space(3.0);
     label(ui, &format!("fps: {}", frame.fps), white);
     ui.add_space(3.0);
-    label(ui, &format!("in hand: {:?}", in_hand.display_name()), white);
+    label(ui, &format!("place: {:?}", in_hand.display_name()), white);
     ui.add_space(3.0);
-    label(
-        ui,
-        &format!(
-            "win size: {}x{} ({:.2})",
-            frame.win_size.x, frame.win_size.y, win_aspect
-        ),
-        white,
-    );
-    label(
-        ui,
-        &format!(
-            "surface size: {}x{}",
-            state.gpu.surface_config.width, state.gpu.surface_config.height
-        ),
-        white,
-    );
-    ui.add_space(3.0);
-    label(
-        ui,
-        &format!(
-            "tex size: {}x{} ({:.2})",
-            result_tex_size.x, result_tex_size.y, result_tex_aspect
-        ),
-        white,
-    );
 
     let pos = state.player.pos;
-    let ipos = state.player.pos.as_ivec3();
 
     ui.add_space(3.0);
     label(ui, &format!("X: {:#}", pos.x), red);
     label(ui, &format!("Y: {:#}", pos.y), green);
     label(ui, &format!("Z: {:#}", pos.z), blue);
-
-    let surface_y = state.world.surface_at(ipos.x, ipos.z);
-    let surface = state
-        .world
-        .get_voxel(ivec3(ipos.x, surface_y, ipos.z))
-        .unwrap();
-    ui.add_space(3.0);
-    label(ui, &format!("surface y: {surface_y}"), red);
-    label(ui, &format!("surface: {}", surface.display_name()), green);
 
     value_f32(ui, "speed", &mut state.player.speed, 0.1, 3.0);
 
@@ -145,6 +106,8 @@ fn left_panel_ui(
         value_f32(ui, "terrain scale", &mut state.world_gen.scale, 0.1, 10.0);
         value_f32(ui, "terrain freq", &mut state.world_gen.freq, 0.1, 10.0);
         value_f32(ui, "tree freq", &mut state.world_gen.tree_freq, 0.0, 0.2);
+
+        let prev_tree_height = state.world_gen.tree_height;
         value_u32(
             ui,
             "tree min height",
@@ -159,6 +122,11 @@ fn left_panel_ui(
             1,
             50,
         );
+        // if the tree height range is invalid, revert to range from previous frame
+        if state.world_gen.tree_height[0] >= state.world_gen.tree_height[1] {
+            state.world_gen.tree_height = prev_tree_height;
+        }
+
         value_f32(ui, "tree decay", &mut state.world_gen.tree_decay, 0.0, 16.0);
 
         if ui.button("regenerate").clicked() {

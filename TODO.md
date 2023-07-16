@@ -6,7 +6,6 @@
 - Make player appear in reflections
 - Add textures
 - Add distance fog or LOD
-- remove weird visual artifacts created by the raytracer
 - world saving / loading (maybe loading MC worlds)
 - Have breaking/placing blocks not ensue re-uploading the entire world to the GPU
 - Implement denoiser

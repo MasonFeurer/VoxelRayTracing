@@ -55,15 +55,6 @@ struct Material {
 @group(0) @binding(4) var<storage, read> voxel_mats: array<Material>;
 @group(0) @binding(5) var<uniform> frame_count_: u32;
 
-const AIR: u32 = 0u;
-const STONE: u32 = 1u;
-const DIRT: u32 = 2u;
-const GRASS: u32 = 3u;
-const FIRE: u32 = 4u;
-const MAGMA: u32 = 5u;
-const WATER: u32 = 6u;
-const SAND: u32 = 10u;
-
 fn rng_next(state: ptr<function, u32>) -> f32 {
     *state = *state * 747796405u + 2891336453u;
     var result = ((*state >> ((*state >> 28u) + 4u)) ^ *state) * 277803737u;
@@ -96,8 +87,6 @@ struct HitResult {
     material: Material,
     norm: vec3<f32>,
     pos: vec3<f32>,
-    debug_1: bool,
-    debug_2: bool,
     debug_3: bool,
 }
 

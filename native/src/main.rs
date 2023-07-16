@@ -84,8 +84,6 @@ pub fn main() {
                 toggle_fullscreen(&window);
             }
 
-            input.finish_frame();
-
             let frame_in = FrameInput {
                 fps,
                 prev_win_size,
@@ -100,6 +98,8 @@ pub fn main() {
                 Err(wgpu::SurfaceError::OutOfMemory) => *flow = ControlFlow::Exit,
                 Err(e) => eprintln!("{e:?}"),
             };
+
+            input.finish_frame();
 
             fps_temp += 1;
             let now = SystemTime::now();
