@@ -134,21 +134,35 @@ impl Material {
 
 #[rustfmt::skip]
 pub static DEFAULT_VOXEL_MATERIALS: &[Material] = &[
+    // AIR
     Material::new(1, [0.00, 0.00, 0.00], 0.0, 0.0, 0.0, [1.0; 3], 0.0),
+    // STONE
     Material::new(0, [0.40, 0.40, 0.40], 0.0, 0.8, 0.0, [1.0; 3], 0.0),
+    // DIRT
     Material::new(0, [0.40, 0.20, 0.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
+    // GRASS
     Material::new(0, [0.10, 0.70, 0.10], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
+    // FIRE
     Material::new(0, [1.00, 0.90, 0.20], 2.0, 0.0, 0.0, [1.0; 3], 0.0),
+    // MAGMA
     Material::new(0, [0.75, 0.18, 0.01], 1.0, 1.0, 0.2, [1.0; 3], 0.0),
+    // WATER
     Material::new(0, [0.00, 0.00, 1.00], 0.0, 0.0, 0.5, [1.0; 3], 0.0),
+    // WOOD
     Material::new(0, [0.00, 0.00, 0.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
+    // BARK
     Material::new(0, [0.86, 0.85, 0.82], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
     // GREEN_LEAVES
     Material::new(0, [0.23, 0.52, 0.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
+    // SAND
     Material::new(0, [0.99, 0.92, 0.53], 0.0, 0.9, 0.0, [1.0; 3], 0.0),
+    // MUD
     Material::new(0, [0.22, 0.13, 0.02], 0.0, 0.8, 0.4, [1.0; 3], 0.0),
+    // CLAY
     Material::new(0, [0.35, 0.30, 0.25], 0.0, 0.8, 0.4, [1.0; 3], 0.0),
+    // GOLD
     Material::new(0, [0.83, 0.68, 0.22], 0.0, 0.3, 0.0, [1.0; 3], 0.0),
+    // MIRROR
     Material::new(0, [1.00, 1.00, 1.00], 0.0, 0.0, 0.0, [1.0; 3], 0.0),
     // BRIGHT
     Material::new(0, [1.00, 1.00, 1.00], 5.0, 1.0, 0.0, [1.0; 3], 0.0),
@@ -617,7 +631,7 @@ impl DefaultWorldGen {
         self.height_map.get(pos * height_freq) * height_scale + 10.0
     }
 
-    fn spawn_standing_tree(&self, world: &mut World, surface: IVec3) -> Result<(), ()> {
+    fn spawn_tree(&self, world: &mut World, surface: IVec3) -> Result<(), ()> {
         let h = fastrand::u32(self.tree_height[0]..self.tree_height[1]) as i32;
         let leaves = Voxel::ALL_LEAVES[fastrand::usize(0..Voxel::ALL_LEAVES.len())];
         self.sphere(world, surface + ivec3(0, h as i32, 0), 5, leaves)?;
@@ -647,27 +661,6 @@ impl DefaultWorldGen {
         }
 
         Ok(())
-    }
-
-    fn spawn_fallen_tree(&self, world: &mut World, surface: IVec3) -> Result<(), ()> {
-        //let dir = rand_cardinal_dir();
-        let dir = ivec3(0, 0, 1);
-        let h = fastrand::i32(6..18);
-        // println!("SPAWNING FALLEN TREE (dir = {dir:?}) (h = {h})");
-        world.lay_voxels(
-            surface + ivec3(0, 1, 0),
-            surface + ivec3(0, 1, 0) + dir * h,
-            Voxel::BARK,
-        )?;
-        Ok(())
-    }
-
-    fn spawn_tree(&self, world: &mut World, surface: IVec3) -> Result<(), ()> {
-        if fastrand::f32() < 0.9 {
-            self.spawn_standing_tree(world, surface)
-        } else {
-            self.spawn_fallen_tree(world, surface)
-        }
     }
 
     fn sphere(&self, world: &mut World, pos: IVec3, r: u32, voxel: Voxel) -> Result<(), ()> {
