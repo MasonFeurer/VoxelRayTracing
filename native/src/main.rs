@@ -28,6 +28,11 @@ pub fn win_size(window: &Window) -> UVec2 {
 }
 
 pub fn main() {
+    let max_buffer_sizes: u32 = std::env::args()
+        .nth(1)
+        .map(|s| s.parse::<u32>().expect("invalid integer argument"))
+        .unwrap_or(u32::MAX);
+
     env_logger::init();
 
     let mut fps_temp: u32 = 0;
@@ -46,7 +51,7 @@ pub fn main() {
     let mut prev_win_size = win_size(&window);
     hide_cursor(&window, true);
 
-    let gpu = pollster::block_on(Gpu::new(&window));
+    let gpu = pollster::block_on(Gpu::new(&window, max_buffer_sizes));
 
     let mut egui = Egui::new(&window, &gpu);
     let mut game_state = GameState::new(win_size(&window), gpu);

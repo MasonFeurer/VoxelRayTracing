@@ -480,7 +480,7 @@ pub struct Gpu {
     pub surface_config: SurfaceConfiguration,
 }
 impl Gpu {
-    pub async fn new(window: &winit::window::Window) -> Self {
+    pub async fn new(window: &winit::window::Window, max_buffer_sizes: u32) -> Self {
         let size = window.inner_size();
         let size = UVec2::new(size.width, size.height);
 
@@ -505,8 +505,8 @@ impl Gpu {
                 &DeviceDescriptor {
                     features: Features::default(),
                     limits: Limits {
-                        max_storage_buffer_binding_size: 2_000_000_000,
-                        max_buffer_size: 2_000_000_000,
+                        max_storage_buffer_binding_size: max_buffer_sizes,
+                        max_buffer_size: max_buffer_sizes as u64,
                         ..Default::default()
                     },
                     label: None,
