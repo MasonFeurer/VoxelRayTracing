@@ -83,7 +83,6 @@ impl GameState {
         let win_aspect = win_size.x as f32 / win_size.y as f32;
 
         let mut settings = Settings::default();
-        settings.samples_per_pixel = 1;
         settings.max_ray_bounces = 3;
         settings.sun_intensity = 4.0;
         settings.sky_color = [0.81, 0.93, 1.0];
@@ -251,15 +250,19 @@ impl GameState {
             // }
         }
 
-        if self.path_tracing {
-            let workgroups = result_tex_size / 8;
-            self.gpu_res.raytracer.encode_pass(&mut encoder, workgroups);
-        } else {
-            let workgroups = result_tex_size / 8;
-            self.gpu_res.simple_rt.encode_pass(&mut encoder, workgroups);
+        let workgroups = result_tex_size / 8;
+        match self.path_tracing {
+            false => self
+                .gpu_res
+                .ray_tracer
+                .encode_pass(&mut encoder, workgroups),
+            true => self
+                .gpu_res
+                .path_tracer
+                .encode_pass(&mut encoder, workgroups),
         }
 
-        self.gpu_res.result_shader.encode_pass(&mut encoder, &view);
+        self.gpu_res.screen_shader.encode_pass(&mut encoder, &view);
 
         // --- egui ---
         let egui_textures_free = {
@@ -314,27 +317,6 @@ impl GameState {
 
             egui_output.textures_delta.free
         };
-
-        // --- copy result_texture to prev_result_texture ---
-        encoder.copy_texture_to_texture(
-            wgpu::ImageCopyTexture {
-                texture: &self.gpu_res.result_texture.handle,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::ImageCopyTexture {
-                texture: &self.gpu_res.prev_result_texture.handle,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::Extent3d {
-                width: self.gpu_res.result_texture.size().x,
-                height: self.gpu_res.result_texture.size().y,
-                depth_or_array_layers: 1,
-            },
-        );
 
         // --- submit passes ---
         self.gpu.queue.submit(std::iter::once(encoder.finish()));

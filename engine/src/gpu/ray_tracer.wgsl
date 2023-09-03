@@ -6,7 +6,6 @@ struct CamData {
 }
 
 struct Settings {
-    samples_per_pixel: u32,
     max_ray_bounces: u32,
     sun_intensity: f32,
     sky_color: vec3<f32>,
@@ -49,12 +48,11 @@ struct Material {
 }
 
 @group(0) @binding(0) var output_texture_: texture_storage_2d<rgba8unorm, write>;
-@group(0) @binding(1) var prev_output_texture_: texture_2d<f32>;
-@group(0) @binding(2) var<uniform> cam_data_: CamData;
-@group(0) @binding(3) var<uniform> settings_: Settings;
-@group(0) @binding(4) var<storage, read> world_: World;
-@group(0) @binding(5) var<storage, read> voxel_mats: array<Material>;
-@group(0) @binding(6) var<uniform> frame_count_: u32;
+@group(0) @binding(1) var<uniform> cam_data_: CamData;
+@group(0) @binding(2) var<uniform> settings_: Settings;
+@group(0) @binding(3) var<storage, read> world_: World;
+@group(0) @binding(4) var<storage, read> voxel_mats: array<Material>;
+@group(0) @binding(5) var<uniform> frame_count_: u32;
 
 fn rng_next(state: ptr<function, u32>) -> f32 {
     *state = *state * 747796405u + 2891336453u;
@@ -88,6 +86,7 @@ struct HitResult {
     material: Material,
     norm: vec3<f32>,
     pos: vec3<f32>,
+    debug_3: bool,
 }
 
 fn get_node(idx: u32) -> Node {
@@ -101,13 +100,14 @@ struct FoundNode {
     idx: u32,
     min: vec3<f32>,
     max: vec3<f32>,
+    center: vec3<f32>,
+    size: f32,
 }
 
 fn find_node(pos: vec3<f32>) -> FoundNode {
     var size = f32(world_.size);
     var center = vec3(size * 0.5);
     var node_idx = 0u;
-    
     loop {
         let node = get_node(node_idx);
         if !node_is_split(node) {
@@ -115,10 +115,14 @@ fn find_node(pos: vec3<f32>) -> FoundNode {
             out.idx = node_idx;
             out.min = vec3<f32>(center) - vec3(size * 0.5);
             out.max = vec3<f32>(center) + vec3(size * 0.5);
+            out.center = vec3<f32>(center);
+            out.size = size;
             return out;
         }
         size *= 0.5;
-        
+
+        // let gt: vec3<bool> = pos >= center;
+        // let gt: vec3<bool> = pos - center >= 0.000000000000001;
         let gt: vec3<bool> = pos >= center;
         let child_idx = 
             u32(gt.x) << 0u |
@@ -135,35 +139,18 @@ fn find_node(pos: vec3<f32>) -> FoundNode {
 }
 
 fn ray_color(rng: ptr<function, u32>, ray: Ray) -> vec3<f32> {
-    var ray = ray;
-    var ray_color: vec3<f32> = vec3(1.0);
-    var incoming_light: vec3<f32> = vec3(0.0);
+    let rs = ray_world(rng, ray);
+    let sky_color = ray_sky(ray);
+    var vox_color = rs.material.color;
     
-    var bounce_count = 0u;
-    while bounce_count < settings_.max_ray_bounces {
-        let rs = ray_world(rng, ray);
-        if !rs.hit {
-            let color = ray_sky(ray);
-            incoming_light += color * ray_color;
-            break;
+    if all(vox_color == 0.0) {
+        vox_color = vec3(1.0, 0.0, 0.0);
+        if (rs.debug_3) { 
+            vox_color = vec3(1.0, 0.0, 1.0);
         }
-        
-        let is_polish_bounce = rng_next(rng) <= rs.material.polish_bounce_chance;
-        
-        let specular_dir = ray.dir - 2.0 * rs.norm * dot(rs.norm, ray.dir);
-        let scattered_dir = normalize(rs.norm + rng_next_dir(rng));
-        
-        let scatter = mix(rs.material.scatter, rs.material.polish_scatter, f32(is_polish_bounce));
-        
-        ray.dir = normalize(mix(specular_dir, scattered_dir, scatter));
-        ray.origin = rs.pos + ray.dir * 0.001;
-        
-        incoming_light += (rs.material.color * rs.material.emission) * ray_color;
-        ray_color *= mix(rs.material.color, rs.material.polish_color, f32(is_polish_bounce));
-        
-        bounce_count += 1u;
     }
-    return incoming_light;
+    
+    return vox_color * f32(rs.hit) + sky_color * f32(!rs.hit);
 }
 
 fn ray_sky(ray: Ray) -> vec3<f32> {
@@ -183,7 +170,7 @@ fn ray_sky(ray: Ray) -> vec3<f32> {
 
 fn ray_world(rng: ptr<function, u32>, start_ray: Ray) -> HitResult {
     let dir = start_ray.dir;
-    let mask = vec3<f32>(dir > 0.0);
+    let mask = vec3<f32>(dir >= 0.0);
     let imask = 1.0 - mask;
     
     var ray_pos = start_ray.origin;
@@ -199,6 +186,8 @@ fn ray_world(rng: ptr<function, u32>, start_ray: Ray) -> HitResult {
     
     // length of a line in same direction as the ray,
     // that travels 1 unit in the X, Y, Z
+
+    // dir - normilized --- x^2 + y^2 + z^2 = 1
     let unit_step_size = vec3(
         sqrt(1.0 + (dir.y / dir.x) * (dir.y / dir.x) + (dir.z / dir.x) * (dir.z / dir.x)),
         sqrt(1.0 + (dir.x / dir.y) * (dir.x / dir.y) + (dir.z / dir.y) * (dir.z / dir.y)),
@@ -212,30 +201,68 @@ fn ray_world(rng: ptr<function, u32>, start_ray: Ray) -> HitResult {
     while iter_count < 500u {
         iter_count += 1u;
         
-        let found_node = find_node(ray_pos);
-        voxel = node_voxel(get_node(found_node.idx));
+        let found_node = find_node(ray_pos); // the most child one
+
+        voxel = node_voxel(get_node(found_node.idx)); // just voxel - most time air
         
-        if voxel_mats[voxel].empty == 0u {
+        if voxel_mats[voxel].empty == 0u { // not air, so return it
             break;
         }
         let node_min = vec3<f32>(found_node.min);
         let node_max = vec3<f32>(found_node.max);
         
-        let axis_dist = ((ray_pos - node_min) * imask + (node_max - ray_pos) * mask) * unit_step_size;
-        let step = min(axis_dist.x, min(axis_dist.y, axis_dist.z));
-        
+        let axis_dist = (
+            (ray_pos - node_min) * imask + (node_max - ray_pos) * mask
+        ) * unit_step_size;
+
+        var step: f32;
+
+        if axis_dist.x == 0.0 {
+            if axis_dist.y == 0.0 {
+                step = axis_dist.z;
+            } else if axis_dist.z == 0.0 {
+                step = axis_dist.y;
+            } else {
+                step = min(axis_dist.y, axis_dist.z);
+            }
+        } else {
+            if axis_dist.y == 0.0 {
+                if axis_dist.z == 0.0 {
+                    step = axis_dist.x;
+                } else {
+                    step = min(axis_dist.x, axis_dist.z);
+                }
+            } else {
+                if axis_dist.z == 0.0 {
+                    step = min(axis_dist.y, axis_dist.x);
+                } else {
+                    step = min(axis_dist.x, min(axis_dist.y, axis_dist.z));
+                }
+            }
+        }
+
         norm = vec3<f32>(step == axis_dist) * -sign(dir);
-        ray_pos += dir * (step + 0.001);
+        ray_pos += dir * (step + 0.001) * vec3<f32>(step == axis_dist) + 
+            dir * (step) * vec3<f32>(step != axis_dist);
         
         if any(ray_pos < world_min) | any(ray_pos >= world_max) {
             return result;
-        }
-    }
-    
+        } // out of bounds
+    } // return not air OR max steps already !!!!!!!!!!!
+
     result.hit = true;
     result.pos = ray_pos;
     result.norm = norm;
     result.material = voxel_mats[voxel];
+    if result.norm.x != 0.0 {
+        result.material.color *= 0.5;
+    }
+    if result.norm.z != 0.0 {
+        result.material.color *= 0.7;
+    }
+    if result.norm.y == -1.0 {
+        result.material.color *= 0.2;
+    }
     return result;
 }
 
@@ -257,20 +284,9 @@ fn create_ray_from_screen(screen_pos: vec2<i32>) -> Ray {
 fn update(@builtin(global_invocation_id) inv_id: vec3<u32>) {
     let screen_pos = vec2<i32>(inv_id.xy);
     var rng = inv_id.y * u32(cam_data_.proj_size.x) + inv_id.x + frame_count_ * 27927421u;
-
+    
     let ray = create_ray_from_screen(screen_pos);
+    let color = ray_color(&rng, ray);
     
-    var color = vec3(0.0);
-    var ray_count = 0u;
-    while ray_count < settings_.samples_per_pixel {
-        color += ray_color(&rng, ray);
-        ray_count += 1u;
-    }
-    color /= f32(ray_count);
-    
-    let old_render = textureLoad(prev_output_texture_, screen_pos, 0);
-    let weight = 1.0 / f32(frame_count_ + 1u);
-    let result = old_render * (1.0 - weight) + vec4(color, 1.0) * weight;
-    
-    textureStore(output_texture_, screen_pos, result);
+    textureStore(output_texture_, screen_pos, vec4(color, 1.0));
 }

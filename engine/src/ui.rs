@@ -154,7 +154,6 @@ fn left_panel_ui(
     let mut changed = false;
     ui.collapsing("shader", |ui| {
         let ShaderSettings {
-            samples_per_pixel,
             max_ray_bounces,
             sky_color,
             sun_pos,
@@ -164,7 +163,6 @@ fn left_panel_ui(
 
         toggle_bool(ui, "path tracing", &mut state.path_tracing);
         changed |= value_u32(ui, "max ray bounces", max_ray_bounces, 0, 30);
-        changed |= value_u32(ui, "samples/pixel", samples_per_pixel, 1, 30);
         changed |= color_picker(ui, "sky color", sky_color);
         changed |= value_f32(ui, "sun intensity", sun_intensity, 0.0, 100.0);
         if value_f32(ui, "sun pos", &mut state.sun_angle, 0.0, 360.0) {
