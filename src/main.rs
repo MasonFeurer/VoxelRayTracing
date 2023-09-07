@@ -1,6 +1,3 @@
-#![feature(new_uninit)]
-#![feature(let_chains)]
-
 pub mod gpu;
 pub mod input;
 pub mod math;
@@ -279,26 +276,27 @@ impl GameState {
 
         let hit_result = self.player.cast_ray(&self.world);
 
-        if let Some(hit) = hit_result && input.left_button_pressed() {
-            if let Ok(()) = self.world.set_voxel(hit.pos, Voxel::AIR) {
-                // self.gpu_res.buffers.world.write(&self.gpu, &self.world);
-                self.gpu_res.resize_result_texture(&self.gpu, self.gpu_res.result_texture.size());
-                self.frame_count = 0;
-            } else {
-                println!("failed to set voxel");
-            }
-        }
-        if let Some(hit) = hit_result && input.right_button_pressed() {
-            let voxel_in_hand = INVENTORY[self.inv_sel as usize];
-            if let Ok(()) = self.world.set_voxel(hit.pos + hit.face, voxel_in_hand) {
-                // self.gpu_res.buffers.world.write(&self.gpu, &self.world);
-                self.gpu_res.resize_result_texture(&self.gpu, self.gpu_res.result_texture.size());
-                self.frame_count = 0;
-            } else {
-                println!("failed to set voxel");
-            }
-        }
+        let set_vox = if input.left_button_pressed() {
+            Some(Voxel::AIR)
+        } else if input.right_button_pressed() {
+            Some(INVENTORY[self.inv_sel as usize])
+        } else {
+            None
+        };
 
+        if let (Some(hit), Some(vox)) = (hit_result, set_vox) {
+            if let Ok(()) = self.world.set_voxel(hit.pos, vox) {
+                self.gpu_res
+                    .buffers
+                    .nodes
+                    .write(&self.gpu, 0, self.world.nodes());
+                self.gpu_res
+                    .resize_result_texture(&self.gpu, self.gpu_res.result_texture.size());
+                self.frame_count = 0;
+            } else {
+                println!("failed to set voxel");
+            }
+        }
         output.hit_result = hit_result;
         output
     }

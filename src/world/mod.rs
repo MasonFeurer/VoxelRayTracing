@@ -443,7 +443,9 @@ impl World {
         for idx in result..result + 8 {
             self.nodes[idx as usize] = Node::new_leaf(voxel);
         }
-        self.last_used_node = result + 8;
+        if result - 8 > self.last_used_node {
+            self.last_used_node = result + 8;
+        }
         Ok(result)
     }
 }

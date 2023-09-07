@@ -11,6 +11,5 @@ Build and run from source:
 ```sh
 git clone "https://github.com/MasonFeurer/VoxelRayTracing.git"
 cd VoxelRayTracing
-rustup override nightly
 cargo run --release
 ```
