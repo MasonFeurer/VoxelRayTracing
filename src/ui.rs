@@ -99,6 +99,7 @@ fn left_panel_ui(
     value_f32(ui, "speed", &mut state.player.speed, 0.1, 3.0);
 
     ui.separator();
+    let mut changed = false;
 
     ui.collapsing("world", |ui| {
         ui.label(&format!("world size: {0}x{0}", state.world.size));
@@ -134,8 +135,14 @@ fn left_panel_ui(
             state.world.set_max_depth(state.world_depth);
             state.world.clear();
             _ = state.world.populate_with(&state.world_gen);
+            state.settings.world_size = state.world.size;
+            changed = true;
 
-            state.gpu_res.buffers.world.write(&state.gpu, &state.world);
+            state
+                .gpu_res
+                .buffers
+                .nodes
+                .write(&state.gpu, 0, state.world.nodes());
             result.clear_result = true;
         }
         if ui.button("generate debug world").clicked() {
@@ -143,15 +150,20 @@ fn left_panel_ui(
             state.world.set_max_depth(state.world_depth);
             state.world.clear();
             _ = state.world.populate_with(&gen);
+            state.settings.world_size = state.world.size;
+            changed = true;
 
-            state.gpu_res.buffers.world.write(&state.gpu, &state.world);
+            state
+                .gpu_res
+                .buffers
+                .nodes
+                .write(&state.gpu, 0, state.world.nodes());
             result.clear_result = true;
         }
     });
 
     ui.separator();
 
-    let mut changed = false;
     ui.collapsing("shader", |ui| {
         let ShaderSettings {
             max_ray_bounces,

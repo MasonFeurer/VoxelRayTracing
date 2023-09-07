@@ -6,35 +6,26 @@ struct CamData {
 }
 
 struct Settings {
+    world_size: u32,
     max_ray_bounces: u32,
     sun_intensity: f32,
     sky_color: vec3<f32>,
     sun_pos: vec3<f32>,
 }
 
-struct Node {
-    data: u32,
-}
 fn get_bits(field: u32, len: u32, offset: u32) -> u32 {
     let mask = !(!0u << len) << offset;
     return (field & mask) >> offset;
 }
 
-fn node_voxel(node: Node) -> u32 {
-    return get_bits(node.data, 8u, 0u);
+fn node_voxel(node_idx: u32) -> u32 {
+    return get_bits(nodes_[node_idx], 8u, 0u);
 }
-fn node_is_split(node: Node) -> bool {
-    return get_bits(node.data, 1u, 31u) == 1u;
+fn node_is_split(node_idx: u32) -> bool {
+    return get_bits(nodes_[node_idx], 1u, 31u) == 1u;
 }
-fn node_child(node: Node, child: u32) -> u32 {
-    return get_bits(node.data, 30u, 0u) * 8u + 1u + child;
-}
-
-struct World {
-    size: u32,
-    _max_depth: u32,
-    _start_search: u32,
-    nodes: array<Node>,
+fn node_child(node_idx: u32, child: u32) -> u32 {
+    return get_bits(nodes_[node_idx], 30u, 0u) * 8u + 1u + child;
 }
 
 struct Material {
@@ -50,31 +41,9 @@ struct Material {
 @group(0) @binding(0) var output_texture_: texture_storage_2d<rgba8unorm, write>;
 @group(0) @binding(1) var<uniform> cam_data_: CamData;
 @group(0) @binding(2) var<uniform> settings_: Settings;
-@group(0) @binding(3) var<storage, read> world_: World;
+@group(0) @binding(3) var<storage, read> nodes_: array<u32>;
 @group(0) @binding(4) var<storage, read> voxel_mats: array<Material>;
 @group(0) @binding(5) var<uniform> frame_count_: u32;
-
-fn rng_next(state: ptr<function, u32>) -> f32 {
-    *state = *state * 747796405u + 2891336453u;
-    var result = ((*state >> ((*state >> 28u) + 4u)) ^ *state) * 277803737u;
-    result = (result >> 22u) ^ result;
-    return f32(result) / 4294967295.0;
-}
-fn rng_next_norm(state: ptr<function, u32>) -> f32 {
-    let theta = 2.0 * 3.14159265 * rng_next(state);
-    let rho = sqrt(-2.0 * log(rng_next(state)));
-    return rho * cos(theta);
-}
-fn rng_next_dir(state: ptr<function, u32>) -> vec3<f32> {
-    let x = rng_next_norm(state);
-    let y = rng_next_norm(state);
-    let z = rng_next_norm(state);
-    return normalize(vec3(x, y, z));
-}
-fn rng_next_hem_dir(state: ptr<function, u32>, norm: vec3<f32>) -> vec3<f32> {
-    let dir = rng_next_dir(state);
-    return dir * sign(dot(norm, dir));
-}
 
 struct Ray {
     origin: vec3<f32>,
@@ -89,14 +58,7 @@ struct HitResult {
     debug_3: bool,
 }
 
-fn get_node(idx: u32) -> Node {
-    return world_.nodes[idx];
-}
-fn get_node_child(idx: u32, child: u32) -> u32 {
-    return node_child(world_.nodes[idx], child);
-}
-
-struct FoundNode {
+struct FoundeNode {
     idx: u32,
     min: vec3<f32>,
     max: vec3<f32>,
@@ -104,14 +66,13 @@ struct FoundNode {
     size: f32,
 }
 
-fn find_node(pos: vec3<f32>) -> FoundNode {
-    var size = f32(world_.size);
+fn find_node(pos: vec3<f32>) -> FoundeNode {
+    var size = f32(settings_.world_size);
     var center = vec3(size * 0.5);
     var node_idx = 0u;
     loop {
-        let node = get_node(node_idx);
-        if !node_is_split(node) {
-            var out: FoundNode;
+        if !node_is_split(node_idx) {
+            var out: FoundeNode;
             out.idx = node_idx;
             out.min = vec3<f32>(center) - vec3(size * 0.5);
             out.max = vec3<f32>(center) + vec3(size * 0.5);
@@ -121,25 +82,23 @@ fn find_node(pos: vec3<f32>) -> FoundNode {
         }
         size *= 0.5;
 
-        // let gt: vec3<bool> = pos >= center;
-        // let gt: vec3<bool> = pos - center >= 0.000000000000001;
         let gt: vec3<bool> = pos >= center;
         let child_idx = 
             u32(gt.x) << 0u |
             u32(gt.y) << 1u |
             u32(gt.z) << 2u;
         
-        node_idx = get_node_child(node_idx, child_idx);
+        node_idx = node_child(node_idx, child_idx);
         let child_dir = vec3<f32>(gt) * 2.0 - vec3(1.0);
         center += (size * 0.5) * child_dir;
     }
     // this shouldn't happen, even if `pos` is outside of the world bounds
-    var out: FoundNode;
+    var out: FoundeNode;
     return out;
 }
 
-fn ray_color(rng: ptr<function, u32>, ray: Ray) -> vec3<f32> {
-    let rs = ray_world(rng, ray);
+fn ray_color(ray: Ray) -> vec3<f32> {
+    let rs = ray_world(ray);
     let sky_color = ray_sky(ray);
     var vox_color = rs.material.color;
     
@@ -168,7 +127,7 @@ fn ray_sky(ray: Ray) -> vec3<f32> {
     return mix(void_color, sky_gradient, ground_to_sky_t) + sun * settings_.sun_intensity;
 }
 
-fn ray_world(rng: ptr<function, u32>, start_ray: Ray) -> HitResult {
+fn ray_world(start_ray: Ray) -> HitResult {
     let dir = start_ray.dir;
     let mask = vec3<f32>(dir >= 0.0);
     let imask = 1.0 - mask;
@@ -176,7 +135,7 @@ fn ray_world(rng: ptr<function, u32>, start_ray: Ray) -> HitResult {
     var ray_pos = start_ray.origin;
     
     let world_min = vec3(0.0);
-    let world_max = vec3(f32(world_.size));
+    let world_max = vec3(f32(settings_.world_size));
     
     var result: HitResult;
     
@@ -202,8 +161,7 @@ fn ray_world(rng: ptr<function, u32>, start_ray: Ray) -> HitResult {
         iter_count += 1u;
         
         let found_node = find_node(ray_pos); // the most child one
-
-        voxel = node_voxel(get_node(found_node.idx)); // just voxel - most time air
+        voxel = node_voxel(found_node.idx); // just voxel - most time air
         
         if voxel_mats[voxel].empty == 0u { // not air, so return it
             break;
@@ -283,10 +241,8 @@ fn create_ray_from_screen(screen_pos: vec2<i32>) -> Ray {
 @compute @workgroup_size(8, 8, 1)
 fn update(@builtin(global_invocation_id) inv_id: vec3<u32>) {
     let screen_pos = vec2<i32>(inv_id.xy);
-    var rng = inv_id.y * u32(cam_data_.proj_size.x) + inv_id.x + frame_count_ * 27927421u;
     
     let ray = create_ray_from_screen(screen_pos);
-    let color = ray_color(&rng, ray);
-    
+    let color = ray_color(ray);
     textureStore(output_texture_, screen_pos, vec4(color, 1.0));
 }

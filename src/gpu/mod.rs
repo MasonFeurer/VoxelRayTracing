@@ -1,7 +1,7 @@
 pub mod egui;
 pub mod texture;
 
-use crate::world::{Material, World};
+use crate::world::{Material, Node};
 use glam::{Mat4, UVec2, Vec2, Vec3};
 use texture::Texture;
 
@@ -42,6 +42,37 @@ impl<T, const N: usize> SimpleBuffer<[T; N]> {
         let size = std::mem::size_of::<T>() * slice.len();
         let slice = unsafe { std::slice::from_raw_parts(ptr, size) };
         gpu.queue.write_buffer(&self.0, idx, slice);
+    }
+}
+
+pub struct NodesBuffer {
+    pub buf: Buffer,
+    pub count: u32,
+}
+impl NodesBuffer {
+    pub fn new(gpu: &Gpu, label: &str, usage: BufferUsages, count: u32) -> Self {
+        let buf = gpu.device.create_buffer(&BufferDescriptor {
+            label: Some(label),
+            size: count as u64 * std::mem::size_of::<Node>() as u64,
+            usage,
+            mapped_at_creation: false,
+        });
+        Self { buf, count }
+    }
+
+    pub fn write(&self, gpu: &Gpu, offset: u64, nodes: &[Node]) {
+        println!(
+            "writing {} nodes at {offset} in buffer of {} nodes",
+            nodes.len(),
+            self.count
+        );
+        assert!(offset + (nodes.len() as u64) < self.count as u64);
+
+        let ptr = nodes.as_ptr() as *const u8;
+        let size = nodes.len() * std::mem::size_of::<Node>();
+        let slice = unsafe { std::slice::from_raw_parts(ptr, size) };
+        let offset = offset * std::mem::size_of::<Node>() as u64;
+        gpu.queue.write_buffer(&self.buf, offset, slice);
     }
 }
 
@@ -235,7 +266,7 @@ impl PixelShader {
                 0 => BindingResource::TextureView(&output_tex.view),
                 1 => buffers.cam_data.0.as_entire_binding(),
                 2 => buffers.settings.0.as_entire_binding(),
-                3 => buffers.world.0.as_entire_binding(),
+                3 => buffers.nodes.buf.as_entire_binding(),
                 4 => buffers.voxel_materials.0.as_entire_binding(),
                 5 => buffers.frame_count.0.as_entire_binding(),
             ),
@@ -259,12 +290,12 @@ impl PixelShader {
 pub struct Buffers {
     pub cam_data: SimpleBuffer<CamData>,
     pub settings: SimpleBuffer<Settings>,
-    pub world: SimpleBuffer<World>,
+    pub nodes: NodesBuffer,
     pub voxel_materials: SimpleBuffer<[Material; 256]>,
     pub frame_count: SimpleBuffer<u32>,
 }
 impl Buffers {
-    pub fn new(gpu: &Gpu) -> Self {
+    pub fn new(gpu: &Gpu, max_nodes: u32) -> Self {
         const COPY_DST: BufferUsages = BufferUsages::COPY_DST;
         const UNIFORM: BufferUsages = BufferUsages::UNIFORM;
         const STORAGE: BufferUsages = BufferUsages::STORAGE;
@@ -272,7 +303,7 @@ impl Buffers {
         Self {
             cam_data: SimpleBuffer::new(gpu, "", COPY_DST | UNIFORM),
             settings: SimpleBuffer::new(gpu, "", COPY_DST | UNIFORM),
-            world: SimpleBuffer::new(gpu, "", COPY_DST | STORAGE),
+            nodes: NodesBuffer::new(gpu, "", COPY_DST | STORAGE, max_nodes),
             voxel_materials: SimpleBuffer::new(gpu, "", COPY_DST | STORAGE),
             frame_count: SimpleBuffer::new(gpu, "", COPY_DST | UNIFORM),
         }
@@ -293,9 +324,10 @@ pub struct CamData {
 #[derive(Clone, Copy, Default)]
 #[repr(C)]
 pub struct Settings {
+    pub world_size: u32,
     pub max_ray_bounces: u32,
     pub sun_intensity: f32,
-    _padding0: [u32; 2],
+    _padding0: u32,
     pub sky_color: [f32; 3],
     pub _padding1: u32,
     pub sun_pos: [f32; 3],
@@ -312,8 +344,13 @@ pub struct GpuResources {
     pub path_tracer: PixelShader,
 }
 impl GpuResources {
-    pub fn new(gpu: &Gpu, surface_format: TextureFormat, result_size: UVec2) -> Self {
-        let buffers = Buffers::new(gpu);
+    pub fn new(
+        gpu: &Gpu,
+        surface_format: TextureFormat,
+        result_size: UVec2,
+        max_nodes: u32,
+    ) -> Self {
+        let buffers = Buffers::new(gpu, max_nodes);
 
         let result_texture = Texture::new(
             &gpu.device,

@@ -12,7 +12,7 @@ use crate::gpu::{egui::Egui, Gpu, GpuResources, Settings};
 use crate::input::{InputState, Key};
 use crate::math::dda::HitResult;
 use crate::player::Player;
-use crate::world::{DefaultWorldGen, Material, Voxel, World};
+use crate::world::{DefaultWorldGen, Material, Node, Voxel, World};
 use glam::{UVec2, Vec3};
 use std::time::SystemTime;
 use winit::event::*;
@@ -65,9 +65,10 @@ pub fn main() {
     hide_cursor(&window, true);
 
     let gpu = pollster::block_on(Gpu::new(&window, max_buffer_sizes));
+    let max_nodes = max_buffer_sizes / std::mem::size_of::<Node>() as u32;
 
     let mut egui = Egui::new(&window, &gpu);
-    let mut game_state = GameState::new(win_size(&window), gpu);
+    let mut game_state = GameState::new(win_size(&window), gpu, max_nodes);
 
     event_loop.run(move |event, _, flow| match event {
         e if input.update(&e) => {}
@@ -182,7 +183,7 @@ pub struct GameState {
     pub player: Player,
     pub inv_sel: u8,
 
-    pub world: Box<World>,
+    pub world: World,
     pub world_depth: u32,
     pub world_dirty: bool,
 
@@ -196,7 +197,7 @@ pub struct GameState {
     pub voxel_materials: Vec<Material>,
 }
 impl GameState {
-    pub fn new(win_size: UVec2, gpu: Gpu) -> Self {
+    pub fn new(win_size: UVec2, gpu: Gpu, max_nodes: u32) -> Self {
         let win_aspect = win_size.x as f32 / win_size.y as f32;
 
         let mut settings = Settings::default();
@@ -207,7 +208,8 @@ impl GameState {
         let world_depth = 8;
         let vertical_samples = 800;
 
-        let mut world = World::new_boxed(world_depth);
+        let mut world = World::new(world_depth, max_nodes);
+        settings.world_size = world.size;
 
         let world_gen = DefaultWorldGen::new(fastrand::i64(..), 1.0, 1.0, 0.001, [9, 20], 6.0);
         _ = world.populate_with(&world_gen);
@@ -226,8 +228,9 @@ impl GameState {
         )
         .to_array();
 
-        let gpu_res = GpuResources::new(&gpu, gpu.surface_config.format, result_tex_size);
-        gpu_res.buffers.world.write(&gpu, &world);
+        let gpu_res =
+            GpuResources::new(&gpu, gpu.surface_config.format, result_tex_size, max_nodes);
+        gpu_res.buffers.nodes.write(&gpu, 0, world.nodes());
         gpu_res.buffers.settings.write(&gpu, &settings);
 
         let voxel_materials = DEFAULT_VOXEL_MATERIALS.to_vec();
@@ -278,7 +281,7 @@ impl GameState {
 
         if let Some(hit) = hit_result && input.left_button_pressed() {
             if let Ok(()) = self.world.set_voxel(hit.pos, Voxel::AIR) {
-                self.gpu_res.buffers.world.write(&self.gpu, &self.world);
+                // self.gpu_res.buffers.world.write(&self.gpu, &self.world);
                 self.gpu_res.resize_result_texture(&self.gpu, self.gpu_res.result_texture.size());
                 self.frame_count = 0;
             } else {
@@ -288,7 +291,7 @@ impl GameState {
         if let Some(hit) = hit_result && input.right_button_pressed() {
             let voxel_in_hand = INVENTORY[self.inv_sel as usize];
             if let Ok(()) = self.world.set_voxel(hit.pos + hit.face, voxel_in_hand) {
-                self.gpu_res.buffers.world.write(&self.gpu, &self.world);
+                // self.gpu_res.buffers.world.write(&self.gpu, &self.world);
                 self.gpu_res.resize_result_texture(&self.gpu, self.gpu_res.result_texture.size());
                 self.frame_count = 0;
             } else {
@@ -351,7 +354,7 @@ impl GameState {
             let buffers = &self.gpu_res.buffers;
 
             if update.world_changed {
-                buffers.world.write(&self.gpu, &self.world);
+                // buffers.world.write(&self.gpu, &self.world);
             }
 
             self.frame_count += 1;

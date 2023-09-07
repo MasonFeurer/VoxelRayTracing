@@ -322,25 +322,35 @@ pub trait WorldPopulator {
     fn populate(&self, min: IVec3, max: IVec3, world: &mut World) -> Result<(), ()>;
 }
 
-const MAX_NODES: usize = 100_000_000;
-
 /// The structure that holds the entire interactable world, representing all voxels via a SVO.
-#[derive(Clone)]
-#[repr(C)]
+#[derive(Clone, Default)]
 pub struct World {
     pub size: u32,
-    pub max_depth: u32,
-    pub start_search: u32,
-    pub nodes: [Node; MAX_NODES],
+    max_depth: u32,
+    start_search: u32,
+    last_used_node: u32,
+
+    // Note: Removing items from the Vec is not good since
+    // some nodes may point to other nodes by index.
+    nodes: Vec<Node>,
 }
 
 /// Create and clear worlds
 impl World {
-    pub fn new_boxed(max_depth: u32) -> Box<Self> {
-        let mut world = unsafe { Box::<World>::new_zeroed().assume_init() };
-        world.set_max_depth(max_depth);
-        world.clear();
-        world
+    pub fn new(max_depth: u32, alloc_nodes: u32) -> Self {
+        let mut nodes = vec![Node::ZERO; alloc_nodes as usize];
+        nodes[0] = Node::new_leaf(Voxel::AIR);
+        Self {
+            size: 1 << max_depth,
+            max_depth,
+            start_search: 1,
+            last_used_node: 0,
+            nodes,
+        }
+    }
+
+    pub fn nodes(&self) -> &[Node] {
+        &self.nodes[0..=self.last_used_node as usize]
     }
 
     pub fn set_max_depth(&mut self, max_depth: u32) {
@@ -349,11 +359,9 @@ impl World {
     }
 
     pub fn clear(&mut self) {
+        self.nodes.clear();
+        self.nodes.push(Node::new_leaf(Voxel::AIR));
         self.start_search = 1;
-        self.nodes[0] = Node::new_leaf(Voxel::AIR);
-        for node in &mut self.nodes[1..] {
-            node.set_used_flag(false);
-        }
     }
 }
 
@@ -393,10 +401,12 @@ impl World {
         }
     }
 
+    #[inline(always)]
     fn get_node(&self, idx: u32) -> Node {
         self.nodes[idx as usize]
     }
 
+    #[inline(always)]
     fn mut_node(&mut self, idx: u32) -> &mut Node {
         &mut self.nodes[idx as usize]
     }
@@ -411,15 +421,21 @@ impl World {
     }
 
     fn new_nodes(&mut self, voxel: Voxel) -> Result<u32, ()> {
+        static NEW_NODES: [Node; 1024] = [Node::ZERO; 1024];
+
         let mut result = self.start_search;
         if result + 8 >= self.nodes.len() as u32 {
-            return Err(());
+            // result can at most be nodes.len(),
+            // so adding 8 more nodes should make result valid,
+            // but I add 1024 nodes here because it's very likely
+            // to want to allocate more nodes very soon after
+            self.nodes.extend(&NEW_NODES);
         }
 
         while self.get_node(result).is_used() {
             result += 8;
             if result + 8 >= self.nodes.len() as u32 {
-                return Err(());
+                self.nodes.extend(&NEW_NODES);
             }
         }
         self.start_search = result + 8;
@@ -427,6 +443,7 @@ impl World {
         for idx in result..result + 8 {
             self.nodes[idx as usize] = Node::new_leaf(voxel);
         }
+        self.last_used_node = result + 8;
         Ok(result)
     }
 }
