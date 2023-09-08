@@ -9,7 +9,7 @@ use crate::gpu::{egui::Egui, Gpu, GpuResources, Settings};
 use crate::input::{InputState, Key};
 use crate::math::dda::HitResult;
 use crate::player::Player;
-use crate::world::{DefaultWorldGen, Material, Node, Voxel, World};
+use crate::world::{DefaultWorldGen, Material, Node, NodeSeq, Voxel, World};
 use glam::{UVec2, Vec3};
 use std::time::SystemTime;
 use winit::event::*;
@@ -284,18 +284,25 @@ impl GameState {
             None
         };
 
-        if let (Some(hit), Some(vox)) = (hit_result, set_vox) {
-            if let Ok(()) = self.world.set_voxel(hit.pos, vox) {
-                self.gpu_res
-                    .buffers
-                    .nodes
-                    .write(&self.gpu, 0, self.world.nodes());
-                self.gpu_res
-                    .resize_result_texture(&self.gpu, self.gpu_res.result_texture.size());
-                self.frame_count = 0;
-            } else {
-                println!("failed to set voxel");
+        let set_pos = match hit_result {
+            Some(hit) if input.left_button_pressed() => Some(hit.pos),
+            Some(hit) if input.right_button_pressed() => Some(hit.pos + hit.face),
+            _ => None,
+        };
+
+        if let (Some(pos), Some(vox)) = (set_pos, set_vox) {
+            let depth = self.world.max_depth;
+            for NodeSeq { idx, count } in self.world.set_voxel2(pos, vox, depth) {
+                self.gpu_res.buffers.nodes.write(
+                    &self.gpu,
+                    idx as u64,
+                    &self.world.nodes()[idx as usize..idx as usize + count as usize],
+                );
             }
+
+            self.gpu_res
+                .resize_result_texture(&self.gpu, self.gpu_res.result_texture.size());
+            self.frame_count = 0;
         }
         output.hit_result = hit_result;
         output

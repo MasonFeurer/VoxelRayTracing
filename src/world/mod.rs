@@ -326,7 +326,7 @@ pub trait WorldPopulator {
 #[derive(Clone, Default)]
 pub struct World {
     pub size: u32,
-    max_depth: u32,
+    pub max_depth: u32,
     start_search: u32,
     last_used_node: u32,
 
@@ -368,6 +368,8 @@ impl World {
 struct FoundNode {
     idx: u32,
     depth: u32,
+    center: IVec3,
+    size: u32,
 }
 
 /// Find and mutate the SVO nodes that make up the world.
@@ -384,6 +386,8 @@ impl World {
                 return FoundNode {
                     idx: node_idx,
                     depth,
+                    center,
+                    size,
                 };
             }
             size /= 2;
@@ -402,7 +406,7 @@ impl World {
     }
 
     #[inline(always)]
-    fn get_node(&self, idx: u32) -> Node {
+    pub fn get_node(&self, idx: u32) -> Node {
         self.nodes[idx as usize]
     }
 
@@ -450,6 +454,12 @@ impl World {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct NodeSeq {
+    pub idx: u32,
+    pub count: u8,
+}
+
 /// High-level voxel-based manipulation.
 impl World {
     pub fn get_voxel(&self, pos: IVec3) -> Option<Voxel> {
@@ -489,6 +499,52 @@ impl World {
         self.set_voxel(pos, voxel)
     }
 
+    pub fn set_voxel2(&mut self, pos: IVec3, voxel: Voxel, target_depth: u32) -> Vec<NodeSeq> {
+        let FoundNode {
+            mut idx,
+            depth,
+            mut center,
+            mut size,
+            ..
+        } = self.find_node(pos, target_depth);
+        let old_voxel = self.get_node(idx).get_voxel();
+
+        let mut result: Vec<NodeSeq> = vec![];
+        result.push(NodeSeq { idx, count: 1 });
+
+        // If depth is less than target_depth,
+        // the SVO doesn't go to desired depth, so we must split until it does
+        for _ in depth..target_depth {
+            let first_child = match self.new_nodes(old_voxel) {
+                Ok(c) => c,
+                Err(()) => break,
+            };
+
+            self.mut_node(idx).set_split_flag(true);
+            self.mut_node(idx).set_first_child(first_child);
+            result.push(NodeSeq {
+                idx: first_child,
+                count: 8,
+            });
+
+            size /= 2;
+
+            let gt = ivec3(
+                (pos.x >= center.x) as i32,
+                (pos.y >= center.y) as i32,
+                (pos.z >= center.z) as i32,
+            );
+            let child_idx = (gt.x as u32) << 0 | (gt.y as u32) << 1 | (gt.z as u32) << 2;
+            idx = first_child + child_idx;
+            let child_dir = gt * 2 - IVec3::ONE;
+            center += IVec3::splat(size as i32 / 2) * child_dir;
+        }
+        // SVO now goes to desired depth, so we can mutate the node now.
+        self.mut_node(idx).set_voxel(voxel);
+        self.mut_node(idx).set_split_flag(false);
+        result
+    }
+
     pub fn fill_voxels(&mut self, a: IVec3, b: IVec3, voxel: Voxel) -> Result<(), ()> {
         let min = ivec3(a.x.min(b.x), a.y.min(b.y), a.z.min(b.z));
         let max = ivec3(a.x.max(b.x), a.y.max(b.y), a.z.max(b.z));
@@ -497,28 +553,6 @@ impl World {
             for y in min.y..=max.y {
                 for z in min.z..=max.z {
                     self.set_voxel(ivec3(x, y, z), voxel)?;
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Similar to `fill_voxels`, but the voxels are all placed on top of the surface of the world.
-    pub fn lay_voxels(&mut self, a: IVec3, b: IVec3, voxel: Voxel) -> Result<(), ()> {
-        let min = ivec3(a.x.min(b.x), a.y.min(b.y), a.z.min(b.z));
-        let max = ivec3(a.x.max(b.x), a.y.max(b.y), a.z.max(b.z));
-
-        let h = max.y - min.y + 1;
-        // println!("min: {min:?} max: {max:?} h: {h}");
-
-        for x in min.x..=max.x {
-            for z in min.z..=max.z {
-                // self.set_voxel(ivec3(x, min.y + 5, z), Voxel::MUD)?;
-                let surface = self.surface_at(x, z);
-                // println!("surface at {x} {z} = {surface}");
-                for y in 0..h {
-                    let pos = ivec3(x, surface + y, z);
-                    self.set_voxel(pos, voxel)?;
                 }
             }
         }
