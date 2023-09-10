@@ -9,8 +9,8 @@ use crate::gpu::{egui::Egui, Gpu, GpuResources, Settings};
 use crate::input::{InputState, Key};
 use crate::math::dda::HitResult;
 use crate::player::Player;
-use crate::world::{DefaultWorldGen, Material, Node, NodeSeq, Voxel, World};
-use glam::{UVec2, Vec3};
+use crate::world::{Material, Node, NodeSeq, TreeGen, Voxel, World, WorldGen};
+use glam::{IVec3, UVec2, Vec3};
 use std::time::SystemTime;
 use winit::event::*;
 use winit::event_loop::{ControlFlow, EventLoop};
@@ -64,13 +64,15 @@ pub fn main() {
     let gpu = pollster::block_on(Gpu::new(&window, max_buffer_sizes));
     let max_nodes = max_buffer_sizes / std::mem::size_of::<Node>() as u32;
 
+    crate::world::open_simplex::init_gradients();
+
     let mut egui = Egui::new(&window, &gpu);
     let mut game_state = GameState::new(win_size(&window), gpu, max_nodes);
 
     event_loop.run(move |event, _, flow| match event {
         e if input.update(&e) => {}
         Event::WindowEvent { event, .. } => match event {
-            e if egui.winit.on_event(&egui.ctx, &e).consumed => {}
+            e if !cursor_hidden && egui.winit.on_event(&egui.ctx, &e).consumed => {}
             WindowEvent::CloseRequested => *flow = ControlFlow::Exit,
             _ => {}
         },
@@ -188,7 +190,7 @@ pub struct GameState {
     pub vertical_samples: u32,
     pub path_tracing: bool,
 
-    pub world_gen: DefaultWorldGen,
+    pub world_gen: WorldGen,
     pub sun_angle: f32,
     pub frame_count: u32,
     pub voxel_materials: Vec<Material>,
@@ -208,15 +210,24 @@ impl GameState {
         let mut world = World::new(world_depth, max_nodes);
         settings.world_size = world.size;
 
-        let world_gen = DefaultWorldGen::new(fastrand::i64(..), 1.0, 1.0, 0.001, [9, 20], 6.0);
-        _ = world.populate_with(&world_gen);
+        let tree_gen = TreeGen {
+            height: 9..26,
+            bark: Voxel::BARK,
+            leaves: Voxel::ALL_LEAVES.to_vec(),
+            leaves_decay: 0.1,
+            branch_count: 1..4,
+            branch_height: 0.5..0.8,
+            branch_len: 3.0..8.0,
+        };
+        let world_gen = WorldGen::new(fastrand::i64(..), tree_gen);
+        world_gen.populate(IVec3::ZERO, IVec3::splat(world.size as i32), &mut world);
 
         let result_tex_size = UVec2::new(
             (vertical_samples as f32 * win_aspect) as u32,
             vertical_samples,
         );
 
-        let player = Player::new(Vec3::new(10.0, 80.0, 10.0), 0.2);
+        let player = Player::new(Vec3::new(80.5, 100.0, 80.5), 0.2);
 
         settings.sun_pos = Vec3::new(
             0.0f32.to_radians().sin() * 500.0,
@@ -266,6 +277,8 @@ impl GameState {
         let prev_pos = self.player.pos;
         let prev_rot = self.player.rot;
         self.player.update(1.0, input, &self.world);
+        self.inv_sel = (self.inv_sel as i8 + input.scroll_delta.y as i8)
+            .clamp(0, INVENTORY.len() as i8 - 1) as u8;
 
         if prev_pos != self.player.pos || prev_rot != self.player.rot {
             output.player_moved = true;
@@ -291,8 +304,7 @@ impl GameState {
         };
 
         if let (Some(pos), Some(vox)) = (set_pos, set_vox) {
-            let depth = self.world.max_depth;
-            for NodeSeq { idx, count } in self.world.set_voxel2(pos, vox, depth) {
+            for NodeSeq { idx, count } in self.world.set_voxel(pos, vox).unwrap() {
                 self.gpu_res.buffers.nodes.write(
                     &self.gpu,
                     idx as u64,
@@ -367,12 +379,6 @@ impl GameState {
 
             let cam_data = self.player.create_cam_data(result_tex_size.as_vec2());
             buffers.cam_data.write(&self.gpu, &cam_data);
-
-            // ( prototype code )
-            // for WorldChange { idx, len } in &update.world_changes {
-            //     let nodes = self.world.nodes[idx..idx + len];
-            //     buffers.world.write_world_nodes(idx, nodes);
-            // }
         }
 
         let workgroups = result_tex_size / 8;

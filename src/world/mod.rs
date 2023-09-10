@@ -1,8 +1,9 @@
 pub mod open_simplex;
 
 use crate::math::{aabb::Aabb, BitField};
-use glam::{ivec3, vec2, vec3, IVec3, Vec2, Vec3};
-use open_simplex::{init_gradients, MultiNoiseMap, NoiseMap};
+use glam::{ivec3, vec2, vec3, IVec3, Vec3};
+use open_simplex::NoiseMap;
+use std::ops::Range;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
@@ -141,17 +142,17 @@ pub static DEFAULT_VOXEL_MATERIALS: &[Material] = &[
     // DIRT
     Material::new(0, [0.40, 0.20, 0.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
     // GRASS
-    Material::new(0, [0.10, 0.70, 0.10], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
+    Material::new(0, [0.011, 0.58, 0.11], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
     // FIRE
     Material::new(0, [1.00, 0.90, 0.20], 2.0, 0.0, 0.0, [1.0; 3], 0.0),
     // MAGMA
     Material::new(0, [0.75, 0.18, 0.01], 1.0, 1.0, 0.2, [1.0; 3], 0.0),
     // WATER
-    Material::new(0, [0.00, 0.00, 1.00], 0.0, 0.0, 0.5, [1.0; 3], 0.0),
+    Material::new(0, [0.076, 0.563, 0.563], 0.0, 0.0, 0.5, [1.0; 3], 0.0),
     // WOOD
     Material::new(0, [0.00, 0.00, 0.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
     // BARK
-    Material::new(0, [0.86, 0.85, 0.82], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
+    Material::new(0, [1.00, 1.00, 1.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
     // GREEN_LEAVES
     Material::new(0, [0.23, 0.52, 0.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
     // SAND
@@ -177,11 +178,11 @@ pub static DEFAULT_VOXEL_MATERIALS: &[Material] = &[
     // POLISHED_BLACK_FLOORING
     Material::new(0, [0.07, 0.07, 0.07], 0.0, 0.1, 0.8, [1.0; 3], 0.0),
     // PINK_LEAVES
-    Material::new(0, [0.90, 0.40, 0.40], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
+    Material::new(0, [0.95, 0.45, 0.60], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
     // ORANGE_LEAVES
     Material::new(0, [0.95, 0.20, 0.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
     // YELLOW_LEAVES
-    Material::new(0, [0.90, 0.90, 0.10], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
+    Material::new(0, [1.00, 0.92, 0.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
     // RED_LEAVES
     Material::new(0, [0.95, 0.10, 0.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
 ];
@@ -318,8 +319,9 @@ impl Node {
     }
 }
 
-pub trait WorldPopulator {
-    fn populate(&self, min: IVec3, max: IVec3, world: &mut World) -> Result<(), ()>;
+#[derive(Clone, Debug)]
+pub enum WorldErr {
+    OutOfBounds,
 }
 
 /// The structure that holds the entire interactable world, representing all voxels via a SVO.
@@ -359,9 +361,12 @@ impl World {
     }
 
     pub fn clear(&mut self) {
-        self.nodes.clear();
-        self.nodes.push(Node::new_leaf(Voxel::AIR));
+        for node in &mut self.nodes {
+            node.set_used_flag(false);
+        }
+        self.nodes[0] = Node::new_leaf(Voxel::AIR);
         self.start_search = 1;
+        self.last_used_node = 0;
     }
 }
 
@@ -374,7 +379,15 @@ struct FoundNode {
 
 /// Find and mutate the SVO nodes that make up the world.
 impl World {
-    fn find_node(&self, pos: IVec3, max_depth: u32) -> FoundNode {
+    pub fn check_bounds(&self, pos: IVec3) -> Result<(), WorldErr> {
+        let in_bounds =
+            (pos.cmpge(IVec3::ZERO)).all() && (pos.cmplt(IVec3::splat(self.size as i32))).all();
+        in_bounds.then(|| ()).ok_or(WorldErr::OutOfBounds)
+    }
+
+    fn find_node(&self, pos: IVec3, max_depth: u32) -> Result<FoundNode, WorldErr> {
+        self.check_bounds(pos)?;
+
         let mut center = IVec3::splat(self.size as i32 / 2);
         let mut size = self.size;
         let mut node_idx = 0;
@@ -383,12 +396,12 @@ impl World {
         loop {
             let node = self.get_node(node_idx);
             if !node.is_split() || depth == max_depth {
-                return FoundNode {
+                return Ok(FoundNode {
                     idx: node_idx,
                     depth,
                     center,
                     size,
-                };
+                });
             }
             size /= 2;
 
@@ -424,11 +437,11 @@ impl World {
         }
     }
 
-    fn new_nodes(&mut self, voxel: Voxel) -> Result<u32, ()> {
+    fn new_nodes(&mut self, voxel: Voxel) -> u32 {
         static NEW_NODES: [Node; 1024] = [Node::ZERO; 1024];
 
         let mut result = self.start_search;
-        if result + 8 >= self.nodes.len() as u32 {
+        if result + 7 >= self.nodes.len() as u32 {
             // result can at most be nodes.len(),
             // so adding 8 more nodes should make result valid,
             // but I add 1024 nodes here because it's very likely
@@ -438,7 +451,7 @@ impl World {
 
         while self.get_node(result).is_used() {
             result += 8;
-            if result + 8 >= self.nodes.len() as u32 {
+            if result + 7 >= self.nodes.len() as u32 {
                 self.nodes.extend(&NEW_NODES);
             }
         }
@@ -447,10 +460,10 @@ impl World {
         for idx in result..result + 8 {
             self.nodes[idx as usize] = Node::new_leaf(voxel);
         }
-        if result - 8 > self.last_used_node {
-            self.last_used_node = result + 8;
+        if result > self.last_used_node.saturating_sub(7) {
+            self.last_used_node = result + 7;
         }
-        Ok(result)
+        result
     }
 }
 
@@ -462,51 +475,20 @@ pub struct NodeSeq {
 
 /// High-level voxel-based manipulation.
 impl World {
-    pub fn get_voxel(&self, pos: IVec3) -> Option<Voxel> {
-        let FoundNode { idx, .. } = self.find_node(pos, self.max_depth);
-        Some(self.get_node(idx).get_voxel())
+    pub fn get_voxel(&self, pos: IVec3) -> Result<Voxel, WorldErr> {
+        let FoundNode { idx, .. } = self.find_node(pos, self.max_depth)?;
+        Ok(self.get_node(idx).get_voxel())
     }
 
-    pub fn set_voxel(&mut self, pos: IVec3, voxel: Voxel) -> Result<(), ()> {
-        let FoundNode { idx, depth, .. } = self.find_node(pos, self.max_depth);
-        let node = self.get_node(idx);
-
-        if node.get_voxel() == voxel {
-            return Ok(());
-        }
-        if depth == self.max_depth {
-            self.mut_node(idx).set_voxel(voxel);
-
-            let mut parent_depth = depth - 1;
-            let mut parent_idx = self.find_node(pos, parent_depth).idx;
-
-            while self.get_node(parent_idx).can_simplify(self) {
-                let first_child = self.get_node(parent_idx).get_child(0);
-                let reduce_to = self.get_node(first_child).get_voxel();
-                self.mut_node(parent_idx).simplify(reduce_to);
-                self.free_nodes(first_child);
-
-                parent_depth -= 1;
-                parent_idx = self.find_node(pos, parent_depth).idx;
-            }
-            return Ok(());
-        }
-        let Ok(new_first_child) = self.new_nodes(node.get_voxel()) else {
-            return Err(());
-        };
-
-        self.mut_node(idx).split(new_first_child);
-        self.set_voxel(pos, voxel)
-    }
-
-    pub fn set_voxel2(&mut self, pos: IVec3, voxel: Voxel, target_depth: u32) -> Vec<NodeSeq> {
+    pub fn set_voxel(&mut self, pos: IVec3, voxel: Voxel) -> Result<Vec<NodeSeq>, WorldErr> {
+        let target_depth = self.max_depth;
         let FoundNode {
             mut idx,
             depth,
             mut center,
             mut size,
             ..
-        } = self.find_node(pos, target_depth);
+        } = self.find_node(pos, target_depth)?;
         let old_voxel = self.get_node(idx).get_voxel();
 
         let mut result: Vec<NodeSeq> = vec![];
@@ -515,10 +497,7 @@ impl World {
         // If depth is less than target_depth,
         // the SVO doesn't go to desired depth, so we must split until it does
         for _ in depth..target_depth {
-            let first_child = match self.new_nodes(old_voxel) {
-                Ok(c) => c,
-                Err(()) => break,
-            };
+            let first_child = self.new_nodes(old_voxel);
 
             self.mut_node(idx).set_split_flag(true);
             self.mut_node(idx).set_first_child(first_child);
@@ -542,36 +521,29 @@ impl World {
         // SVO now goes to desired depth, so we can mutate the node now.
         self.mut_node(idx).set_voxel(voxel);
         self.mut_node(idx).set_split_flag(false);
-        result
+        Ok(result)
     }
 
-    pub fn fill_voxels(&mut self, a: IVec3, b: IVec3, voxel: Voxel) -> Result<(), ()> {
+    pub fn fill_voxels(&mut self, a: IVec3, b: IVec3, voxel: Voxel) {
         let min = ivec3(a.x.min(b.x), a.y.min(b.y), a.z.min(b.z));
         let max = ivec3(a.x.max(b.x), a.y.max(b.y), a.z.max(b.z));
 
         for x in min.x..=max.x {
             for y in min.y..=max.y {
                 for z in min.z..=max.z {
-                    self.set_voxel(ivec3(x, y, z), voxel)?;
+                    _ = self.set_voxel(ivec3(x, y, z), voxel);
                 }
             }
         }
-        Ok(())
     }
 
-    pub fn surface_at(&self, x: i32, z: i32) -> i32 {
-        for y in 5..self.size as i32 {
-            if self.get_voxel(ivec3(x, y, z)).unwrap().is_empty() {
-                return y;
+    pub fn surface_at(&self, x: i32, z: i32) -> Result<i32, WorldErr> {
+        for y in 0..self.size as i32 {
+            if self.get_voxel(ivec3(x, y, z))?.is_empty() {
+                return Ok(y);
             }
         }
-        69
-    }
-
-    pub fn populate_with<P: WorldPopulator>(&mut self, p: &P) -> Result<(), ()> {
-        let min = IVec3::ZERO;
-        let max = IVec3::splat(self.size as i32);
-        p.populate(min, max, self)
+        Err(WorldErr::OutOfBounds)
     }
 
     pub fn get_collisions_w(&self, aabb: &Aabb) -> Vec<Aabb> {
@@ -597,126 +569,8 @@ impl World {
         }
         aabbs
     }
-}
 
-pub struct DebugWorldGen;
-impl WorldPopulator for DebugWorldGen {
-    fn populate(&self, min: IVec3, max: IVec3, world: &mut World) -> Result<(), ()> {
-        for x in min.x..max.x {
-            for y in min.y..max.y {
-                for z in 0..3 {
-                    world.set_voxel(ivec3(x, y, z), Voxel::STONE)?;
-                }
-            }
-        }
-        for x in min.x..max.x {
-            for z in min.z..max.z {
-                for y in 0..3 {
-                    world.set_voxel(ivec3(x, y, z), Voxel::DIRT)?;
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
-pub struct DefaultWorldGen {
-    pub seed: i64,
-
-    pub height_map: MultiNoiseMap,
-    pub height_scale_map: MultiNoiseMap,
-    pub height_freq_map: MultiNoiseMap,
-    pub scale: f32,
-    pub freq: f32,
-    pub tree_freq: f32,
-    pub tree_height: [u32; 2],
-    pub tree_decay: f32,
-}
-impl DefaultWorldGen {
-    pub fn clone_w_seed(&self, seed: i64) -> Self {
-        Self::new(
-            seed,
-            self.scale,
-            self.freq,
-            self.tree_freq,
-            self.tree_height,
-            self.tree_decay,
-        )
-    }
-
-    pub fn new(
-        seed: i64,
-        scale: f32,
-        freq: f32,
-        tree_freq: f32,
-        tree_height: [u32; 2],
-        tree_decay: f32,
-    ) -> Self {
-        init_gradients();
-        let height_scale_map =
-            MultiNoiseMap::new(&[NoiseMap::new(seed.wrapping_mul(47828974), 0.005, 2.0)]);
-        let height_freq_map = MultiNoiseMap::new(&[
-            NoiseMap::new(seed.wrapping_mul(479389189), 0.0003, 3.4),
-            NoiseMap::new(seed.wrapping_mul(77277342), 0.0001, 4.4),
-        ]);
-        let height_map = MultiNoiseMap::new(&[
-            NoiseMap::new(seed.wrapping_mul(2024118), 0.004, 200.0),
-            NoiseMap::new(seed.wrapping_mul(55381728), 0.1, 6.0),
-            NoiseMap::new(seed.wrapping_mul(8282442), 0.01, 20.0),
-            NoiseMap::new(seed.wrapping_mul(7472824), 0.008, 100.0),
-        ]);
-        Self {
-            seed,
-            height_map,
-            height_scale_map,
-            height_freq_map,
-            scale,
-            freq,
-            tree_freq,
-            tree_height,
-            tree_decay,
-        }
-    }
-
-    fn get_terrain_h(&self, pos: Vec2) -> f32 {
-        let height_scale = self.height_scale_map.get(pos) * self.scale;
-        let height_freq = self.height_freq_map.get(pos) * self.freq;
-        self.height_map.get(pos * height_freq) * height_scale + 10.0
-    }
-
-    fn spawn_tree(&self, world: &mut World, surface: IVec3) -> Result<(), ()> {
-        let h = fastrand::u32(self.tree_height[0]..self.tree_height[1]) as i32;
-        let leaves = Voxel::ALL_LEAVES[fastrand::usize(0..Voxel::ALL_LEAVES.len())];
-        self.sphere(world, surface + ivec3(0, h as i32, 0), 5, leaves)?;
-
-        // only create a branch if the tree is tall
-        let branch_count = if h < 11 { 0 } else { fastrand::i32(0..4) };
-
-        for _ in 0..branch_count {
-            // create a branch
-            let branch_h = h - fastrand::i32(5..(h - 3));
-            let branch_len = fastrand::u32(8..24) as f32 * 0.5;
-
-            let branch_dir = rand_hem_dir(Vec3::Y);
-            let start = ivec3(surface.x, surface.y + branch_h, surface.z);
-            let end = (start.as_vec3() + branch_dir * branch_len).as_ivec3();
-
-            self.sphere(world, end, 3, leaves)?;
-
-            let line = crate::math::walk_line(start, end);
-            for pos in line {
-                world.set_voxel(pos, Voxel::BARK)?;
-            }
-        }
-
-        for i in 0..h {
-            world.set_voxel(surface + ivec3(0, i, 0), Voxel::BARK)?;
-        }
-
-        Ok(())
-    }
-
-    fn sphere(&self, world: &mut World, pos: IVec3, r: u32, voxel: Voxel) -> Result<(), ()> {
+    pub fn sphere(&mut self, pos: IVec3, r: u32, voxel: Voxel, decay: f32) {
         let pos_center = pos.as_vec3() + Vec3::splat(0.5);
         let min = pos - IVec3::splat(r as i32);
         let max = pos + IVec3::splat(r as i32);
@@ -728,46 +582,162 @@ impl DefaultWorldGen {
                     let block_center = ivec3(x, y, z).as_vec3() + Vec3::splat(0.5);
                     let dist_sq = (block_center - pos_center).length_squared();
 
-                    if dist_sq >= r_sq {
+                    if dist_sq >= r_sq || fastrand::f32() <= decay {
                         continue;
                     }
 
-                    let decay_chance = dist_sq / (r_sq * self.tree_decay);
-                    if fastrand::f32() <= decay_chance {
-                        continue;
-                    }
-
-                    world.set_voxel(ivec3(x, y, z), voxel)?;
+                    _ = self.set_voxel(ivec3(x, y, z), voxel);
                 }
             }
         }
-        Ok(())
     }
 }
-impl WorldPopulator for DefaultWorldGen {
-    fn populate(&self, min: IVec3, max: IVec3, world: &mut World) -> Result<(), ()> {
+
+#[derive(Clone)]
+pub struct NoiseMaps {
+    height: NoiseMap,
+    freq: NoiseMap,
+    scale: NoiseMap,
+    bumps: NoiseMap,
+    mountains: NoiseMap,
+    temp: NoiseMap,
+    moisture: NoiseMap,
+    vegetation: NoiseMap,
+}
+impl NoiseMaps {
+    pub fn from_seed(seed: i64) -> Self {
+        Self {
+            height: NoiseMap::new(seed.wrapping_mul(4326742), 0.003, 2.5),
+            freq: NoiseMap::new(seed.wrapping_mul(927144), 0.0001, 7.0),
+            scale: NoiseMap::new(seed.wrapping_mul(43265), 0.003, 40.0),
+            bumps: NoiseMap::new(seed.wrapping_mul(76324), 0.15, 4.0),
+            mountains: NoiseMap::new(seed.wrapping_mul(72316423), 0.001, 40.0),
+            temp: NoiseMap::new(seed.wrapping_mul(83226), 0.001, 1.0),
+            moisture: NoiseMap::new(seed.wrapping_mul(2345632), 0.0001, 1.0),
+            vegetation: NoiseMap::new(seed.wrapping_mul(53252), 0.001, 1.0),
+        }
+    }
+
+    pub fn terrain_height(&self, x: f32, z: f32) -> f32 {
+        let freq = self.freq.get(vec2(x, z));
+        let scale = self.scale.get(vec2(x, z));
+        self.height.get(vec2(x * freq, z * freq)) * scale
+            + self.bumps.get(vec2(x, z))
+            + self.mountains.get(vec2(x, z))
+    }
+
+    pub fn temp(&self, x: f32, z: f32) -> f32 {
+        self.temp.get(vec2(x, z))
+    }
+
+    pub fn moisture(&self, x: f32, z: f32) -> f32 {
+        self.moisture.get(vec2(x, z))
+    }
+
+    pub fn vegetation(&self, x: f32, z: f32) -> f32 {
+        self.vegetation.get(vec2(x, z))
+    }
+}
+
+pub struct WorldGen {
+    pub maps: NoiseMaps,
+    pub tree_gen: TreeGen,
+}
+impl WorldGen {
+    pub fn new(seed: i64, tree_gen: TreeGen) -> Self {
+        let maps = NoiseMaps::from_seed(seed);
+        Self { maps, tree_gen }
+    }
+
+    pub fn populate(&self, min: IVec3, max: IVec3, world: &mut World) {
         for x in min.x..max.x {
             for z in min.z..max.z {
-                let noise_pos = vec2(x as f32, z as f32) + Vec2::splat(0.5);
-
-                let y = self.get_terrain_h(noise_pos) as i32;
+                let y = self.maps.terrain_height(x as f32, z as f32) as i32;
                 let surface_pos = ivec3(x, y, z);
 
-                // set stone
-                world.fill_voxels(ivec3(x, 0, z), ivec3(x, y - 4, z), Voxel::STONE)?;
+                world.fill_voxels(ivec3(x, 0, z), ivec3(x, y - 4, z), Voxel::STONE);
+                world.fill_voxels(ivec3(x, y - 3, z), ivec3(x, y - 1, z), Voxel::DIRT);
 
-                // set dirt
-                world.fill_voxels(ivec3(x, y - 3, z), ivec3(x, y - 1, z), Voxel::DIRT)?;
+                if y < 26 {
+                    _ = world.set_voxel(surface_pos, Voxel::SAND);
+                    world.fill_voxels(surface_pos + IVec3::Y, ivec3(x, 26, z), Voxel::WATER);
+                    continue;
+                }
 
-                // set surface
-                world.set_voxel(surface_pos, Voxel::GRASS)?;
+                // let temp = self.maps.temp(x, z);
+                let moisture = self.maps.moisture(x as f32, z as f32);
+                let vegetation = self.maps.vegetation(x as f32, z as f32);
 
-                if fastrand::f32() < self.tree_freq {
-                    self.spawn_tree(world, surface_pos)?;
+                let surface = if moisture < 0.2 || y < 27 {
+                    Voxel::SAND
+                } else {
+                    Voxel::GRASS
+                };
+                _ = world.set_voxel(surface_pos, surface);
+
+                if y < 26 {
+                    world.fill_voxels(surface_pos + IVec3::Y, ivec3(x, 26, z), Voxel::WATER);
+                    continue;
+                }
+
+                if fastrand::f32() < 0.005 * vegetation {
+                    spawn_tree(world, surface_pos, &self.tree_gen);
                 }
             }
         }
-        Ok(())
+    }
+}
+
+pub struct TreeGen {
+    pub height: Range<u32>,
+    pub bark: Voxel,
+    pub leaves: Vec<Voxel>,
+    pub leaves_decay: f32,
+    pub branch_count: Range<u32>,
+    pub branch_height: Range<f32>,
+    pub branch_len: Range<f32>,
+}
+
+fn spawn_tree(world: &mut World, surface: IVec3, tree: &TreeGen) {
+    let height = fastrand::u32(tree.height.clone());
+    let leaves = tree.leaves[fastrand::usize(0..tree.leaves.len())];
+    let randf32 = |range: Range<f32>| -> f32 {
+        let size = range.end - range.start;
+        fastrand::f32() * size + range.start
+    };
+
+    // only create branches if the tree is tall
+    let branch_count = if height < 11 {
+        0
+    } else {
+        fastrand::u32(tree.branch_count.clone())
+    };
+
+    world.sphere(
+        surface + ivec3(0, height as i32, 0),
+        5,
+        leaves,
+        tree.leaves_decay,
+    );
+
+    for _ in 0..branch_count {
+        let branch_h = (randf32(tree.branch_height.clone()) * height as f32) as u32;
+        let branch_len = randf32(tree.branch_len.clone());
+
+        let branch_dir = rand_hem_dir(Vec3::Y);
+        let start = ivec3(surface.x, surface.y + branch_h as i32, surface.z);
+        let end = (start.as_vec3() + branch_dir * branch_len).as_ivec3();
+
+        world.sphere(end, 3, leaves, tree.leaves_decay);
+
+        let line = crate::math::walk_line(start, end);
+        for pos in line {
+            _ = world.set_voxel(pos, tree.bark);
+        }
+    }
+
+    for i in 0..height as i32 {
+        _ = world.set_voxel(surface + ivec3(0, i, 0), tree.bark);
     }
 }
 

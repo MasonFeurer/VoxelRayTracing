@@ -10,7 +10,6 @@ use glam::Vec2;
 #[derive(Clone)]
 pub struct NoiseMap {
     // OpenSimplexNoise is a pretty big struct, better to not store it on the stack
-    // althou, the only place where Self is used, is in a Vec, in MultiNoiseMap, so self is already stored in heap
     noise: Box<OpenSimplexNoise>,
     scale: f64,
     freq: f64,

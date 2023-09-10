@@ -2,7 +2,7 @@ use crate::gpu::CamData;
 use crate::input::{InputState, Key};
 use crate::math::aabb::Aabb;
 use crate::math::dda::{axis_rot_to_ray, cast_ray, HitResult};
-use crate::world::World;
+use crate::world::{Voxel, World};
 use glam::{vec3, BVec3, Mat4, Vec2, Vec3};
 
 const GRAVITY: f32 = -0.040;
@@ -215,10 +215,7 @@ impl Player {
                 self.rot.z.to_radians(),
             )),
             100.0,
-            |pos| match world.get_voxel(pos) {
-                Some(voxel) => voxel.is_solid(),
-                None => false,
-            },
+            |pos| world.get_voxel(pos).map(Voxel::is_solid).unwrap_or(false),
         )
     }
 }

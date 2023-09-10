@@ -1,8 +1,8 @@
 use crate::gpu::Settings as ShaderSettings;
-use crate::world::Material;
+use crate::world::{Material, NoiseMaps};
 use crate::{FrameInput, GameState, UpdateResult};
 use egui::*;
-use glam::Vec3;
+use glam::{IVec3, Vec3};
 
 #[derive(Default)]
 pub struct UiResult {
@@ -104,52 +104,16 @@ fn left_panel_ui(
     ui.collapsing("world", |ui| {
         ui.label(&format!("world size: {0}x{0}", state.world.size));
         value_u32(ui, "world depth", &mut state.world_depth, 2, 12);
-        value_f32(ui, "terrain scale", &mut state.world_gen.scale, 0.1, 10.0);
-        value_f32(ui, "terrain freq", &mut state.world_gen.freq, 0.1, 10.0);
-        value_f32(ui, "tree freq", &mut state.world_gen.tree_freq, 0.0, 0.2);
-
-        let prev_tree_height = state.world_gen.tree_height;
-        value_u32(
-            ui,
-            "tree min height",
-            &mut state.world_gen.tree_height[0],
-            1,
-            50,
-        );
-        value_u32(
-            ui,
-            "tree max height",
-            &mut state.world_gen.tree_height[1],
-            1,
-            50,
-        );
-        // if the tree height range is invalid, revert to range from previous frame
-        if state.world_gen.tree_height[0] >= state.world_gen.tree_height[1] {
-            state.world_gen.tree_height = prev_tree_height;
-        }
-
-        value_f32(ui, "tree decay", &mut state.world_gen.tree_decay, 0.0, 16.0);
 
         if ui.button("regenerate").clicked() {
-            state.world_gen = state.world_gen.clone_w_seed(fastrand::i64(..));
+            state.world_gen.maps = NoiseMaps::from_seed(fastrand::i64(..));
             state.world.set_max_depth(state.world_depth);
             state.world.clear();
-            _ = state.world.populate_with(&state.world_gen);
-            state.settings.world_size = state.world.size;
-            changed = true;
-
-            state
-                .gpu_res
-                .buffers
-                .nodes
-                .write(&state.gpu, 0, state.world.nodes());
-            result.clear_result = true;
-        }
-        if ui.button("generate debug world").clicked() {
-            let gen = crate::world::DebugWorldGen;
-            state.world.set_max_depth(state.world_depth);
-            state.world.clear();
-            _ = state.world.populate_with(&gen);
+            state.world_gen.populate(
+                IVec3::ZERO,
+                IVec3::splat(state.world.size as i32),
+                &mut state.world,
+            );
             state.settings.world_size = state.world.size;
             changed = true;
 

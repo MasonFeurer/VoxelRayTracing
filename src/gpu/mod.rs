@@ -61,12 +61,8 @@ impl NodesBuffer {
     }
 
     pub fn write(&self, gpu: &Gpu, offset: u64, nodes: &[Node]) {
-        println!(
-            "writing {} nodes at {offset} in buffer of {} nodes",
-            nodes.len(),
-            self.count
-        );
-        assert!(offset + (nodes.len() as u64) < self.count as u64);
+        let nodes_cut = (nodes.len() as u64).min(self.count as u64 - offset);
+        let nodes: &[Node] = &nodes[0..nodes_cut as usize];
 
         let ptr = nodes.as_ptr() as *const u8;
         let size = nodes.len() * std::mem::size_of::<Node>();

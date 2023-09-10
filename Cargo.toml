@@ -4,13 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-glam = "0.24.0"
+glam = "0.24"
 winit = "0.28.6"
 wgpu = "0.16.0"
 env_logger = "0.10"
-log = "0.4.17"
-pollster = "0.3.0"
-fastrand = "1.9.0"
+log = "0.4"
+pollster = "0.3"
+fastrand = "2.0"
 
 egui = "0.22.0"
 egui-wgpu = "0.22.0"

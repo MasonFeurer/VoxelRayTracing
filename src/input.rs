@@ -68,6 +68,13 @@ impl InputState {
                         }
                     };
                 }
+                WindowEvent::MouseWheel { delta, .. } => {
+                    let delta = match *delta {
+                        MouseScrollDelta::PixelDelta(pos) => Vec2::new(pos.x as f32, pos.y as f32),
+                        MouseScrollDelta::LineDelta(x, y) => Vec2::new(x, y),
+                    };
+                    self.scroll_delta += delta;
+                }
                 _ => return false,
             },
             Event::DeviceEvent { event, .. } => match event {
