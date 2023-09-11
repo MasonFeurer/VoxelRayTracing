@@ -5,7 +5,7 @@ use crate::math::dda::{axis_rot_to_ray, cast_ray, HitResult};
 use crate::world::{Voxel, World};
 use glam::{vec3, BVec3, Mat4, Vec2, Vec3};
 
-const GRAVITY: f32 = -0.040;
+const GRAVITY: f32 = -0.060;
 
 #[derive(Clone)]
 pub struct Player {
@@ -52,7 +52,7 @@ impl Player {
 
     pub fn create_aabb(&self) -> Aabb {
         const WIDTH: f32 = 0.6;
-        const HEIGHT: f32 = 4.8;
+        const HEIGHT: f32 = 3.8;
 
         Aabb::new(
             self.pos - Vec3::new(WIDTH, 0.0, WIDTH) * 0.5,
@@ -115,16 +115,16 @@ impl Player {
             }
         } else {
             if input.key_down(Key::Space) && self.on_ground {
-                self.vel.y = 0.3;
+                self.vel.y = 0.6;
                 self.on_ground = false;
-                frame_vel.y = 0.3;
+                frame_vel.y = 0.6;
             }
         }
         self.attempt_movement(world, frame_vel * t_delta);
     }
 
     pub fn eye_pos(&self) -> Vec3 {
-        self.pos + Vec3::new(0.0, 4.6, 0.0)
+        self.pos + Vec3::new(0.0, 3.6, 0.0)
     }
 
     pub fn create_view_mat(&self) -> Mat4 {
@@ -194,11 +194,14 @@ impl Player {
         if !eq.x || !eq.z {
             // if we've been stopped in the X or Z direction,
             // test if we would be able to move forward if we were higher up.
-            bbox.translate(vec3(0.0, 1.05, 0.0));
+            bbox.translate(vec3(0.0, 1.1, 0.0));
 
-            // TODO: FIX (the condition here always tests true)
-            if clip_movement(world, bbox, mv).result != Vec3::ZERO {
-                self.pos += vec3(0.0, 1.05, 0.0);
+            let mut up_mv_clipped = clip_movement(world, bbox, mv);
+            up_mv_clipped.result.y = 0.0;
+
+            // if you can move furthur in any directrion when one space higher, then we should jump
+            if up_mv_clipped.result.abs().cmpgt(mv_clipped.abs()).any() {
+                self.pos += vec3(0.0, 1.1, 0.0);
             }
         }
 

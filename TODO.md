@@ -6,6 +6,4 @@
 - Add textures
 - world saving / loading (maybe loading MC worlds)
 - Implement denoiser
-- make player shorter
-- fix player climbing walls
 - re-add SVO voxel simplifications
