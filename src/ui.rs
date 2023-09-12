@@ -1,8 +1,8 @@
 use crate::gpu::Settings as ShaderSettings;
-use crate::world::{Material, NoiseMaps};
+use crate::world::Material;
 use crate::{FrameInput, GameState, UpdateResult};
 use egui::*;
-use glam::{IVec3, Vec3};
+use glam::Vec3;
 
 #[derive(Default)]
 pub struct UiResult {
@@ -97,36 +97,13 @@ fn left_panel_ui(
     label(ui, &format!("Z: {:#}", pos.z), blue);
 
     value_f32(ui, "speed", &mut state.player.speed, 0.1, 3.0);
+    let used_gpu_mem =
+        ((state.world.last_used_node() as f64 / state.gpu_res.buffers.nodes.count as f64) * 100.0)
+            .round() as u32;
+    label(ui, &format!("GPU memory filled: {used_gpu_mem}%"), red);
 
     ui.separator();
     let mut changed = false;
-
-    ui.collapsing("world", |ui| {
-        ui.label(&format!("world size: {0}x{0}", state.world.size));
-        value_u32(ui, "world depth", &mut state.world_depth, 2, 12);
-
-        if ui.button("regenerate").clicked() {
-            state.world_gen.maps = NoiseMaps::from_seed(fastrand::i64(..));
-            state.world.set_max_depth(state.world_depth);
-            state.world.clear();
-            state.world_gen.populate(
-                IVec3::ZERO,
-                IVec3::splat(state.world.size as i32),
-                &mut state.world,
-            );
-            state.settings.world_size = state.world.size;
-            changed = true;
-
-            state
-                .gpu_res
-                .buffers
-                .nodes
-                .write(&state.gpu, 0, state.world.nodes());
-            result.clear_result = true;
-        }
-    });
-
-    ui.separator();
 
     ui.collapsing("shader", |ui| {
         let ShaderSettings {

@@ -324,9 +324,17 @@ pub enum WorldErr {
     OutOfBounds,
 }
 
+struct FoundNode {
+    idx: u32,
+    depth: u32,
+    center: IVec3,
+    size: u32,
+}
+
 /// The structure that holds the entire interactable world, representing all voxels via a SVO.
 #[derive(Clone, Default)]
 pub struct World {
+    pub min: IVec3,
     pub size: u32,
     pub max_depth: u32,
     start_search: u32,
@@ -343,12 +351,22 @@ impl World {
         let mut nodes = vec![Node::ZERO; alloc_nodes as usize];
         nodes[0] = Node::new_leaf(Voxel::AIR);
         Self {
+            min: IVec3::ZERO,
             size: 1 << max_depth,
             max_depth,
             start_search: 1,
             last_used_node: 0,
             nodes,
         }
+    }
+
+    #[inline(always)]
+    pub fn min(&self) -> IVec3 {
+        self.min
+    }
+    #[inline(always)]
+    pub fn max(&self) -> IVec3 {
+        self.min + IVec3::splat(self.size as i32)
     }
 
     pub fn nodes(&self) -> &[Node] {
@@ -360,6 +378,15 @@ impl World {
         self.size = 1 << max_depth;
     }
 
+    pub fn last_used_node(&self) -> u32 {
+        self.last_used_node
+    }
+
+    pub fn clear_node(&mut self, idx: u32) {
+        self.free_node(idx);
+        self.nodes[idx as usize] = Node::new_leaf(Voxel::AIR);
+    }
+
     pub fn clear(&mut self) {
         for node in &mut self.nodes {
             node.set_used_flag(false);
@@ -369,26 +396,17 @@ impl World {
         self.last_used_node = 0;
     }
 }
-
-struct FoundNode {
-    idx: u32,
-    depth: u32,
-    center: IVec3,
-    size: u32,
-}
-
 /// Find and mutate the SVO nodes that make up the world.
 impl World {
     pub fn check_bounds(&self, pos: IVec3) -> Result<(), WorldErr> {
-        let in_bounds =
-            (pos.cmpge(IVec3::ZERO)).all() && (pos.cmplt(IVec3::splat(self.size as i32))).all();
+        let in_bounds = (pos.cmpge(self.min())).all() && (pos.cmplt(self.max())).all();
         in_bounds.then(|| ()).ok_or(WorldErr::OutOfBounds)
     }
 
     fn find_node(&self, pos: IVec3, max_depth: u32) -> Result<FoundNode, WorldErr> {
         self.check_bounds(pos)?;
 
-        let mut center = IVec3::splat(self.size as i32 / 2);
+        let mut center = self.min + IVec3::splat(self.size as i32 / 2);
         let mut size = self.size;
         let mut node_idx = 0;
         let mut depth: u32 = 0;
@@ -424,16 +442,32 @@ impl World {
     }
 
     #[inline(always)]
-    fn mut_node(&mut self, idx: u32) -> &mut Node {
+    pub fn swap_nodes(&mut self, a: u32, b: u32) {
+        let b_node = self.nodes[b as usize];
+        self.nodes[b as usize] = self.nodes[a as usize];
+        self.nodes[a as usize] = b_node;
+    }
+
+    #[inline(always)]
+    pub fn mut_node(&mut self, idx: u32) -> &mut Node {
         &mut self.nodes[idx as usize]
     }
 
-    fn free_nodes(&mut self, start: u32) {
+    #[inline(always)]
+    pub fn free_nodes(&mut self, start: u32) {
         if start < self.start_search {
             self.start_search = start;
         }
         for idx in start..start + 8 {
-            self.nodes[idx as usize].set_used_flag(false);
+            self.free_node(idx);
+        }
+    }
+
+    #[inline(always)]
+    pub fn free_node(&mut self, idx: u32) {
+        self.nodes[idx as usize].set_used_flag(false);
+        if self.nodes[idx as usize].is_split() {
+            self.free_nodes(self.nodes[idx as usize].first_child());
         }
     }
 

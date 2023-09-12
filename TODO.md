@@ -1,6 +1,5 @@
 - Pre-compute global illumination in a low-res pass
 - Generate world on GPU
-- Make world infinite
 - Improve performance
 - Make player appear in reflections
 - Add textures

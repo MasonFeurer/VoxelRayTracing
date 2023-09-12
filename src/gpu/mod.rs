@@ -226,6 +226,7 @@ impl PixelShader {
                 3 => (COMPUTE) storage_binding_type(true),
                 4 => (COMPUTE) storage_binding_type(true),
                 5 => (COMPUTE) uniform_binding_type(),
+                6 => (COMPUTE) uniform_binding_type(),
             ),
         });
         let bind_group = Self::create_bind_group(gpu, &bind_group_layout, tex, buffers);
@@ -265,6 +266,7 @@ impl PixelShader {
                 3 => buffers.nodes.buf.as_entire_binding(),
                 4 => buffers.voxel_materials.0.as_entire_binding(),
                 5 => buffers.frame_count.0.as_entire_binding(),
+                6 => buffers.world_data.0.as_entire_binding(),
             ),
         })
     }
@@ -286,6 +288,7 @@ impl PixelShader {
 pub struct Buffers {
     pub cam_data: SimpleBuffer<CamData>,
     pub settings: SimpleBuffer<Settings>,
+    pub world_data: SimpleBuffer<WorldData>,
     pub nodes: NodesBuffer,
     pub voxel_materials: SimpleBuffer<[Material; 256]>,
     pub frame_count: SimpleBuffer<u32>,
@@ -299,6 +302,7 @@ impl Buffers {
         Self {
             cam_data: SimpleBuffer::new(gpu, "", COPY_DST | UNIFORM),
             settings: SimpleBuffer::new(gpu, "", COPY_DST | UNIFORM),
+            world_data: SimpleBuffer::new(gpu, "", COPY_DST | UNIFORM),
             nodes: NodesBuffer::new(gpu, "", COPY_DST | STORAGE, max_nodes),
             voxel_materials: SimpleBuffer::new(gpu, "", COPY_DST | STORAGE),
             frame_count: SimpleBuffer::new(gpu, "", COPY_DST | UNIFORM),
@@ -319,11 +323,25 @@ pub struct CamData {
 
 #[derive(Clone, Copy, Default)]
 #[repr(C)]
+pub struct WorldData {
+    pub min: [f32; 3],
+    pub size: f32,
+}
+impl WorldData {
+    pub fn new(world: &crate::world::World) -> Self {
+        Self {
+            min: [world.min.x as f32, world.min.y as f32, world.min.z as f32],
+            size: world.size as f32,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+#[repr(C)]
 pub struct Settings {
-    pub world_size: u32,
     pub max_ray_bounces: u32,
     pub sun_intensity: f32,
-    _padding0: u32,
+    _padding0: [u32; 2],
     pub sky_color: [f32; 3],
     pub _padding1: u32,
     pub sun_pos: [f32; 3],

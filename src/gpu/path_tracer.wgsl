@@ -6,11 +6,15 @@ struct CamData {
 }
 
 struct Settings {
-    world_size: u32,
     max_ray_bounces: u32,
     sun_intensity: f32,
     sky_color: vec3<f32>,
     sun_pos: vec3<f32>,
+}
+
+struct World {
+    min: vec3<f32>,
+    size: f32,
 }
 
 fn get_bits(field: u32, len: u32, offset: u32) -> u32 {
@@ -44,6 +48,7 @@ struct Material {
 @group(0) @binding(3) var<storage, read> nodes_: array<u32>;
 @group(0) @binding(4) var<storage, read> voxel_mats: array<Material>;
 @group(0) @binding(5) var<uniform> frame_count_: u32;
+@group(0) @binding(6) var<uniform> world_: World;
 
 fn rng_next(state: ptr<function, u32>) -> f32 {
     *state = *state * 747796405u + 2891336453u;
@@ -88,8 +93,8 @@ struct FoundNode {
 }
 
 fn find_node(pos: vec3<f32>) -> FoundNode {
-    var size = f32(settings_.world_size);
-    var center = vec3(size * 0.5);
+    var size = f32(world_.size);
+    var center = world_.min + vec3(size * 0.5);
     var node_idx = 0u;
     
     loop {
@@ -173,8 +178,8 @@ fn ray_world(rng: ptr<function, u32>, start_ray: Ray) -> HitResult {
     
     var ray_pos = start_ray.origin;
     
-    let world_min = vec3(0.0);
-    let world_max = vec3(f32(settings_.world_size));
+    let world_min = world_.min;
+    let world_max = world_min + vec3(f32(world_.size));
     
     var result: HitResult;
     

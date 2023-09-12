@@ -5,7 +5,7 @@ pub mod player;
 pub mod ui;
 pub mod world;
 
-use crate::gpu::{egui::Egui, Gpu, GpuResources, Settings};
+use crate::gpu::{egui::Egui, Gpu, GpuResources, Settings, WorldData};
 use crate::input::{InputState, Key};
 use crate::math::dda::HitResult;
 use crate::player::Player;
@@ -205,10 +205,9 @@ impl GameState {
         settings.sky_color = [0.81, 0.93, 1.0];
 
         let world_depth = 8;
-        let vertical_samples = 800;
+        let vertical_samples = 400;
 
         let mut world = World::new(world_depth, max_nodes);
-        settings.world_size = world.size;
 
         let tree_gen = TreeGen {
             height: 9..26,
@@ -227,7 +226,10 @@ impl GameState {
             vertical_samples,
         );
 
-        let player = Player::new(Vec3::new(80.5, 100.0, 80.5), 0.2);
+        let player = Player::new(
+            Vec3::new(world.size as f32 * 0.5, 100.0, world.size as f32 * 0.5),
+            0.2,
+        );
 
         settings.sun_pos = Vec3::new(
             0.0f32.to_radians().sin() * 500.0,
@@ -240,6 +242,10 @@ impl GameState {
             GpuResources::new(&gpu, gpu.surface_config.format, result_tex_size, max_nodes);
         gpu_res.buffers.nodes.write(&gpu, 0, world.nodes());
         gpu_res.buffers.settings.write(&gpu, &settings);
+        gpu_res
+            .buffers
+            .world_data
+            .write(&gpu, &WorldData::new(&world));
 
         let voxel_materials = DEFAULT_VOXEL_MATERIALS.to_vec();
         gpu_res
@@ -271,6 +277,98 @@ impl GameState {
 
     pub fn update(&mut self, input: &InputState) -> UpdateResult {
         let mut output = UpdateResult::default();
+
+        let root = self.world.get_node(0);
+        let node = move |x: u32, y: u32, z: u32| root.get_child(x + y * 2 + z * 4);
+        let edge_dist = 30;
+
+        let mut world_moved = false;
+        if (self.player.pos.x as i32) < self.world.min().x + edge_dist {
+            world_moved = true;
+            self.world.swap_nodes(node(0, 0, 0), node(1, 0, 0));
+            self.world.swap_nodes(node(0, 0, 1), node(1, 0, 1));
+            self.world.swap_nodes(node(0, 1, 0), node(1, 1, 0));
+            self.world.swap_nodes(node(0, 1, 1), node(1, 1, 1));
+
+            self.world.clear_node(node(0, 0, 0));
+            self.world.clear_node(node(0, 0, 1));
+            self.world.clear_node(node(0, 1, 0));
+            self.world.clear_node(node(0, 1, 1));
+
+            self.world.min.x -= self.world.size as i32 / 2;
+            self.world_gen.populate(
+                self.world.min(),
+                self.world.max() - IVec3::X * self.world.size as i32 / 2,
+                &mut self.world,
+            );
+        }
+        if (self.player.pos.x as i32) > self.world.max().x - edge_dist {
+            world_moved = true;
+            self.world.swap_nodes(node(1, 0, 0), node(0, 0, 0));
+            self.world.swap_nodes(node(1, 0, 1), node(0, 0, 1));
+            self.world.swap_nodes(node(1, 1, 0), node(0, 1, 0));
+            self.world.swap_nodes(node(1, 1, 1), node(0, 1, 1));
+
+            self.world.clear_node(node(1, 0, 0));
+            self.world.clear_node(node(1, 0, 1));
+            self.world.clear_node(node(1, 1, 0));
+            self.world.clear_node(node(1, 1, 1));
+
+            self.world.min.x += self.world.size as i32 / 2;
+            self.world_gen.populate(
+                self.world.min() + IVec3::X * self.world.size as i32 / 2,
+                self.world.max(),
+                &mut self.world,
+            );
+        }
+        if (self.player.pos.z as i32) < self.world.min().z + edge_dist {
+            world_moved = true;
+            self.world.swap_nodes(node(0, 0, 0), node(0, 0, 1));
+            self.world.swap_nodes(node(0, 1, 0), node(0, 1, 1));
+            self.world.swap_nodes(node(1, 0, 0), node(1, 0, 1));
+            self.world.swap_nodes(node(1, 1, 0), node(1, 1, 1));
+
+            self.world.clear_node(node(0, 0, 0));
+            self.world.clear_node(node(0, 1, 0));
+            self.world.clear_node(node(1, 0, 0));
+            self.world.clear_node(node(1, 1, 0));
+
+            self.world.min.z -= self.world.size as i32 / 2;
+            self.world_gen.populate(
+                self.world.min(),
+                self.world.max() - IVec3::Z * self.world.size as i32 / 2,
+                &mut self.world,
+            );
+        }
+        if (self.player.pos.z as i32) > self.world.max().z - edge_dist {
+            world_moved = true;
+            self.world.swap_nodes(node(0, 0, 1), node(0, 0, 0));
+            self.world.swap_nodes(node(0, 1, 1), node(0, 1, 0));
+            self.world.swap_nodes(node(1, 0, 1), node(1, 0, 0));
+            self.world.swap_nodes(node(1, 1, 1), node(1, 1, 0));
+
+            self.world.clear_node(node(0, 0, 1));
+            self.world.clear_node(node(0, 1, 1));
+            self.world.clear_node(node(1, 0, 1));
+            self.world.clear_node(node(1, 1, 1));
+
+            self.world.min.z += self.world.size as i32 / 2;
+            self.world_gen.populate(
+                self.world.min() + IVec3::Z * self.world.size as i32 / 2,
+                self.world.max(),
+                &mut self.world,
+            );
+        }
+        if world_moved {
+            self.gpu_res
+                .buffers
+                .nodes
+                .write(&self.gpu, 0, self.world.nodes());
+            self.gpu_res
+                .buffers
+                .world_data
+                .write(&self.gpu, &WorldData::new(&self.world));
+        }
 
         let result_tex_size = self.gpu_res.result_texture.size().as_vec2();
 
