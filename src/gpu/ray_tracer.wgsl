@@ -73,7 +73,7 @@ struct FoundeNode {
 
 fn find_node(pos: vec3<f32>) -> FoundeNode {
     var size = world_.size;
-    var center = world_.min + vec3(size * 0.5);
+    var center = vec3(size * 0.5);
     var node_idx = 0u;
     loop {
         if !node_is_split(node_idx) {
@@ -139,7 +139,7 @@ fn ray_world(start_ray: Ray) -> HitResult {
     
     var ray_pos = start_ray.origin;
     
-    let world_min = world_.min;
+    let world_min = vec3(0.0);
     let world_max = world_min + vec3(world_.size);
     
     var result: HitResult;
@@ -238,7 +238,7 @@ fn create_ray_from_screen(screen_pos: vec2<i32>) -> Ray {
     let ray_world = normalize((eye_coords * cam_data_.inv_view_mat).xyz);
 
     var ray: Ray;
-    ray.origin = cam_data_.pos;
+    ray.origin = cam_data_.pos - world_.min;
     ray.dir = ray_world;
     return ray;
 }
