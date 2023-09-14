@@ -9,13 +9,12 @@ use crate::gpu::{egui::Egui, Gpu, GpuResources, Settings, WorldData};
 use crate::input::{InputState, Key};
 use crate::math::dda::HitResult;
 use crate::player::Player;
-use crate::world::{Material, Node, NodeSeq, TreeGen, Voxel, World, WorldGen};
+use crate::world::{Material, Node, NodeSeq, Voxel, World, WorldGen};
 use glam::{IVec3, UVec2, Vec3};
 use std::time::SystemTime;
 use winit::event::*;
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{CursorGrabMode, Fullscreen, Window, WindowBuilder};
-use world::DEFAULT_VOXEL_MATERIALS;
 
 pub fn hide_cursor(window: &Window, hide: bool) {
     window.set_cursor_visible(!hide);
@@ -138,27 +137,25 @@ pub static INVENTORY: &[Voxel] = &[
     Voxel::STONE,
     Voxel::DIRT,
     Voxel::GRASS,
+    Voxel::SNOW,
+    Voxel::DEAD_GRASS,
+    Voxel::MOIST_GRASS,
     Voxel::SAND,
     Voxel::MUD,
     Voxel::CLAY,
-    Voxel::WOOD,
-    Voxel::BARK,
-    Voxel::GREEN_LEAVES,
-    Voxel::RED_LEAVES,
-    Voxel::ORANGE_LEAVES,
-    Voxel::YELLOW_LEAVES,
-    Voxel::PINK_LEAVES,
     Voxel::FIRE,
     Voxel::MAGMA,
     Voxel::WATER,
-    Voxel::BRIGHT,
-    Voxel::MIRROR,
+    Voxel::OAK_WOOD,
+    Voxel::OAK_LEAVES,
+    Voxel::BIRCH_WOOD,
+    Voxel::BIRCH_LEAVES,
+    Voxel::SPRUCE_WOOD,
+    Voxel::SPRUCE_LEAVES,
+    Voxel::CACTUS,
     Voxel::GOLD,
-    Voxel::ORANGE_TILE,
-    Voxel::POLISHED_BLACK_TILES,
-    Voxel::SMOOTH_ROCK,
-    Voxel::WOOD_FLOORING,
-    Voxel::POLISHED_BLACK_FLOORING,
+    Voxel::MIRROR,
+    Voxel::BRIGHT,
 ];
 
 pub struct FrameInput {
@@ -204,21 +201,12 @@ impl GameState {
         settings.sun_intensity = 4.0;
         settings.sky_color = [0.81, 0.93, 1.0];
 
-        let world_depth = 8;
+        let world_depth = 9;
         let vertical_samples = 400;
 
         let mut world = World::new(world_depth, max_nodes);
 
-        let tree_gen = TreeGen {
-            height: 9..26,
-            bark: Voxel::BARK,
-            leaves: Voxel::ALL_LEAVES.to_vec(),
-            leaves_decay: 0.1,
-            branch_count: 1..4,
-            branch_height: 0.5..0.8,
-            branch_len: 3.0..8.0,
-        };
-        let world_gen = WorldGen::new(fastrand::i64(..), tree_gen);
+        let world_gen = WorldGen::new(fastrand::i64(..));
         world_gen.populate(IVec3::ZERO, IVec3::splat(world.size as i32), &mut world);
 
         let result_tex_size = UVec2::new(
@@ -247,7 +235,7 @@ impl GameState {
             .world_data
             .write(&gpu, &WorldData::new(&world));
 
-        let voxel_materials = DEFAULT_VOXEL_MATERIALS.to_vec();
+        let voxel_materials = world::VOXEL_MATERIALS.to_vec();
         gpu_res
             .buffers
             .voxel_materials
@@ -387,17 +375,31 @@ impl GameState {
 
         let hit_result = self.player.cast_ray(&self.world);
 
-        let set_vox = if input.left_button_pressed() {
-            Some(Voxel::AIR)
-        } else if input.right_button_pressed() {
-            Some(INVENTORY[self.inv_sel as usize])
+        enum Action {
+            Place,
+            Break,
+        }
+        let action = if input.left_button_pressed()
+            || (input.left_button_down() & input.key_down(Key::LControl))
+        {
+            Some(Action::Break)
+        } else if input.right_button_pressed()
+            || (input.right_button_down() & input.key_down(Key::LControl))
+        {
+            Some(Action::Place)
         } else {
             None
         };
 
-        let set_pos = match hit_result {
-            Some(hit) if input.left_button_pressed() => Some(hit.pos),
-            Some(hit) if input.right_button_pressed() => Some(hit.pos + hit.face),
+        let set_vox = match action {
+            Some(Action::Break) => Some(Voxel::AIR),
+            Some(Action::Place) => Some(INVENTORY[self.inv_sel as usize]),
+            None => None,
+        };
+
+        let set_pos = match (action, hit_result) {
+            (Some(Action::Break), Some(hit)) => Some(hit.pos),
+            (Some(Action::Place), Some(hit)) => Some(hit.pos + hit.face),
             _ => None,
         };
 

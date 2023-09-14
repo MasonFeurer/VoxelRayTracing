@@ -5,84 +5,116 @@ use glam::{ivec3, vec2, vec3, IVec3, Vec3};
 use open_simplex::NoiseMap;
 use std::ops::Range;
 
+pub static VOXEL_NAMES: &[&str] = &[
+    "Air",
+    "Stone",
+    "Dirt",
+    "Grass",
+    "Snow",
+    "Dead Grass",
+    "Moist Grass",
+    "Sand",
+    "Mud",
+    "Clay",
+    "Fire",
+    "Magma",
+    "Water",
+    "Oak Wood",
+    "Oak Leaves",
+    "Birch Wood",
+    "Birch Leaves",
+    "Spruce Wood",
+    "Spruce Leaves",
+    "Cactus",
+    "Gold",
+    "Mirror",
+    "Bright",
+];
+
+pub static VOXEL_MATERIALS: &[Material] = &[
+    Material::new_empty(),                                  // Air
+    Material::new_solid([0.40, 0.40, 0.40], 1.0),           // Stone
+    Material::new_solid([0.40, 0.20, 0.00], 1.0),           // Dirt
+    Material::new_solid([0.011, 0.58, 0.11], 1.0),          // Grass
+    Material::new_solid([1.0; 3], 0.8),                     // Snow
+    Material::new_solid([0.2, 0.4, 0.2], 1.0),              // Dead Grass
+    Material::new_solid([1.0, 0.0, 0.0], 1.0),              // Moist Grass
+    Material::new_solid([0.99, 0.92, 0.53], 0.9),           // Sand
+    Material::new_solid([0.22, 0.13, 0.02], 0.8),           // Mud
+    Material::new_solid([0.35, 0.30, 0.25], 0.8),           // Clay
+    Material::new_solid([1.00, 0.90, 0.20], 0.0).emit(2.0), // Fire
+    Material::new_solid([0.75, 0.18, 0.01], 1.0).emit(1.0), // Magma
+    Material::new_solid([0.076, 0.563, 0.563], 0.0),        // Water
+    Material::new_solid([0.25, 0.10, 0.00], 1.0),           // Oak Wood
+    Material::new_solid([0.23, 0.52, 0.00], 1.0),           // Oak Leaves
+    Material::new_solid([1.0; 3], 1.0),                     // Birch Wood
+    Material::new_solid([0.43, 0.72, 0.00], 1.0),           // Birch Leaves
+    Material::new_solid([0.06, 0.04, 0.00], 1.0),           // Spruce Wood
+    Material::new_solid([0.04, 0.22, 0.00], 1.0),           // Spruce Leaves
+    Material::new_solid([0.0, 0.30, 0.0], 1.0),             // Cactus
+    Material::new_solid([0.83, 0.68, 0.22], 0.3),           // Gold
+    Material::new_solid([1.0; 3], 0.0),                     // Mirror
+    Material::new_solid([1.0; 3], 1.0).emit(5.0),           // Bright
+];
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Voxel(pub u8);
-
 impl Voxel {
     pub const AIR: Self = Self(0);
     pub const STONE: Self = Self(1);
     pub const DIRT: Self = Self(2);
     pub const GRASS: Self = Self(3);
-    pub const FIRE: Self = Self(4);
-    pub const MAGMA: Self = Self(5);
-    pub const WATER: Self = Self(6);
-    pub const WOOD: Self = Self(7);
-    pub const BARK: Self = Self(8);
-    pub const GREEN_LEAVES: Self = Self(9);
-    pub const PINK_LEAVES: Self = Self(21);
-    pub const ORANGE_LEAVES: Self = Self(22);
-    pub const YELLOW_LEAVES: Self = Self(23);
-    pub const RED_LEAVES: Self = Self(24);
-    pub const SAND: Self = Self(10);
-    pub const MUD: Self = Self(11);
-    pub const CLAY: Self = Self(12);
-    pub const GOLD: Self = Self(13);
-    pub const MIRROR: Self = Self(14);
-    pub const BRIGHT: Self = Self(15);
-    pub const ORANGE_TILE: Self = Self(16);
-    pub const POLISHED_BLACK_TILES: Self = Self(17);
-    pub const SMOOTH_ROCK: Self = Self(18);
-    pub const WOOD_FLOORING: Self = Self(19);
-    pub const POLISHED_BLACK_FLOORING: Self = Self(20);
+    pub const SNOW: Self = Self(4);
+    pub const DEAD_GRASS: Self = Self(5);
+    pub const MOIST_GRASS: Self = Self(6);
+    pub const SAND: Self = Self(7);
+    pub const MUD: Self = Self(8);
+    pub const CLAY: Self = Self(9);
+    pub const FIRE: Self = Self(10);
+    pub const MAGMA: Self = Self(11);
+    pub const WATER: Self = Self(12);
+    pub const OAK_WOOD: Self = Self(13);
+    pub const OAK_LEAVES: Self = Self(14);
+    pub const BIRCH_WOOD: Self = Self(15);
+    pub const BIRCH_LEAVES: Self = Self(16);
+    pub const SPRUCE_WOOD: Self = Self(17);
+    pub const SPRUCE_LEAVES: Self = Self(18);
+    pub const CACTUS: Self = Self(19);
+    pub const GOLD: Self = Self(20);
+    pub const MIRROR: Self = Self(21);
+    pub const BRIGHT: Self = Self(22);
 
-    pub const ALL_LEAVES: &[Self] = &[
-        Self::GREEN_LEAVES,
-        Self::PINK_LEAVES,
-        Self::ORANGE_LEAVES,
-        Self::YELLOW_LEAVES,
-        Self::RED_LEAVES,
-    ];
-}
+    #[inline(always)]
+    pub fn display_name(&self) -> &'static str {
+        &VOXEL_NAMES[self.0 as usize]
+    }
 
-impl Voxel {
     #[inline(always)]
     pub fn is_empty(self) -> bool {
         self == Self::AIR || self == Self::WATER
     }
     #[inline(always)]
     pub fn is_solid(self) -> bool {
-        self != Self::AIR && self != Voxel::WATER
+        match self {
+            Self::AIR => false,
+            Self::WATER => false,
+            Self::MAGMA => false,
+            Self::FIRE => false,
+            Self::MUD => false,
+            _ => true,
+        }
     }
 
-    pub fn display_name(self) -> &'static str {
+    #[inline(always)]
+    pub fn viscosity(self) -> f32 {
         match self {
-            Self::AIR => "air",
-            Self::STONE => "stone",
-            Self::DIRT => "dirt",
-            Self::GRASS => "grass",
-            Self::FIRE => "fire",
-            Self::MAGMA => "magma",
-            Self::WATER => "water",
-            Self::WOOD => "wood",
-            Self::BARK => "bark",
-            Self::GREEN_LEAVES => "green leaves",
-            Self::SAND => "sand",
-            Self::MUD => "mud",
-            Self::CLAY => "clay",
-            Self::GOLD => "gold",
-            Self::MIRROR => "mirror",
-            Self::BRIGHT => "bright",
-            Self::ORANGE_TILE => "orange tile",
-            Self::POLISHED_BLACK_TILES => "polished black tiles",
-            Self::SMOOTH_ROCK => "smooth rock",
-            Self::WOOD_FLOORING => "wood flooring",
-            Self::POLISHED_BLACK_FLOORING => "polished black flooring",
-            Self::PINK_LEAVES => "pink leaves",
-            Self::ORANGE_LEAVES => "orange leaves",
-            Self::YELLOW_LEAVES => "yellow leaves",
-            Self::RED_LEAVES => "red leaves",
-            _ => "{unknown}",
+            Self::AIR => 1.0,
+            Self::WATER => 0.6,
+            Self::MAGMA => 0.2,
+            Self::FIRE => 1.0,
+            Self::MUD => 0.2,
+            _ => 0.0,
         }
     }
 }
@@ -111,81 +143,31 @@ impl Material {
         polish_scatter: 0.0,
     };
 
-    pub const fn new(
-        empty: u32,
-        color: [f32; 3],
-        emission: f32,
-        scatter: f32,
-        polish_bounce_chance: f32,
-        polish_color: [f32; 3],
-        polish_scatter: f32,
-    ) -> Self {
-        Self {
-            empty,
-            color,
-            emission,
-            scatter,
-            polish_bounce_chance,
-            polish_color,
-            polish_scatter,
-            _padding0: 0,
-        }
+    pub const fn new_empty() -> Self {
+        let mut rs = Self::ZERO;
+        rs.empty = 1;
+        rs
+    }
+
+    pub const fn new_solid(color: [f32; 3], scatter: f32) -> Self {
+        let mut rs = Self::ZERO;
+        rs.color = color;
+        rs.scatter = scatter;
+        rs
+    }
+
+    pub const fn polished(mut self, chance: f32, scatter: f32, color: [f32; 3]) -> Self {
+        self.polish_bounce_chance = chance;
+        self.polish_color = color;
+        self.polish_scatter = scatter;
+        self
+    }
+
+    pub const fn emit(mut self, emission: f32) -> Self {
+        self.emission = emission;
+        self
     }
 }
-
-#[rustfmt::skip]
-pub static DEFAULT_VOXEL_MATERIALS: &[Material] = &[
-    // AIR
-    Material::new(1, [0.00, 0.00, 0.00], 0.0, 0.0, 0.0, [1.0; 3], 0.0),
-    // STONE
-    Material::new(0, [0.40, 0.40, 0.40], 0.0, 0.8, 0.0, [1.0; 3], 0.0),
-    // DIRT
-    Material::new(0, [0.40, 0.20, 0.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
-    // GRASS
-    Material::new(0, [0.011, 0.58, 0.11], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
-    // FIRE
-    Material::new(0, [1.00, 0.90, 0.20], 2.0, 0.0, 0.0, [1.0; 3], 0.0),
-    // MAGMA
-    Material::new(0, [0.75, 0.18, 0.01], 1.0, 1.0, 0.2, [1.0; 3], 0.0),
-    // WATER
-    Material::new(0, [0.076, 0.563, 0.563], 0.0, 0.0, 0.5, [1.0; 3], 0.0),
-    // WOOD
-    Material::new(0, [0.00, 0.00, 0.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
-    // BARK
-    Material::new(0, [1.00, 1.00, 1.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
-    // GREEN_LEAVES
-    Material::new(0, [0.23, 0.52, 0.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
-    // SAND
-    Material::new(0, [0.99, 0.92, 0.53], 0.0, 0.9, 0.0, [1.0; 3], 0.0),
-    // MUD
-    Material::new(0, [0.22, 0.13, 0.02], 0.0, 0.8, 0.4, [1.0; 3], 0.0),
-    // CLAY
-    Material::new(0, [0.35, 0.30, 0.25], 0.0, 0.8, 0.4, [1.0; 3], 0.0),
-    // GOLD
-    Material::new(0, [0.83, 0.68, 0.22], 0.0, 0.3, 0.0, [1.0; 3], 0.0),
-    // MIRROR
-    Material::new(0, [1.00, 1.00, 1.00], 0.0, 0.0, 0.0, [1.0; 3], 0.0),
-    // BRIGHT
-    Material::new(0, [1.00, 1.00, 1.00], 5.0, 1.0, 0.0, [1.0; 3], 0.0),
-    // ORANGE_TILE
-    Material::new(0, [0.87, 0.41, 0.01], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
-    // POLISHED_BLACK_TILES
-    Material::new(0, [0.10, 0.10, 0.10], 0.0, 0.1, 0.9, [1.0; 3], 0.0),
-    // SMOOTH_ROCK
-    Material::new(0, [0.60, 0.60, 0.60], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
-    // WOOD_FLOORING
-    Material::new(0, [1.00, 0.00, 1.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
-    // POLISHED_BLACK_FLOORING
-    Material::new(0, [0.07, 0.07, 0.07], 0.0, 0.1, 0.8, [1.0; 3], 0.0),
-    // PINK_LEAVES
-    Material::new(0, [0.95, 0.45, 0.60], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
-    // ORANGE_LEAVES
-    Material::new(0, [0.95, 0.20, 0.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
-    // YELLOW_LEAVES
-    Material::new(0, [1.00, 0.92, 0.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
-    // RED_LEAVES
-    Material::new(0, [0.95, 0.10, 0.00], 0.0, 1.0, 0.0, [1.0; 3], 0.0),
-];
 
 /// Represents a node in the sparse voxel octree (SVO) that is the world.
 ///
@@ -610,13 +592,33 @@ impl World {
         let max = pos + IVec3::splat(r as i32);
         let r_sq = r as f32 * r as f32;
 
-        for x in min.x..max.x {
-            for y in min.y..max.y {
-                for z in min.z..max.z {
+        for x in min.x..=max.x {
+            for y in min.y..=max.y {
+                for z in min.z..=max.z {
                     let block_center = ivec3(x, y, z).as_vec3() + Vec3::splat(0.5);
                     let dist_sq = (block_center - pos_center).length_squared();
 
                     if dist_sq >= r_sq || fastrand::f32() <= decay {
+                        continue;
+                    }
+
+                    _ = self.set_voxel(ivec3(x, y, z), voxel);
+                }
+            }
+        }
+    }
+
+    pub fn bounded_sphere(&mut self, pos: IVec3, r: u32, voxel: Voxel, min: IVec3, max: IVec3) {
+        let pos_center = pos.as_vec3() + Vec3::splat(0.5);
+        let r_sq = r as f32 * r as f32;
+
+        for x in min.x..=max.x {
+            for y in min.y..=max.y {
+                for z in min.z..=max.z {
+                    let block_center = ivec3(x, y, z).as_vec3() + Vec3::splat(0.5);
+                    let dist_sq = (block_center - pos_center).length_squared();
+
+                    if dist_sq >= r_sq {
                         continue;
                     }
 
@@ -646,8 +648,8 @@ impl NoiseMaps {
             scale: NoiseMap::new(seed.wrapping_mul(43265), 0.003, 40.0),
             bumps: NoiseMap::new(seed.wrapping_mul(76324), 0.15, 4.0),
             mountains: NoiseMap::new(seed.wrapping_mul(72316423), 0.001, 40.0),
-            temp: NoiseMap::new(seed.wrapping_mul(83226), 0.001, 1.0),
-            moisture: NoiseMap::new(seed.wrapping_mul(2345632), 0.0001, 1.0),
+            temp: NoiseMap::new(seed.wrapping_mul(83226), 0.0004, 1.0),
+            moisture: NoiseMap::new(seed.wrapping_mul(2345632), 0.0004, 1.0),
             vegetation: NoiseMap::new(seed.wrapping_mul(53252), 0.001, 1.0),
         }
     }
@@ -675,12 +677,35 @@ impl NoiseMaps {
 
 pub struct WorldGen {
     pub maps: NoiseMaps,
-    pub tree_gen: TreeGen,
+    oak_tree_gen: TreeGen,
+    birch_tree_gen: TreeGen,
 }
 impl WorldGen {
-    pub fn new(seed: i64, tree_gen: TreeGen) -> Self {
+    pub fn new(seed: i64) -> Self {
+        let oak_tree_gen = TreeGen {
+            height: 6..19,
+            bark: Voxel::OAK_WOOD,
+            leaves: Voxel::OAK_LEAVES,
+            leaves_decay: 0.1,
+            branch_count: 1..4,
+            branch_height: 0.5..0.8,
+            branch_len: 3.0..8.0,
+        };
+        let birch_tree_gen = TreeGen {
+            height: 9..26,
+            bark: Voxel::BIRCH_WOOD,
+            leaves: Voxel::BIRCH_LEAVES,
+            leaves_decay: 0.1,
+            branch_count: 1..4,
+            branch_height: 0.5..0.8,
+            branch_len: 3.0..8.0,
+        };
         let maps = NoiseMaps::from_seed(seed);
-        Self { maps, tree_gen }
+        Self {
+            maps,
+            birch_tree_gen,
+            oak_tree_gen,
+        }
     }
 
     pub fn populate(&self, min: IVec3, max: IVec3, world: &mut World) {
@@ -698,15 +723,18 @@ impl WorldGen {
                     continue;
                 }
 
-                // let temp = self.maps.temp(x, z);
+                let temp = self.maps.temp(x as f32, z as f32);
                 let moisture = self.maps.moisture(x as f32, z as f32);
                 let vegetation = self.maps.vegetation(x as f32, z as f32);
 
-                let surface = if moisture < 0.2 || y < 27 {
-                    Voxel::SAND
-                } else {
-                    Voxel::GRASS
+                let surface = match (moisture, temp) {
+                    (m, t) if m < 0.3 && t > 0.7 => Voxel::SAND,
+                    (m, t) if m < 0.3 && t < 0.3 => Voxel::DEAD_GRASS,
+                    (m, t) if m > 0.3 && t < 0.3 => Voxel::SNOW,
+                    (m, t) if m > 0.7 && t > 0.7 => Voxel::MOIST_GRASS,
+                    _ => Voxel::GRASS,
                 };
+
                 _ = world.set_voxel(surface_pos, surface);
 
                 if y < 26 {
@@ -714,18 +742,66 @@ impl WorldGen {
                     continue;
                 }
 
-                if fastrand::f32() < 0.005 * vegetation {
-                    spawn_tree(world, surface_pos, &self.tree_gen);
+                if surface == Voxel::GRASS && fastrand::f32() < 0.005 * vegetation {
+                    match fastrand::u8(0..2) {
+                        0 => spawn_tree(world, surface_pos, &self.oak_tree_gen),
+                        1 => spawn_tree(world, surface_pos, &self.birch_tree_gen),
+                        _ => unreachable!(),
+                    }
+                }
+                if surface == Voxel::SAND && fastrand::f32() < 0.01 * vegetation {
+                    spawn_cactus(world, surface_pos)
+                }
+                if surface == Voxel::SNOW && fastrand::f32() < 0.003 * vegetation {
+                    spawn_spruce_tree(world, surface_pos);
                 }
             }
         }
     }
 }
 
-pub struct TreeGen {
+fn spawn_cactus(world: &mut World, pos: IVec3) {
+    let pos = pos + IVec3::Y;
+    let height = fastrand::i32(2..7);
+    let splits = if height > 3 { fastrand::u32(0..4) } else { 0 };
+
+    world.fill_voxels(pos, pos + IVec3::Y * height, Voxel::CACTUS);
+    for _ in 0..splits {
+        let split_h = fastrand::i32(1..height);
+        let split_len = fastrand::i32(1..4);
+        let dir = rand_cardinal_dir();
+
+        _ = world.set_voxel(pos + IVec3::Y * split_h + dir, Voxel::CACTUS);
+        world.fill_voxels(
+            pos + IVec3::Y * split_h + dir * 2,
+            pos + IVec3::Y * (split_h + split_len) + dir * 2,
+            Voxel::CACTUS,
+        );
+    }
+}
+
+fn spawn_spruce_tree(world: &mut World, pos: IVec3) {
+    let offset = fastrand::i32(4..8);
+    let height = offset + fastrand::i32(10..18);
+
+    let mut y = height;
+    let mut r: i32 = 1;
+    while y > offset {
+        let c = pos + IVec3::Y * y;
+        let min = c - ivec3(r, 0, r);
+        let max = c + ivec3(r, 0, r);
+        world.bounded_sphere(c, r as u32, Voxel::SPRUCE_LEAVES, min, max);
+
+        r += 1;
+        y -= 2;
+    }
+    world.fill_voxels(pos, pos + IVec3::Y * (height - 1), Voxel::SPRUCE_WOOD);
+}
+
+struct TreeGen {
     pub height: Range<u32>,
     pub bark: Voxel,
-    pub leaves: Vec<Voxel>,
+    pub leaves: Voxel,
     pub leaves_decay: f32,
     pub branch_count: Range<u32>,
     pub branch_height: Range<f32>,
@@ -734,7 +810,6 @@ pub struct TreeGen {
 
 fn spawn_tree(world: &mut World, surface: IVec3, tree: &TreeGen) {
     let height = fastrand::u32(tree.height.clone());
-    let leaves = tree.leaves[fastrand::usize(0..tree.leaves.len())];
     let randf32 = |range: Range<f32>| -> f32 {
         let size = range.end - range.start;
         fastrand::f32() * size + range.start
@@ -750,7 +825,7 @@ fn spawn_tree(world: &mut World, surface: IVec3, tree: &TreeGen) {
     world.sphere(
         surface + ivec3(0, height as i32, 0),
         5,
-        leaves,
+        tree.leaves,
         tree.leaves_decay,
     );
 
@@ -762,7 +837,7 @@ fn spawn_tree(world: &mut World, surface: IVec3, tree: &TreeGen) {
         let start = ivec3(surface.x, surface.y + branch_h as i32, surface.z);
         let end = (start.as_vec3() + branch_dir * branch_len).as_ivec3();
 
-        world.sphere(end, 3, leaves, tree.leaves_decay);
+        world.sphere(end, 3, tree.leaves, tree.leaves_decay);
 
         let line = crate::math::walk_line(start, end);
         for pos in line {

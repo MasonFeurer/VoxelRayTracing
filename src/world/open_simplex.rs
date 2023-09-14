@@ -30,25 +30,6 @@ impl NoiseMap {
     }
 }
 
-/// Averages multiple NoiseMap's
-pub struct MultiNoiseMap {
-    maps: Vec<NoiseMap>,
-}
-impl MultiNoiseMap {
-    pub fn new(maps: &[NoiseMap]) -> Self {
-        Self {
-            maps: maps.to_vec(),
-        }
-    }
-    pub fn get(&self, pos: Vec2) -> f32 {
-        let mut sum = 0.0;
-        for map in &self.maps {
-            sum += map.get(pos);
-        }
-        sum / self.maps.len() as f32
-    }
-}
-
 const STRETCH_CONSTANT_2D: f64 = -0.211324865405187; // (1/(2+1).sqrt()-1)/2;
 const SQUISH_CONSTANT_2D: f64 = 0.366025403784439; // ((2+1).sqrt()-1)/2;
 const STRETCH_CONSTANT_3D: f64 = -1.0 / 6.0; // (1/(3+1).sqrt()-1)/3;
