@@ -1,4 +1,4 @@
-use glam::Vec2;
+use glam::{vec2, Vec2};
 use std::collections::HashSet;
 use winit::event::*;
 
@@ -70,8 +70,8 @@ impl InputState {
                 }
                 WindowEvent::MouseWheel { delta, .. } => {
                     let delta = match *delta {
-                        MouseScrollDelta::PixelDelta(pos) => Vec2::new(pos.x as f32, pos.y as f32),
-                        MouseScrollDelta::LineDelta(x, y) => Vec2::new(x, y),
+                        MouseScrollDelta::PixelDelta(pos) => vec2(pos.x as f32, pos.y as f32),
+                        MouseScrollDelta::LineDelta(x, y) => vec2(x, y),
                     };
                     self.scroll_delta += delta;
                 }
@@ -86,8 +86,8 @@ impl InputState {
                 }
                 DeviceEvent::MouseWheel { delta } => {
                     let delta = match *delta {
-                        MouseScrollDelta::PixelDelta(pos) => Vec2::new(pos.x as f32, pos.y as f32),
-                        MouseScrollDelta::LineDelta(x, y) => Vec2::new(x, y),
+                        MouseScrollDelta::PixelDelta(pos) => vec2(pos.x as f32, pos.y as f32),
+                        MouseScrollDelta::LineDelta(x, y) => vec2(x, y),
                     };
                     self.scroll_delta += delta;
                 }

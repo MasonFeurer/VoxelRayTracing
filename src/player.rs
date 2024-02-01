@@ -3,7 +3,7 @@ use crate::input::{InputState, Key};
 use crate::math::aabb::Aabb;
 use crate::math::dda::{axis_rot_to_ray, cast_ray, HitResult};
 use crate::world::{Voxel, World};
-use glam::{vec3, BVec3, Mat4, Vec2, Vec3};
+use glam::{vec2, vec3, BVec3, Mat4, Vec2, Vec3};
 
 const GRAVITY: f32 = -0.060;
 
@@ -55,8 +55,8 @@ impl Player {
         const HEIGHT: f32 = 3.8;
 
         Aabb::new(
-            self.pos - Vec3::new(WIDTH, 0.0, WIDTH) * 0.5,
-            self.pos + Vec3::new(WIDTH, HEIGHT * 2.0, WIDTH) * 0.5,
+            self.pos - vec3(WIDTH, 0.0, WIDTH) * 0.5,
+            self.pos + vec3(WIDTH, HEIGHT * 2.0, WIDTH) * 0.5,
         )
     }
 
@@ -76,7 +76,7 @@ impl Player {
             self.vel.y = 0.0;
         }
         if !self.flying {
-            self.apply_acc(Vec3::new(0.0, GRAVITY, 0.0));
+            self.apply_acc(vec3(0.0, GRAVITY, 0.0));
         }
         self.vel *= 0.96;
 
@@ -124,7 +124,7 @@ impl Player {
     }
 
     pub fn eye_pos(&self) -> Vec3 {
-        self.pos + Vec3::new(0.0, 3.6, 0.0)
+        self.pos + vec3(0.0, 3.6, 0.0)
     }
 
     pub fn create_view_mat(&self) -> Mat4 {
@@ -152,7 +152,7 @@ impl Player {
             pos: self.eye_pos(),
             inv_view_mat,
             inv_proj_mat,
-            proj_size: Vec2::new(proj_size.x, proj_size.y),
+            proj_size: vec2(proj_size.x, proj_size.y),
             ..Default::default()
         }
     }
@@ -209,10 +209,18 @@ impl Player {
         self.pos += mv_clipped;
     }
 
+    pub fn facing(&self) -> Vec3 {
+        axis_rot_to_ray(vec3(
+            self.rot.x.to_radians(),
+            self.rot.y.to_radians(),
+            self.rot.z.to_radians(),
+        ))
+    }
+
     pub fn cast_ray(&self, world: &World) -> Option<HitResult> {
         cast_ray(
             self.eye_pos(),
-            axis_rot_to_ray(Vec3::new(
+            axis_rot_to_ray(vec3(
                 self.rot.x.to_radians(),
                 self.rot.y.to_radians(),
                 self.rot.z.to_radians(),

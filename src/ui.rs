@@ -1,8 +1,8 @@
 use crate::gpu::Settings as ShaderSettings;
-use crate::world::Material;
+use crate::world::data::Material;
 use crate::{FrameInput, GameState, UpdateResult};
 use egui::*;
-use glam::Vec3;
+use glam::vec3;
 
 #[derive(Default)]
 pub struct UiResult {
@@ -78,9 +78,6 @@ fn left_panel_ui(
     }
 
     let in_hand = crate::INVENTORY[state.inv_sel as usize];
-    let red = Color32::from_rgb(255, 150, 0);
-    let green = Color32::from_rgb(0, 255, 0);
-    let blue = Color32::from_rgb(0, 255, 255);
     let white = Color32::WHITE;
 
     ui.add_space(3.0);
@@ -89,18 +86,37 @@ fn left_panel_ui(
     label(ui, &format!("place: {:?}", in_hand.display_name()), white);
     ui.add_space(3.0);
 
-    let pos = state.player.pos;
+    let (pos, dir) = (state.player.pos, state.player.facing());
 
     ui.add_space(3.0);
-    label(ui, &format!("X: {:#}", pos.x), red);
-    label(ui, &format!("Y: {:#}", pos.y), green);
-    label(ui, &format!("Z: {:#}", pos.z), blue);
+    label(
+        ui,
+        &format!("position: {:.2}/{:.2}/{:.2}", pos.x, pos.y, pos.z),
+        white,
+    );
+    let facing = format!(
+        "facing: {}/{}/{}",
+        if dir.x < 0.0 { "-X" } else { "+X" },
+        if dir.y < 0.0 { "-Y" } else { "+Y" },
+        if dir.z < 0.0 { "-Z" } else { "+Z" },
+    );
+    label(ui, &facing, white);
+    toggle_bool(ui, "flying (Z)", &mut state.player.flying);
+    value_f32(ui, "speed", &mut state.player.speed, 0.1, 10.0);
 
-    value_f32(ui, "speed", &mut state.player.speed, 0.1, 3.0);
-    let used_gpu_mem =
-        ((state.world.last_used_node() as f64 / state.gpu_res.buffers.nodes.count as f64) * 100.0)
-            .round() as u32;
-    label(ui, &format!("GPU memory filled: {used_gpu_mem}%"), red);
+    value_u32(ui, "max chunk builders", &mut state.max_threads, 1, 32);
+    label(
+        ui,
+        &format!("chunk builders: {}", state.chunk_builders.len()),
+        white,
+    );
+    label(
+        ui,
+        &format!("queued features: {}", state.features_queue.len()),
+        white,
+    );
+    toggle_bool(ui, "move world (N)", &mut state.move_world);
+    toggle_bool(ui, "build chunks (M)", &mut state.build_chunks);
 
     ui.separator();
     let mut changed = false;
@@ -111,19 +127,28 @@ fn left_panel_ui(
             sky_color,
             sun_pos,
             sun_intensity,
+            show_step_count,
+            samples_per_pixel,
             ..
         } = &mut state.settings;
 
-        toggle_bool(ui, "path tracing", &mut state.path_tracing);
-        changed |= value_u32(ui, "max ray bounces", max_ray_bounces, 0, 30);
+        if toggle_bool(ui, "path tracing", &mut state.path_tracing) {
+            state
+                .gpu_res
+                .resize_result_texture(&state.gpu, state.gpu_res.result_texture.size());
+            state.frame_count = 0;
+        }
+        changed |= toggle_u32(ui, "show ray steps", show_step_count);
+        changed |= value_u32(ui, "max ray bounces", max_ray_bounces, 0, 20);
+        changed |= value_u32(ui, "samples/pixel", samples_per_pixel, 0, 20);
         changed |= color_picker(ui, "sky color", sky_color);
         changed |= value_f32(ui, "sun intensity", sun_intensity, 0.0, 100.0);
         if value_f32(ui, "sun pos", &mut state.sun_angle, 0.0, 360.0) {
             changed = true;
-            *sun_pos = Vec3::new(
+            *sun_pos = vec3(
                 state.sun_angle.to_radians().sin() * 500.0,
                 state.sun_angle.to_radians().cos() * 500.0,
-                state.world.size as f32 * 0.5,
+                state.world.size() as f32 * 0.5,
             )
             .to_array();
             result.clear_result = true;
@@ -151,6 +176,7 @@ fn left_panel_ui(
             polish_bounce_chance,
             polish_color,
             polish_scatter,
+            translucency,
             ..
         } = &mut state.voxel_materials[in_hand.0 as usize];
 
@@ -160,6 +186,7 @@ fn left_panel_ui(
         changed2 |= value_f32(ui, "polish scatter", polish_scatter, 0.0, 1.0);
         changed2 |= color_picker(ui, "color", color);
         changed2 |= color_picker(ui, "polish color", polish_color);
+        changed2 |= value_f32(ui, "translucency", translucency, 0.0, 1.0);
 
         if changed2 {
             state.gpu_res.buffers.voxel_materials.write_slice(
@@ -167,11 +194,13 @@ fn left_panel_ui(
                 0,
                 &state.voxel_materials,
             );
+            result.clear_result = true;
         }
     });
 
     if changed {
         let settings = &state.settings;
         state.gpu_res.buffers.settings.write(&state.gpu, settings);
+        result.clear_result = true;
     }
 }

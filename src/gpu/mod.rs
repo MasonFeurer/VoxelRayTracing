@@ -1,8 +1,8 @@
 pub mod egui;
 pub mod texture;
 
-use crate::world::{Material, Node};
-use glam::{Mat4, UVec2, Vec2, Vec3};
+use crate::world::{data::Material, ChunkHeader, Node, World};
+use glam::{uvec2, Mat4, UVec2, Vec2, Vec3};
 use texture::Texture;
 
 use wgpu::*;
@@ -45,30 +45,27 @@ impl<T, const N: usize> SimpleBuffer<[T; N]> {
     }
 }
 
-pub struct NodesBuffer {
-    pub buf: Buffer,
-    pub count: u32,
-}
-impl NodesBuffer {
-    pub fn new(gpu: &Gpu, label: &str, usage: BufferUsages, count: u32) -> Self {
-        let buf = gpu.device.create_buffer(&BufferDescriptor {
+pub struct ArrayBuffer<T>(Buffer, u32, std::marker::PhantomData<T>);
+impl<T> ArrayBuffer<T> {
+    pub fn new(gpu: &Gpu, label: &str, usage: BufferUsages, size: u32) -> Self {
+        let handle = gpu.device.create_buffer(&BufferDescriptor {
             label: Some(label),
-            size: count as u64 * std::mem::size_of::<Node>() as u64,
+            size: size as u64 * std::mem::size_of::<T>() as u64,
             usage,
             mapped_at_creation: false,
         });
-        Self { buf, count }
+        Self(handle, size, std::marker::PhantomData)
     }
 
-    pub fn write(&self, gpu: &Gpu, offset: u64, nodes: &[Node]) {
-        let nodes_cut = (nodes.len() as u64).min(self.count as u64 - offset);
-        let nodes: &[Node] = &nodes[0..nodes_cut as usize];
+    pub fn write(&self, gpu: &Gpu, offset: u64, items: &[T]) {
+        let items_cut = (items.len() as u64).min(self.1 as u64 - offset);
+        let items: &[T] = &items[0..items_cut as usize];
 
-        let ptr = nodes.as_ptr() as *const u8;
-        let size = nodes.len() * std::mem::size_of::<Node>();
+        let ptr = items.as_ptr() as *const u8;
+        let size = items.len() * std::mem::size_of::<T>();
         let slice = unsafe { std::slice::from_raw_parts(ptr, size) };
-        let offset = offset * std::mem::size_of::<Node>() as u64;
-        gpu.queue.write_buffer(&self.buf, offset, slice);
+        let offset = offset * std::mem::size_of::<T>() as u64;
+        gpu.queue.write_buffer(&self.0, offset, slice);
     }
 }
 
@@ -115,12 +112,12 @@ impl ScreenShader {
     pub fn new(gpu: &Gpu, tex: &Texture, surface_format: TextureFormat) -> Self {
         let device = &gpu.device;
         let shader_module = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("output-tex-shader.shader-module"),
+            label: Some("screen-shader.shader-module"),
             source: ShaderSource::Wgsl(SCREEN_SHADER_SRC.into()),
         });
 
         let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("output-tex-shader.bind-group-layout"),
+            label: Some("screen-shader.bind-group-layout"),
             entries: &bind_group_layout_entries!(
                 0 => (FRAGMENT) BindingType::Texture {
                     sample_type: TextureSampleType::default(),
@@ -133,12 +130,12 @@ impl ScreenShader {
         let bind_group = Self::create_bind_group(gpu, &bind_group_layout, tex);
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("output-tex-shader.pipeline-layout"),
+            label: Some("screen-shader.pipeline-layout"),
             bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
         let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("output-tex-shader.pipeline"),
+            label: Some("screen-shader.pipeline"),
             layout: Some(&pipeline_layout),
             vertex: VertexState {
                 module: &shader_module,
@@ -169,7 +166,7 @@ impl ScreenShader {
 
     pub fn create_bind_group(gpu: &Gpu, layout: &BindGroupLayout, tex: &Texture) -> BindGroup {
         gpu.device.create_bind_group(&BindGroupDescriptor {
-            label: Some("output-tex-shader.bind_group"),
+            label: Some("screen-shader.bind_group"),
             layout,
             entries: &bind_group_entries!(
                 0 => BindingResource::TextureView(&tex.view),
@@ -184,7 +181,7 @@ impl ScreenShader {
 
     pub fn encode_pass(&self, encoder: &mut CommandEncoder, view: &TextureView) {
         let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("#output-tex-shader-pass"),
+            label: Some("#screen-shader-pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
                 view,
                 resolve_target: None,
@@ -207,14 +204,14 @@ pub struct PixelShader {
     pub bind_group: BindGroup,
 }
 impl PixelShader {
-    pub fn new(src: &str, gpu: &Gpu, tex: &Texture, buffers: &Buffers) -> Self {
+    pub fn new(src: &str, gpu: &Gpu, tex: &Texture, prev_tex: &Texture, buffers: &Buffers) -> Self {
         let device = &gpu.device;
         let shader_module = device.create_shader_module(ShaderModuleDescriptor {
-            label: Some("#raytracer.shader-module"),
+            label: Some("#pixel-shader.shader-module"),
             source: ShaderSource::Wgsl(src.into()),
         });
         let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("#raytracer.bind-group-layout"),
+            label: Some("#pixel-shader.bind-group-layout"),
             entries: &bind_group_layout_entries!(
                 0 => (COMPUTE) BindingType::StorageTexture {
                     access: StorageTextureAccess::WriteOnly,
@@ -224,20 +221,26 @@ impl PixelShader {
                 1 => (COMPUTE) uniform_binding_type(),
                 2 => (COMPUTE) uniform_binding_type(),
                 3 => (COMPUTE) storage_binding_type(true),
-                4 => (COMPUTE) storage_binding_type(true),
+                4 => (COMPUTE) uniform_binding_type(),
                 5 => (COMPUTE) uniform_binding_type(),
-                6 => (COMPUTE) uniform_binding_type(),
+                6 => (COMPUTE) storage_binding_type(true),
+                7 => (COMPUTE) storage_binding_type(true),
+                8 => (COMPUTE) BindingType::Texture {
+                    sample_type: TextureSampleType::default(),
+                    view_dimension: TextureViewDimension::D2,
+                    multisampled: false,
+                }
             ),
         });
-        let bind_group = Self::create_bind_group(gpu, &bind_group_layout, tex, buffers);
+        let bind_group = Self::create_bind_group(gpu, &bind_group_layout, tex, prev_tex, buffers);
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some("#raytracer.pipeline-layout"),
+            label: Some("#pixel-shader.pipeline-layout"),
             bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
         let pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
-            label: Some("#raytracer.pipeline"),
+            label: Some("#pixel-shader.pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader_module,
             entry_point: "update",
@@ -254,6 +257,7 @@ impl PixelShader {
         gpu: &Gpu,
         layout: &BindGroupLayout,
         output_tex: &Texture,
+        prev_output_tex: &Texture,
         buffers: &Buffers,
     ) -> BindGroup {
         gpu.device.create_bind_group(&BindGroupDescriptor {
@@ -263,16 +267,25 @@ impl PixelShader {
                 0 => BindingResource::TextureView(&output_tex.view),
                 1 => buffers.cam_data.0.as_entire_binding(),
                 2 => buffers.settings.0.as_entire_binding(),
-                3 => buffers.nodes.buf.as_entire_binding(),
-                4 => buffers.voxel_materials.0.as_entire_binding(),
-                5 => buffers.frame_count.0.as_entire_binding(),
-                6 => buffers.world_data.0.as_entire_binding(),
+                3 => buffers.voxel_materials.0.as_entire_binding(),
+                4 => buffers.frame_count.0.as_entire_binding(),
+                5 => buffers.world_data.0.as_entire_binding(),
+                6 => buffers.nodes.0.as_entire_binding(),
+                7 => buffers.chunks.0.as_entire_binding(),
+                8 => BindingResource::TextureView(&prev_output_tex.view),
             ),
         })
     }
 
-    pub fn recreate_bind_group(&mut self, gpu: &Gpu, tex: &Texture, buffers: &Buffers) {
-        self.bind_group = Self::create_bind_group(gpu, &self.bind_group_layout, tex, buffers);
+    pub fn recreate_bind_group(
+        &mut self,
+        gpu: &Gpu,
+        tex: &Texture,
+        prev_tex: &Texture,
+        buffers: &Buffers,
+    ) {
+        self.bind_group =
+            Self::create_bind_group(gpu, &self.bind_group_layout, tex, prev_tex, buffers);
     }
 
     pub fn encode_pass(&self, encoder: &mut CommandEncoder, workgroups: UVec2) {
@@ -289,23 +302,26 @@ pub struct Buffers {
     pub cam_data: SimpleBuffer<CamData>,
     pub settings: SimpleBuffer<Settings>,
     pub world_data: SimpleBuffer<WorldData>,
-    pub nodes: NodesBuffer,
+    pub nodes: ArrayBuffer<Node>,
     pub voxel_materials: SimpleBuffer<[Material; 256]>,
     pub frame_count: SimpleBuffer<u32>,
+    pub chunks: ArrayBuffer<ChunkHeader>,
 }
 impl Buffers {
-    pub fn new(gpu: &Gpu, max_nodes: u32) -> Self {
+    pub fn new(gpu: &Gpu, max_nodes: u32, world_size: u32) -> Self {
         const COPY_DST: BufferUsages = BufferUsages::COPY_DST;
         const UNIFORM: BufferUsages = BufferUsages::UNIFORM;
         const STORAGE: BufferUsages = BufferUsages::STORAGE;
+        let chunk_count = world_size * world_size * world_size;
 
         Self {
-            cam_data: SimpleBuffer::new(gpu, "", COPY_DST | UNIFORM),
-            settings: SimpleBuffer::new(gpu, "", COPY_DST | UNIFORM),
-            world_data: SimpleBuffer::new(gpu, "", COPY_DST | UNIFORM),
-            nodes: NodesBuffer::new(gpu, "", COPY_DST | STORAGE, max_nodes),
-            voxel_materials: SimpleBuffer::new(gpu, "", COPY_DST | STORAGE),
-            frame_count: SimpleBuffer::new(gpu, "", COPY_DST | UNIFORM),
+            cam_data: SimpleBuffer::new(gpu, "cam_data", COPY_DST | UNIFORM),
+            settings: SimpleBuffer::new(gpu, "settings", COPY_DST | UNIFORM),
+            world_data: SimpleBuffer::new(gpu, "world_data", COPY_DST | UNIFORM),
+            nodes: ArrayBuffer::new(gpu, "nodes", COPY_DST | STORAGE, max_nodes),
+            voxel_materials: SimpleBuffer::new(gpu, "voxel_mats", COPY_DST | STORAGE),
+            frame_count: SimpleBuffer::new(gpu, "frame_count", COPY_DST | UNIFORM),
+            chunks: ArrayBuffer::new(gpu, "chunks", COPY_DST | STORAGE, chunk_count),
         }
     }
 }
@@ -324,14 +340,18 @@ pub struct CamData {
 #[derive(Clone, Copy, Default)]
 #[repr(C)]
 pub struct WorldData {
-    pub min: [f32; 3],
-    pub size: f32,
+    pub min: [i32; 3],
+    pub size: u32,
+    pub size_in_chunks: u32,
+    _padding: [u32; 3],
 }
 impl WorldData {
-    pub fn new(world: &crate::world::World) -> Self {
+    pub fn from(world: &World) -> Self {
         Self {
-            min: [world.min.x as f32, world.min.y as f32, world.min.z as f32],
-            size: world.size as f32,
+            min: world.min().into(),
+            size: world.size(),
+            size_in_chunks: world.size_in_chunks(),
+            _padding: Default::default(),
         }
     }
 }
@@ -341,14 +361,16 @@ impl WorldData {
 pub struct Settings {
     pub max_ray_bounces: u32,
     pub sun_intensity: f32,
-    _padding0: [u32; 2],
+    pub show_step_count: u32,
+    _padding0: u32,
     pub sky_color: [f32; 3],
     pub _padding1: u32,
     pub sun_pos: [f32; 3],
-    pub _padding2: u32,
+    pub samples_per_pixel: u32,
 }
 
 pub struct GpuResources {
+    pub prev_result_texture: Texture,
     pub result_texture: Texture,
     pub voxel_texture_atlas: Texture,
     pub buffers: Buffers,
@@ -363,8 +385,9 @@ impl GpuResources {
         surface_format: TextureFormat,
         result_size: UVec2,
         max_nodes: u32,
+        world_size: u32,
     ) -> Self {
-        let buffers = Buffers::new(gpu, max_nodes);
+        let buffers = Buffers::new(gpu, max_nodes, world_size);
 
         let result_texture = Texture::new(
             &gpu.device,
@@ -372,19 +395,38 @@ impl GpuResources {
             RESULT_TEX_FORMAT,
             RESULT_TEX_USAGES,
         );
+        let prev_result_texture = Texture::new(
+            &gpu.device,
+            result_size,
+            RESULT_TEX_FORMAT,
+            RESULT_TEX_USAGES,
+        );
         let voxel_texture_atlas = Texture::new(
             &gpu.device,
-            UVec2::new(5, 5),
+            uvec2(5, 5),
             TextureFormat::Rgba8Unorm,
             TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING,
         );
 
         let screen_shader = ScreenShader::new(gpu, &result_texture, surface_format);
-        let ray_tracer = PixelShader::new(RAY_TRACER_SRC, gpu, &result_texture, &buffers);
-        let path_tracer = PixelShader::new(PATH_TRACER_SRC, gpu, &result_texture, &buffers);
+        let ray_tracer = PixelShader::new(
+            RAY_TRACER_SRC,
+            gpu,
+            &result_texture,
+            &prev_result_texture,
+            &buffers,
+        );
+        let path_tracer = PixelShader::new(
+            PATH_TRACER_SRC,
+            gpu,
+            &result_texture,
+            &prev_result_texture,
+            &buffers,
+        );
 
         Self {
             result_texture,
+            prev_result_texture,
             voxel_texture_atlas,
             buffers,
             screen_shader,
@@ -396,14 +438,24 @@ impl GpuResources {
     pub fn resize_result_texture(&mut self, gpu: &Gpu, new_size: UVec2) {
         self.result_texture =
             Texture::new(&gpu.device, new_size, RESULT_TEX_FORMAT, RESULT_TEX_USAGES);
+        self.prev_result_texture =
+            Texture::new(&gpu.device, new_size, RESULT_TEX_FORMAT, RESULT_TEX_USAGES);
 
         self.screen_shader
             .recreate_bind_group(gpu, &self.result_texture);
 
-        self.ray_tracer
-            .recreate_bind_group(gpu, &self.result_texture, &self.buffers);
-        self.path_tracer
-            .recreate_bind_group(gpu, &self.result_texture, &self.buffers);
+        self.ray_tracer.recreate_bind_group(
+            gpu,
+            &self.result_texture,
+            &self.prev_result_texture,
+            &self.buffers,
+        );
+        self.path_tracer.recreate_bind_group(
+            gpu,
+            &self.result_texture,
+            &self.prev_result_texture,
+            &self.buffers,
+        );
     }
 }
 
@@ -414,9 +466,9 @@ pub struct Gpu {
     pub surface_config: SurfaceConfiguration,
 }
 impl Gpu {
-    pub async fn new(window: &winit::window::Window, max_buffer_sizes: u32) -> Self {
+    pub async fn new(window: &winit::window::Window) -> Self {
         let size = window.inner_size();
-        let size = UVec2::new(size.width, size.height);
+        let size = uvec2(size.width, size.height);
 
         let instance = Instance::new(Default::default());
         // Handle to a presentable surface
@@ -431,6 +483,8 @@ impl Gpu {
             })
             .await
             .unwrap();
+        let max_storage_buffer_binding_size = adapter.limits().max_storage_buffer_binding_size;
+        let max_buffer_size = adapter.limits().max_buffer_size;
 
         // device: Open connection to graphics device
         // queue: Handle to a command queue on the device
@@ -439,8 +493,8 @@ impl Gpu {
                 &DeviceDescriptor {
                     features: Features::default(),
                     limits: Limits {
-                        max_storage_buffer_binding_size: max_buffer_sizes,
-                        max_buffer_size: max_buffer_sizes as u64,
+                        max_storage_buffer_binding_size,
+                        max_buffer_size,
                         ..Default::default()
                     },
                     label: None,
@@ -474,50 +528,12 @@ impl Gpu {
     }
 
     pub fn surface_size(&self) -> UVec2 {
-        UVec2::new(self.surface_config.width, self.surface_config.height)
+        uvec2(self.surface_config.width, self.surface_config.height)
     }
 
     pub fn get_output(&self) -> Result<(SurfaceTexture, TextureView), SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&Default::default());
         Ok((output, view))
-    }
-}
-
-pub struct GpuMesh {
-    pub vertex_buf: Buffer,
-    pub index_buf: Buffer,
-    pub vertex_count: u32,
-    pub index_count: u32,
-}
-impl GpuMesh {
-    pub fn new<V>(gpu: &Gpu, vertices: &[V], indices: &[u32]) -> Self {
-        use wgpu::util::{BufferInitDescriptor, DeviceExt};
-
-        let v_slice = unsafe {
-            std::slice::from_raw_parts(
-                vertices.as_ptr() as *const u8,
-                std::mem::size_of::<V>() * vertices.len(),
-            )
-        };
-        let i_slice =
-            unsafe { std::slice::from_raw_parts(indices.as_ptr() as *const u8, 4 * indices.len()) };
-
-        let vertex_buf = gpu.device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("#vertex-buf"),
-            contents: v_slice,
-            usage: BufferUsages::COPY_DST | BufferUsages::VERTEX,
-        });
-        let index_buf = gpu.device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("#index-buf"),
-            contents: i_slice,
-            usage: BufferUsages::COPY_DST | BufferUsages::INDEX,
-        });
-        Self {
-            vertex_buf,
-            index_buf,
-            vertex_count: vertices.len() as u32,
-            index_count: indices.len() as u32,
-        }
     }
 }

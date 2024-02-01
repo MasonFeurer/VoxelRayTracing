@@ -1,4 +1,4 @@
-use glam::{IVec3, Vec3};
+use glam::{vec3, IVec3, Vec3};
 
 /// Takes a rotation (the rotation around the X, Y, and Z axis), and
 /// creates a normalized vector ray in the facing direction.
@@ -17,7 +17,7 @@ pub fn axis_rot_to_ray(rot: Vec3) -> Vec3 {
     let x = r * -rot.y.sin();
     let z = r * -rot.y.cos();
     let y = -rot.x.sin();
-    Vec3::new(x, y, z)
+    vec3(x, y, z)
 }
 
 #[derive(Clone, Copy)]
@@ -35,7 +35,7 @@ pub fn cast_ray(
 
     // length of a line in same direction as the ray,
     // that travels 1 unit in the X, Y, Z
-    let unit_step_size = Vec3::new(
+    let unit_step_size = vec3(
         (1.0 + (dir.y / dir.x) * (dir.y / dir.x) + (dir.z / dir.x) * (dir.z / dir.x)).sqrt(),
         (1.0 + (dir.x / dir.y) * (dir.x / dir.y) + (dir.z / dir.y) * (dir.z / dir.y)).sqrt(),
         (1.0 + (dir.x / dir.z) * (dir.x / dir.z) + (dir.y / dir.z) * (dir.y / dir.z)).sqrt(),
@@ -66,8 +66,8 @@ pub fn cast_ray(
             }
         };
         (
-            Vec3::new(step_x, step_y, step_z),
-            Vec3::new(ray_len_x, ray_len_y, ray_len_z),
+            vec3(step_x, step_y, step_z),
+            vec3(ray_len_x, ray_len_y, ray_len_z),
         )
     };
     let mut dist: f32 = 0.0;

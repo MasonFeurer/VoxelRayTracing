@@ -2,17 +2,15 @@
 //! 2014 OpenSimplex Noise in Java.
 //! by Kurt Spencer
 //!
-//! Ported to Rust by Mason Feurer (Excluding 4D) (Added `NoiseMap` and `MultiNoiseMap`).
-//! I have no idea how this thing works, just translated the control flow.
+//! Ported to Rust by Mason Feurer (Excluding 4D noise functions)
 //!
 use glam::Vec2;
 
 #[derive(Clone)]
 pub struct NoiseMap {
-    // OpenSimplexNoise is a pretty big struct, better to not store it on the stack
     noise: Box<OpenSimplexNoise>,
     scale: f64,
-    freq: f64,
+    pub freq: f64,
 }
 impl NoiseMap {
     pub fn new(seed: i64, freq: f64, scale: f64) -> Self {

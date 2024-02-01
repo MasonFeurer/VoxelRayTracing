@@ -1,4 +1,4 @@
-use glam::UVec2;
+use glam::{uvec2, UVec2};
 
 pub struct Texture {
     pub handle: wgpu::Texture,
@@ -51,6 +51,6 @@ impl Texture {
 
     pub fn size(&self) -> UVec2 {
         let size = self.handle.size();
-        UVec2::new(size.width, size.height)
+        uvec2(size.width, size.height)
     }
 }

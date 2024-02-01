@@ -1,8 +1,0 @@
-- Pre-compute global illumination in a low-res pass
-- Generate world on GPU
-- Improve performance
-- Make player appear in reflections
-- Add textures
-- world saving / loading (maybe loading MC worlds)
-- Implement denoiser
-- re-add SVO voxel simplifications
