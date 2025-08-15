@@ -1,19 +1,16 @@
 pub mod gpu;
+pub mod input;
 pub mod player;
 pub mod world;
 
 use crate::gpu::{egui::Egui, Gpu, GpuResources, Settings, WorldData};
-// use crate::input::{InputState, Key};
+use crate::input::{InputState, Key};
 use crate::player::Player;
-use crate::world::{ChunkHeader, Node, World};
+use crate::world::{Node, World};
 use client::common::math::HitResult;
 use client::GameState;
-use glam::{ivec3, uvec2, uvec3, vec3, IVec3, UVec2, UVec3};
-use std::collections::{HashMap, HashSet};
-use std::sync::atomic::Ordering;
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::Arc;
-use std::{thread::JoinHandle, time::SystemTime};
+use glam::{ivec3, uvec2, vec3, UVec2};
+use std::time::SystemTime;
 use winit::event::*;
 use winit::event_loop::EventLoop;
 use winit::window::{CursorGrabMode, Fullscreen, Window, WindowAttributes};
@@ -73,6 +70,7 @@ impl<'a> AppState<'a> {
         settings.sun_intensity = 4.0;
         settings.sky_color = [0.81, 0.93, 1.0];
         settings.samples_per_pixel = 1;
+        settings.show_step_count = 1;
 
         let vertical_samples = 400;
 
@@ -83,10 +81,16 @@ impl<'a> AppState<'a> {
 
         let world_size = 10;
         let mut world = World::new(100_000, world_size);
-        world.set_voxel(ivec3(5, 1, 0), world::Voxel(23), |_| {});
-        world.set_voxel(ivec3(0, 1, 5), world::Voxel(23), |_| {});
+        // Create a world (in-dev)
+        _ = world.set_voxel(ivec3(0, 1, 0), world::Voxel(23), |_| {});
+        _ = world.set_voxel(ivec3(3, 1, 0), world::Voxel(23), |_| {});
+        _ = world.set_voxel(ivec3(0, 1, 3), world::Voxel(23), |_| {});
+        _ = world.set_voxel(ivec3(6, 1, 0), world::Voxel(23), |_| {});
+        _ = world.set_voxel(ivec3(0, 1, 6), world::Voxel(23), |_| {});
+        _ = world.set_voxel(ivec3(9, 1, 0), world::Voxel(23), |_| {});
+        _ = world.set_voxel(ivec3(0, 1, 9), world::Voxel(23), |_| {});
 
-        let mut player = Player::new(vec3(0.0, 0.0, 0.0), 0.2);
+        let mut player = Player::new(vec3(1.0, 0.0, 1.0), 0.2);
         player.flying = true;
 
         let gpu_res = GpuResources::new(
@@ -133,20 +137,20 @@ impl<'a> AppState<'a> {
         }
     }
 
-    pub fn update(&mut self /*, input: &InputState*/) -> UpdateResult {
+    pub fn update(&mut self, input: &InputState) -> UpdateResult {
         let mut output = UpdateResult::default();
 
         // -------- Player Updates --------
         // Update player pos with input
-        // {
-        //     let prev_pos = self.player.pos;
-        //     let prev_rot = self.player.rot;
-        //     self.player.update(1.0, input, &self.world);
+        {
+            let prev_pos = self.player.pos;
+            let prev_rot = self.player.rot;
+            self.player.update(1.0, input, &self.world);
 
-        //     if prev_pos != self.player.pos || prev_rot != self.player.rot {
-        //         output.player_moved = true;
-        //     }
-        // }
+            if prev_pos != self.player.pos || prev_rot != self.player.rot {
+                output.player_moved = true;
+            }
+        }
 
         // Toggle settings with key presses
         // if input.key_pressed(Key::N) {
@@ -163,18 +167,17 @@ impl<'a> AppState<'a> {
 
     pub fn frame(
         &mut self,
-        window: &Window,
-        update: &UpdateResult,
+        _window: &Window,
+        _update: &UpdateResult,
         frame: &FrameInput,
-        // input: &InputState,
-        egui: &mut Egui,
+        _input: &InputState,
+        _egui: &mut Egui,
     ) -> Result<(), wgpu::SurfaceError> {
         if frame.win_size != frame.prev_win_size {
             self.on_resize(frame.win_size);
         }
 
         let (output, view) = self.gpu.get_output()?;
-        let surface_size = self.gpu.surface_size();
         let mut encoder = self.gpu.create_command_encoder();
         let result_tex_size = self.gpu_res.result_texture.size();
 
@@ -184,16 +187,6 @@ impl<'a> AppState<'a> {
         buffers.cam_data.write(&self.gpu, &cam_data);
 
         let workgroups = result_tex_size / 8;
-        // match self.path_tracing {
-        //     false => self
-        //         .gpu_res
-        //         .ray_tracer
-        //         .encode_pass(&mut encoder, workgroups),
-        //     true => self
-        //         .gpu_res
-        //         .path_tracer
-        //         .encode_pass(&mut encoder, workgroups),
-        // }
         self.gpu_res
             .ray_tracer
             .encode_pass(&mut encoder, workgroups);
@@ -202,6 +195,7 @@ impl<'a> AppState<'a> {
 
         // // --- egui ---
         // {
+        //     let surface_size = self.gpu.surface_size();
         //     // --- create scene ---
         //     let egui_input = egui.winit.take_egui_input(window);
 
@@ -272,7 +266,7 @@ pub fn main() {
     let mut fps: u32 = 0;
     let mut last_second = SystemTime::now();
     let mut last_frame = SystemTime::now();
-    // let mut input = InputState::default();
+    let mut input = InputState::default();
     let mut cursor_hidden = true;
 
     let event_loop = EventLoop::new().unwrap();
@@ -298,8 +292,8 @@ pub fn main() {
         max_nodes,
     );
 
-    event_loop.run(|event, ael| match event {
-        // e if input.update(&e) => {}
+    _ = event_loop.run(|event, ael| match event {
+        e if input.update(&e) => {}
         Event::WindowEvent { event, .. } => match event {
             e if !cursor_hidden && egui.winit.on_window_event(&window, &e).consumed => {}
             WindowEvent::CloseRequested => ael.exit(),
@@ -316,18 +310,18 @@ pub fn main() {
                 let win_size = win_size(&window);
 
                 let update_rs = if cursor_hidden {
-                    app_state.update()
+                    app_state.update(&input)
                 } else {
                     UpdateResult::default()
                 };
 
-                // if input.key_pressed(Key::T) {
-                //     cursor_hidden = !cursor_hidden;
-                //     hide_cursor(&window, cursor_hidden);
-                // }
-                // if input.key_pressed(Key::F) {
-                //     toggle_fullscreen(&window);
-                // }
+                if input.key_pressed(&Key::Character("t".into())) {
+                    cursor_hidden = !cursor_hidden;
+                    hide_cursor(&window, cursor_hidden);
+                }
+                if input.key_pressed(&Key::Character("f".into())) {
+                    toggle_fullscreen(&window);
+                }
 
                 let frame_in = FrameInput {
                     fps,
@@ -336,7 +330,7 @@ pub fn main() {
                 };
                 prev_win_size = win_size;
 
-                let frame_rs = app_state.frame(&window, &update_rs, &frame_in, &mut egui);
+                let frame_rs = app_state.frame(&window, &update_rs, &frame_in, &input, &mut egui);
                 match frame_rs {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Lost) => println!("SurfaceError: Lost"),
@@ -344,7 +338,7 @@ pub fn main() {
                     Err(e) => eprintln!("{e:?}"),
                 };
 
-                // input.finish_frame();
+                input.finish_frame();
 
                 fps_temp += 1;
                 let now = SystemTime::now();

@@ -1,5 +1,5 @@
 use crate::gpu::CamData;
-// use crate::input::{InputState, Key};
+use crate::input::{InputState, Key, NamedKey};
 use crate::world::{Voxel, World};
 use client::common::math::Aabb;
 use client::common::math::{axis_rot_to_ray, cast_ray, HitResult};
@@ -64,64 +64,73 @@ impl Player {
         self.vel += v;
     }
 
-    // pub fn update(&mut self, t_delta: f32, input: &InputState, world: &World) {
-    //     let dx = self.rot.y.to_radians().sin() * self.speed;
-    //     let dz = self.rot.y.to_radians().cos() * self.speed;
+    pub fn update(&mut self, t_delta: f32, input: &InputState, world: &World) {
+        // Key binds
+        let key_a = Key::Character("a".into());
+        let key_w = Key::Character("w".into());
+        let key_s = Key::Character("s".into());
+        let key_d = Key::Character("d".into());
+        let key_z = Key::Character("z".into());
+        let key_space = Key::Named(NamedKey::Space);
+        let key_shift = Key::Named(NamedKey::Shift);
 
-    //     if input.cursor_delta != Vec2::ZERO {
-    //         self.handle_cursor_movement(t_delta, input.cursor_delta);
-    //     }
+        let dx = self.rot.y.to_radians().sin() * self.speed;
+        let dz = self.rot.y.to_radians().cos() * self.speed;
 
-    //     if self.flying {
-    //         self.vel.y = 0.0;
-    //     }
-    //     if !self.flying {
-    //         self.apply_acc(vec3(0.0, GRAVITY, 0.0));
-    //     }
-    //     self.vel *= 0.96;
+        if input.cursor_delta != Vec2::ZERO {
+            self.handle_cursor_movement(t_delta, input.cursor_delta);
+        }
 
-    //     let mut frame_vel = self.vel;
+        if self.flying {
+            self.vel.y = 0.0;
+        }
+        if !self.flying {
+            self.apply_acc(vec3(0.0, GRAVITY, 0.0));
+        }
+        self.vel *= 0.96;
 
-    //     if input.key_pressed(Key::Z) {
-    //         self.flying = !self.flying;
-    //         if self.flying {
-    //             self.vel = Vec3::ZERO;
-    //             return;
-    //         }
-    //     }
+        let mut frame_vel = self.vel;
 
-    //     if input.key_down(Key::W) {
-    //         frame_vel.x += -dx;
-    //         frame_vel.z += -dz;
-    //     }
-    //     if input.key_down(Key::S) {
-    //         frame_vel.x += dx;
-    //         frame_vel.z += dz;
-    //     }
-    //     if input.key_down(Key::D) {
-    //         frame_vel.x += dz;
-    //         frame_vel.z += -dx;
-    //     }
-    //     if input.key_down(Key::A) {
-    //         frame_vel.x += -dz;
-    //         frame_vel.z += dx;
-    //     }
-    //     if self.flying {
-    //         if input.key_down(Key::Space) {
-    //             frame_vel.y += self.speed;
-    //         }
-    //         if input.key_down(Key::LShift) {
-    //             frame_vel.y += -self.speed;
-    //         }
-    //     } else {
-    //         if input.key_down(Key::Space) && self.on_ground {
-    //             self.vel.y = 0.6;
-    //             self.on_ground = false;
-    //             frame_vel.y = 0.6;
-    //         }
-    //     }
-    //     self.attempt_movement(world, frame_vel * t_delta);
-    // }
+        if input.key_pressed(&key_z) {
+            self.flying = !self.flying;
+            if self.flying {
+                self.vel = Vec3::ZERO;
+                return;
+            }
+        }
+
+        if input.key_down(&key_w) {
+            frame_vel.x += -dx;
+            frame_vel.z += -dz;
+        }
+        if input.key_down(&key_s) {
+            frame_vel.x += dx;
+            frame_vel.z += dz;
+        }
+        if input.key_down(&key_d) {
+            frame_vel.x += dz;
+            frame_vel.z += -dx;
+        }
+        if input.key_down(&key_a) {
+            frame_vel.x += -dz;
+            frame_vel.z += dx;
+        }
+        if self.flying {
+            if input.key_down(&key_space) {
+                frame_vel.y += self.speed;
+            }
+            if input.key_down(&key_shift) {
+                frame_vel.y += -self.speed;
+            }
+        } else {
+            if input.key_down(&key_space) && self.on_ground {
+                self.vel.y = 0.6;
+                self.on_ground = false;
+                frame_vel.y = 0.6;
+            }
+        }
+        self.attempt_movement(world, frame_vel * t_delta);
+    }
 
     pub fn eye_pos(&self) -> Vec3 {
         self.pos + vec3(0.0, 3.6, 0.0)

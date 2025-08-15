@@ -445,7 +445,7 @@ impl<'a> Gpu<'a> {
 
         let instance = Instance::new(&Default::default());
         // Handle to a presentable surface
-        let surface = unsafe { instance.create_surface(window) }.unwrap();
+        let surface = instance.create_surface(window).unwrap();
 
         // Handle to the graphics device
         let adapter = instance

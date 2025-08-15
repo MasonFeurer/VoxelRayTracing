@@ -184,6 +184,9 @@ fn ray_world(start_ray: Ray) -> HitResult {
     var result: HitResult;
     
     if any(ray_pos <= world_min) | any(ray_pos >= world_max) {
+    	// Make screen black if the player is not in world bounds
+    	result.hit = true;
+    	result.material.color = vec3(0.0, 0.0, 0.0);
         return result;
     }
     
@@ -254,6 +257,10 @@ fn ray_world(start_ray: Ray) -> HitResult {
     result.pos = ray_pos;
     result.norm = norm;
     result.material = voxel_mats[voxel];
+    
+    // Making every voxel a color of gray until external resources are implemented.
+    result.material.color = vec3(1.0, 1.0, 1.0);
+    
     if result.norm.x != 0.0 {
         result.material.color *= 0.5;
     }

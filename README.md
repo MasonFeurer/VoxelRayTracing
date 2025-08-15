@@ -1,10 +1,9 @@
 # Voxel Ray Tracing
 My voxel rendering engine that makes use of ray tracing.
 
-## Running
-Build and run from source:
-```sh
-git clone "https://github.com/MasonFeurer/VoxelRayTracing.git"
-cd VoxelRayTracing
-cargo run --release
-```
+# Rewrite
+This branch is for an ongoing rewrite, where:
+- client and server code are separated
+- client and server code are platform-independent
+- in-game resources (ie. textures, world gen) are separate from the code
+

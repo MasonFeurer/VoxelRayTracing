@@ -10,8 +10,7 @@ pub use common;
 use anyhow::Context;
 use common::net::{ClientCmd, ConnError, ServerCmd};
 use net::ServerConn;
-use std::net::{SocketAddr, TcpStream};
-use std::str::FromStr;
+use std::net::SocketAddr;
 
 pub struct GameState {
     pub user_name: String,
