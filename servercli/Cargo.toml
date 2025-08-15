@@ -1,0 +1,11 @@
+[package]
+name = "blockworld-server-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+server = { package = "blockworld-server", path = "../server" }
+
+anyhow = "1.0.93"
+glam = "0.29.2"
+

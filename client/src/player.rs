@@ -1,8 +1,8 @@
 use crate::gpu::CamData;
 use crate::input::{InputState, Key};
-use crate::math::aabb::Aabb;
-use crate::math::dda::{axis_rot_to_ray, cast_ray, HitResult};
 use crate::world::{Voxel, World};
+use client::common::math::aabb::Aabb;
+use client::common::math::dda::{axis_rot_to_ray, cast_ray, HitResult};
 use glam::{vec2, vec3, BVec3, Mat4, Vec2, Vec3};
 
 const GRAVITY: f32 = -0.060;
