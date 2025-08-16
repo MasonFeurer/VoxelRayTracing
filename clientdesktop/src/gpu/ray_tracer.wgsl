@@ -258,9 +258,6 @@ fn ray_world(start_ray: Ray) -> HitResult {
     result.norm = norm;
     result.material = voxel_mats[voxel];
     
-    // Making every voxel a color of gray until external resources are implemented.
-    result.material.color = vec3(1.0, 1.0, 1.0);
-    
     if result.norm.x != 0.0 {
         result.material.color *= 0.5;
     }

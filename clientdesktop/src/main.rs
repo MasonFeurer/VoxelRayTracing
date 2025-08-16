@@ -3,11 +3,12 @@ pub mod input;
 pub mod player;
 pub mod world;
 
-use crate::gpu::{egui::Egui, Gpu, GpuResources, Settings, WorldData};
+use crate::gpu::{egui::Egui, Gpu, GpuResources, Material, Settings, WorldData};
 use crate::input::{InputState, Key};
 use crate::player::Player;
 use crate::world::{Node, World};
 use client::common::math::HitResult;
+use client::common::resources::VoxelPack;
 use client::GameState;
 use glam::{ivec3, uvec2, vec3, UVec2};
 use std::time::SystemTime;
@@ -50,6 +51,31 @@ pub fn win_size(window: &Window) -> UVec2 {
     UVec2::from(<[u32; 2]>::from(window.inner_size()))
 }
 
+pub fn load_voxelpack(res_folder: &str) -> anyhow::Result<VoxelPack> {
+    let src = std::fs::read_to_string(format!("{res_folder}/voxelpack.ron"))?;
+    client::common::resources::loader::parse_voxelpack(&src)
+}
+
+pub fn load_voxel_mats(res_folder: &str, voxels: &VoxelPack) -> anyhow::Result<Vec<Material>> {
+    let src = std::fs::read_to_string(format!("{res_folder}/voxelstylepack.ron"))?;
+    let styles = client::common::resources::loader::parse_voxel_stylepack(&src, voxels)?;
+
+    let mut materials = Vec::with_capacity(styles.styles.len());
+    for style in styles.styles {
+        materials.push(Material {
+            color: style.color,
+            empty: style.empty as u32,
+            scatter: 0.0,
+            emission: 0.0,
+            polish_bounce_chance: 0.0,
+            translucency: 0.0,
+            polish_color: [0.0; 3],
+            polish_scatter: 0.0,
+        });
+    }
+    Ok(materials)
+}
+
 pub struct AppState<'a> {
     pub gpu: Gpu<'a>,
     pub gpu_res: GpuResources,
@@ -62,15 +88,23 @@ pub struct AppState<'a> {
     pub game: GameState,
 }
 impl<'a> AppState<'a> {
-    pub fn new(game: GameState, win_size: UVec2, gpu: Gpu<'a>, max_nodes: u32) -> Self {
+    pub fn new(
+        res_dir: String,
+        game: GameState,
+        win_size: UVec2,
+        gpu: Gpu<'a>,
+        max_nodes: u32,
+    ) -> Self {
         let win_aspect = win_size.x as f32 / win_size.y as f32;
+
+        let voxelpack = load_voxelpack(&res_dir).unwrap();
+        let voxel_mats = load_voxel_mats(&res_dir, &voxelpack).unwrap();
 
         let mut settings = Settings::default();
         settings.max_ray_bounces = 3;
         settings.sun_intensity = 4.0;
         settings.sky_color = [0.81, 0.93, 1.0];
         settings.samples_per_pixel = 1;
-        settings.show_step_count = 1;
 
         let vertical_samples = 400;
 
@@ -82,13 +116,13 @@ impl<'a> AppState<'a> {
         let world_size = 10;
         let mut world = World::new(100_000, world_size);
         // Create a world (in-dev)
-        _ = world.set_voxel(ivec3(0, 1, 0), world::Voxel(23), |_| {});
-        _ = world.set_voxel(ivec3(3, 1, 0), world::Voxel(23), |_| {});
-        _ = world.set_voxel(ivec3(0, 1, 3), world::Voxel(23), |_| {});
-        _ = world.set_voxel(ivec3(6, 1, 0), world::Voxel(23), |_| {});
-        _ = world.set_voxel(ivec3(0, 1, 6), world::Voxel(23), |_| {});
-        _ = world.set_voxel(ivec3(9, 1, 0), world::Voxel(23), |_| {});
-        _ = world.set_voxel(ivec3(0, 1, 9), world::Voxel(23), |_| {});
+        _ = world.set_voxel(ivec3(0, 1, 0), world::Voxel(1), |_| {});
+        _ = world.set_voxel(ivec3(3, 1, 0), world::Voxel(1), |_| {});
+        _ = world.set_voxel(ivec3(0, 1, 3), world::Voxel(1), |_| {});
+        _ = world.set_voxel(ivec3(6, 1, 0), world::Voxel(1), |_| {});
+        _ = world.set_voxel(ivec3(0, 1, 6), world::Voxel(1), |_| {});
+        _ = world.set_voxel(ivec3(9, 1, 0), world::Voxel(1), |_| {});
+        _ = world.set_voxel(ivec3(0, 1, 9), world::Voxel(1), |_| {});
 
         let mut player = Player::new(vec3(1.0, 0.0, 1.0), 0.2);
         player.flying = true;
@@ -107,6 +141,10 @@ impl<'a> AppState<'a> {
             .buffers
             .world_data
             .write(&gpu, &WorldData::from(&world));
+        gpu_res
+            .buffers
+            .voxel_materials
+            .write_slice(&gpu, 0, &voxel_mats);
 
         Self {
             gpu,
@@ -262,6 +300,10 @@ impl<'a> AppState<'a> {
 pub fn main() {
     env_logger::init();
 
+    let res_dir = std::env::args()
+        .nth(1)
+        .expect("Missing cmdline arg for resource directory path");
+
     let mut fps_temp: u32 = 0;
     let mut fps: u32 = 0;
     let mut last_second = SystemTime::now();
@@ -286,6 +328,7 @@ pub fn main() {
 
     let mut egui = Egui::new(&window, &gpu);
     let mut app_state = AppState::new(
+        res_dir,
         GameState::new(String::from("GOOD_USERNAME")),
         win_size(&window),
         gpu,
