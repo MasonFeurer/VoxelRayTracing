@@ -1,0 +1,6 @@
+[
+WorldFeature( name: "Cactus", freq: 0.1 ),
+WorldFeature( name: "Tree", freq: 0.1 ),
+WorldFeature( name: "JungleTree", freq: 0.1 ),
+WorldFeature( name: "Evergreen", freq: 0.1 )
+]

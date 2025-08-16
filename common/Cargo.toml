@@ -8,3 +8,4 @@ anyhow = "1.0.93"
 fastrand = "2.3.0"
 glam = { version = "0.29", features = ["serde"] }
 serde = { version = "1.0.219", features = ["serde_derive"] }
+ron = "0.10.1"
