@@ -67,11 +67,12 @@ pub struct VoxelData {
     empty: bool,
 }
 
+#[derive(Debug)]
 pub struct VoxelStylePack {
     pub styles: Vec<VoxelStyle>,
 }
 
-#[derive(Clone, Copy, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 pub struct VoxelStyle {
     pub empty: bool,
     pub color: [f32; 3],
