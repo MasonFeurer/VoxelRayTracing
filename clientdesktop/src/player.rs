@@ -179,19 +179,18 @@ impl Player {
         }
 
         let clip_movement = |world: &World, bbox: Aabb, mv: Vec3| -> ClippedMovement {
-            // let world_bboxs = world.get_collisions_w(&bbox.expand(mv));
+            let world_bboxs = world.get_collisions_w(&bbox.expand(mv));
 
-            // let mut result = mv;
-            // for world_bbox in &world_bboxs {
-            //     result.y = world_bbox.clip_y_collide(&bbox, result.y);
-            //     result.x = world_bbox.clip_x_collide(&bbox, result.x);
-            //     result.z = world_bbox.clip_z_collide(&bbox, result.z);
-            // }
-            // ClippedMovement {
-            //     result,
-            //     eq: result.cmpeq(mv),
-            // }
-            todo!()
+            let mut result = mv;
+            for world_bbox in &world_bboxs {
+                result.y = world_bbox.clip_y_collide(&bbox, result.y);
+                result.x = world_bbox.clip_x_collide(&bbox, result.x);
+                result.z = world_bbox.clip_z_collide(&bbox, result.z);
+            }
+            ClippedMovement {
+                result,
+                eq: result.cmpeq(mv),
+            }
         };
         let mut bbox = self.create_aabb();
 

@@ -1,9 +1,7 @@
 use client::common::math::Aabb;
 use client::common::Voxel;
-use glam::{ivec3, uvec3, IVec3, UVec3, Vec3};
+use glam::{ivec3, uvec3, IVec3, UVec3};
 use std::ops::Range;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, SystemTime};
 
 pub type NodeAddr = u32;
 pub type NodeRange = Range<NodeAddr>;
@@ -96,13 +94,6 @@ impl Node {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum WorldErr {
-    Oob,
-    ChunkOob,
-    NodeAllocLimit,
-}
-
 pub enum SetVoxelErr {
     PosOutOfBounds,
     OutOfMemory,
@@ -130,7 +121,7 @@ impl Chunk {
         }
     }
 
-    pub fn find_node(
+    fn find_node(
         &self,
         nodes: &[Node],
         pos: UVec3,
@@ -208,15 +199,16 @@ impl Chunk {
         nodes[idx as usize] = Node::new(voxel);
         Ok(())
     }
-    pub fn get_voxel(&mut self, nodes: &[Node], pos: UVec3, voxel: Voxel) {
-        todo!()
+
+    pub fn get_voxel(&self, nodes: &[Node], pos: UVec3) -> Result<Voxel, SetVoxelErr> {
+        Ok(nodes[self.find_node(nodes, pos, CHUNK_DEPTH)?.idx as usize].voxel())
     }
 }
 
 #[derive(Clone)]
 pub struct NodeAlloc {
     // The range in the Node list that this chunk occupies.
-    range: NodeRange,
+    _range: NodeRange,
 
     // Spans of free memory where this allocator is able to place new nodes.
     pub free_mem: Vec<NodeRange>,
@@ -224,14 +216,14 @@ pub struct NodeAlloc {
 impl NodeAlloc {
     pub fn new(used: NodeRange, free: NodeRange) -> Self {
         Self {
-            range: used.start..free.end,
+            _range: used.start..free.end,
             free_mem: vec![free],
         }
     }
 
     pub fn alloc(&mut self) -> Result<NodeAddr, SetVoxelErr> {
         // Assuming theres only ever one free_mem NodeRange for now.
-        let mut free = &mut self.free_mem[0];
+        let free = &mut self.free_mem[0];
 
         if free.end - free.start < 8 {
             return Err(SetVoxelErr::OutOfMemory);
@@ -276,7 +268,7 @@ impl ChunkGrid {
         self.chunks.get_mut(idx as usize)?.as_mut()
     }
 
-    pub fn resize(&mut self, new_size: u32) {
+    pub fn resize(&mut self, _new_size: u32) {
         todo!()
     }
 
@@ -366,10 +358,6 @@ impl World {
         self.chunks.put_chunk(pos, chunk);
     }
 
-    pub fn get_chunk(&self, pos: IVec3) -> Option<&[Node]> {
-        todo!()
-    }
-
     pub fn set_voxel(&mut self, pos: IVec3, voxel: Voxel) -> Result<(), SetVoxelErr> {
         let pos = (pos - self.origin).as_uvec3();
         let chunk_pos = vox_to_chunk_pos(pos.as_ivec3()).as_uvec3();
@@ -381,7 +369,39 @@ impl World {
             .set_voxel(&mut self.nodes, pos_in_chunk, voxel)
     }
 
-    pub fn get_voxel(&self, pos: IVec3) -> Option<Voxel> {
-        todo!()
+    pub fn get_voxel(&self, pos: IVec3) -> Result<Voxel, SetVoxelErr> {
+        let pos = (pos - self.origin).as_uvec3();
+        let chunk_pos = vox_to_chunk_pos(pos.as_ivec3()).as_uvec3();
+        let pos_in_chunk = pos - (chunk_pos * CHUNK_SIZE);
+
+        self.chunks
+            .get_chunk(chunk_pos)
+            .ok_or(SetVoxelErr::NoChunk)?
+            .get_voxel(&self.nodes, pos_in_chunk)
+    }
+}
+impl World {
+    pub fn get_collisions_w(&self, aabb: &Aabb) -> Vec<Aabb> {
+        let mut aabbs = Vec::new();
+
+        let from = aabb.from.floor().as_ivec3();
+        let to = aabb.to.ceil().as_ivec3();
+
+        for x in from.x..to.x {
+            for y in from.y..to.y {
+                for z in from.z..to.z {
+                    let pos = ivec3(x, y, z);
+
+                    let voxel = self.get_voxel(pos).unwrap_or(Voxel::EMPTY);
+
+                    if !voxel.is_empty() {
+                        let min = pos.as_vec3();
+                        let max = min + 1.0;
+                        aabbs.push(Aabb::new(min, max));
+                    }
+                }
+            }
+        }
+        aabbs
     }
 }
