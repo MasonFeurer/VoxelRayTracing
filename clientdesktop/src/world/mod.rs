@@ -1,4 +1,5 @@
 use client::common::math::Aabb;
+use client::common::Voxel;
 use glam::{ivec3, uvec3, IVec3, UVec3, Vec3};
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -35,17 +36,6 @@ struct FoundNode {
     size: u32,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct Voxel(pub u16);
-impl Voxel {
-    pub const EMPTY: Self = Self(0);
-
-    pub fn is_empty(self) -> bool {
-        self.0 == 0
-    }
-}
-
 /// Represents a node in the sparse voxel octree (SVO) for each chunk.
 ///
 /// # States
@@ -78,17 +68,17 @@ impl Node {
     const DATA_MASK: u32 = 0x7FFF_FFFF;
 
     pub fn new(vox: Voxel) -> Self {
-        Self((vox.0 as u32) & Self::DATA_MASK)
+        Self((vox.as_data() as u32) & Self::DATA_MASK)
     }
     pub fn new_split(child_idx: u32) -> Self {
         Self(child_idx | Self::SPLIT_MASK)
     }
 
     pub fn voxel(self) -> Voxel {
-        Voxel((self.0 & 0xFFFF) as u16)
+        Voxel::from_data((self.0 & 0xFFFF) as u16)
     }
     pub fn set_voxel(&mut self, voxel: Voxel) {
-        self.0 = (self.0 & Self::SPLIT_MASK) | voxel.0 as u32;
+        self.0 = (self.0 & Self::SPLIT_MASK) | voxel.as_data() as u32;
     }
 
     pub fn is_split(self) -> bool {
@@ -337,7 +327,7 @@ pub struct World {
 impl World {
     pub fn new(origin: IVec3, max_nodes: u32, size: u32) -> Self {
         let mut nodes = vec![Node::ZERO; max_nodes as usize].into_boxed_slice();
-        nodes[0] = Node::new(Voxel(0)); // 0 = air
+        nodes[0] = Node::new(Voxel::EMPTY); // 0 = air
         Self {
             origin,
             size_in_chunks: size,

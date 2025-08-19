@@ -1,89 +1,25 @@
 [
 VoxelData( name: "air", empty: true ),
 
-// Base stones
 VoxelData( name: "stone", empty: false ),
-VoxelData( name: "mudstone", empty: false ),
-VoxelData( name: "limestone", empty: false ),
 VoxelData( name: "sandstone", empty: false ),
-
-// Variant stones
-VoxelData( name: "granite", empty: false ),
-VoxelData( name: "diorite", empty: false ),
-VoxelData( name: "andesite", empty: false ),
-VoxelData( name: "blairmorite", empty: false ),
-VoxelData( name: "basalt", empty: false ),
-
-// Minerals
-VoxelData( name: "obsidian", empty: false ),
-VoxelData( name: "slate", empty: false ),
-VoxelData( name: "lapis_lazuli", empty: false ),
-
-// Ores
-VoxelData( name: "bauxite", empty: false ), // contains Aluminm
-VoxelData( name: "electrum", empty: false ), // contains Gold + Silver ally
-VoxelData( name: "kimberlite", empty: false ), // contains Diamod
-VoxelData( name: "scheelite", empty: false ), // contains CaW (Calcium Tungstat)
-VoxelData( name: "tin_ore", empty: false ),
-VoxelData( name: "iron_ore", empty: false ),
-VoxelData( name: "gold_ore", empty: false ),
-VoxelData( name: "copper_ore", empty: false ),
-
-// Minerals
-VoxelData( name: "tungsten", empty: false ),
-VoxelData( name: "aluminum", empty: false ),
-VoxelData( name: "tin", empty: false ),
-VoxelData( name: "iron", empty: false ),
-VoxelData( name: "gold", empty: false ),
-VoxelData( name: "copper", empty: false ),
-VoxelData( name: "silver", empty: false ),
-VoxelData( name: "ruby", empty: false ),
-VoxelData( name: "diamond", empty: false ),
-VoxelData( name: "quartz", empty: false ),
-VoxelData( name: "emerald", empty: false ),
-VoxelData( name: "sapphire", empty: false ),
-VoxelData( name: "amethyst", empty: false ),
-VoxelData( name: "steel", empty: false ), // Iron + Carbon ally
-VoxelData( name: "bronze", empty: false ), // Copper + Tin ally
-
-// Earth
 VoxelData( name: "dirt", empty: false ),
 VoxelData( name: "grass", empty: false ),
-VoxelData( name: "snowy_grass", empty: false ),
-VoxelData( name: "dead_grass", empty: false ),
 VoxelData( name: "snow", empty: false ),
 VoxelData( name: "ice", empty: false ),
 VoxelData( name: "sand", empty: false ),
 VoxelData( name: "mud", empty: false ),
 VoxelData( name: "clay", empty: false ),
-VoxelData( name: "gravel", empty: false ),
 
 // Wood
-VoxelData( name: "birch_wood", empty: false ),
 VoxelData( name: "oak_wood", empty: false ),
-VoxelData( name: "maple_wood", empty: false ),
+VoxelData( name: "birch_wood", empty: false ),
 VoxelData( name: "spruce_wood", empty: false ),
-VoxelData( name: "willow_wood", empty: false ),
-VoxelData( name: "brazil_nut_wood", empty: false ),
-VoxelData( name: "mahogany_wood", empty: false ),
-VoxelData( name: "cacao_wood", empty: false ),
-VoxelData( name: "monkey_wood", empty: false ),
-
 VoxelData( name: "oak_leaves", empty: false ),
 VoxelData( name: "birch_leaves", empty: false ),
-VoxelData( name: "maple_leaves", empty: false ),
 VoxelData( name: "spruce_leaves", empty: false ),
 
-// Fruits
-VoxelData( name: "cacao", empty: false ),
-VoxelData( name: "apple", empty: false ),
-VoxelData( name: "orange", empty: false ),
-VoxelData( name: "peach", empty: false ),
-VoxelData( name: "brazil_nut", empty: false ),
-
 // Other
-VoxelData( name: "fire", empty: false ),
-VoxelData( name: "lava", empty: false ),
 VoxelData( name: "water", empty: false ),
 VoxelData( name: "mirror", empty: false ),
 VoxelData( name: "glass", empty: false )

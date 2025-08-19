@@ -54,7 +54,7 @@ impl VoxelPack {
             .iter()
             .enumerate()
             .find(|(_, d)| d.name.as_str() == name)
-            .map(|(idx, _)| Voxel(idx as u8))
+            .map(|(idx, _)| Voxel(idx as u16))
     }
 
     pub fn get(&self, v: Voxel) -> Option<&VoxelData> {

@@ -7,8 +7,10 @@ use crate::gpu::{egui::Egui, Gpu, GpuResources, Material, Settings, WorldData};
 use crate::input::{InputState, Key};
 use crate::player::Player;
 use crate::world::{Node, World};
+
 use client::common::math::HitResult;
 use client::common::resources::VoxelPack;
+use client::common::Voxel;
 use client::GameState;
 use glam::{ivec3, uvec2, uvec3, vec3, UVec2};
 use std::time::SystemTime;
@@ -116,14 +118,18 @@ impl<'a> AppState<'a> {
         let world_size = 10;
         let mut world = World::new(ivec3(0, 0, 0), 100_000, world_size);
         // Create a world (in-dev)
-        world.put_chunk(uvec3(0, 0, 0), &[Node::new(world::Voxel(0))]);
-        _ = world.set_voxel(ivec3(0, 1, 0), world::Voxel(1));
-        _ = world.set_voxel(ivec3(3, 1, 0), world::Voxel(1));
-        _ = world.set_voxel(ivec3(6, 1, 0), world::Voxel(1));
-        _ = world.set_voxel(ivec3(9, 1, 0), world::Voxel(1));
-        _ = world.set_voxel(ivec3(0, 1, 3), world::Voxel(1));
-        _ = world.set_voxel(ivec3(0, 1, 6), world::Voxel(1));
-        _ = world.set_voxel(ivec3(0, 1, 9), world::Voxel(1));
+        world.put_chunk(uvec3(0, 0, 0), &[Node::new(Voxel::EMPTY)]);
+        let stone = voxelpack.by_name("stone").unwrap();
+        let grass = voxelpack.by_name("grass").unwrap();
+        let sand = voxelpack.by_name("sand").unwrap();
+
+        _ = world.set_voxel(ivec3(0, 0, 0), stone);
+        _ = world.set_voxel(ivec3(1, 0, 0), stone);
+        _ = world.set_voxel(ivec3(0, 0, 1), stone);
+
+        _ = world.set_voxel(ivec3(0, 1, 0), grass);
+        _ = world.set_voxel(ivec3(0, 1, 1), sand);
+        _ = world.set_voxel(ivec3(1, 1, 0), sand);
 
         println!(
             "{:?}",

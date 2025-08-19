@@ -1,92 +1,26 @@
-// Only needed by client
-// 
 [
 ("air", VoxelStyle( empty: true, color: (0.0, 0.0, 0.0) )),
 
-// Base stones
 ("stone", VoxelStyle( empty: false, color: (0.4, 0.4, 0.4) )),
-("mudstone", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("limestone", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("sandstone", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-
-// Variant stones
-("granite", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("diorite", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("andesite", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("blairmorite", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("basalt", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-
-// Minerals
-("obsidian", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("slate", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("lapis_lazuli", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-
-// Ores
-("bauxite", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("electrum", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("kimberlite", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("scheelite", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("tin_ore", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("iron_ore", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("gold_ore", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("copper_ore", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-
-// Minerals
-("tungsten", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("aluminum", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("tin", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("iron", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("gold", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("copper", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("silver", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("ruby", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("diamond", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("quartz", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("emerald", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("sapphire", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("amethyst", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("steel", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("bronze", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-
-// Earth
-("dirt", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("grass", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("snowy_grass", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("dead_grass", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("snow", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("ice", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("sand", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("mud", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("clay", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("gravel", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
+("sandstone", VoxelStyle( empty: false, color: (0.7, 0.6, 0.25) )),
+("dirt", VoxelStyle( empty: false, color: (0.4, 0.2, 0.0) )),
+("grass", VoxelStyle( empty: false, color: (0.011, 0.58, 0.11) )),
+("snow", VoxelStyle( empty: false, color: (1.0, 1.0, 1.0) )),
+("ice", VoxelStyle( empty: false, color: (0.7, 0.94, 0.98) )),
+("sand", VoxelStyle( empty: false, color: (1.0, 0.9, 0.3) )),
+("mud", VoxelStyle( empty: false, color: (0.22, 0.13, 0.02) )),
+("clay", VoxelStyle( empty: false, color: (0.35, 0.30, 0.25) )),
 
 // Wood
-("birch_wood", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("oak_wood", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("maple_wood", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("spruce_wood", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("willow_wood", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("brazil_nut_wood", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("mahogany_wood", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("cacao_wood", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("monkey_wood", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-
-("oak_leaves", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("birch_leaves", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("maple_leaves", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("spruce_leaves", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-
-// Fruits
-("cacao", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("apple", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("orange", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("peach", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("brazil_nut", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
+("birch_wood", VoxelStyle( empty: false, color: (1.0, 1.0, 1.0) )),
+("birch_leaves", VoxelStyle( empty: false, color: (0.43, 0.72, 0.00) )),
+("oak_wood", VoxelStyle( empty: false, color: (0.25, 0.10, 0.00) )),
+("oak_leaves", VoxelStyle( empty: false, color: (0.23, 0.52, 0.00) )),
+("spruce_wood", VoxelStyle( empty: false, color: (0.06, 0.04, 0.00) )),
+("spruce_leaves", VoxelStyle( empty: false, color: (0.04, 0.22, 0.00) )),
 
 // Other
-("fire", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("lava", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("water", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("mirror", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) )),
-("glass", VoxelStyle( empty: false, color: (1.0, 0.0, 1.0) ))	
+("water", VoxelStyle( empty: false, color: (0.076, 0.563, 0.563) )),
+("mirror", VoxelStyle( empty: false, color: (1.0, 1.0, 1.0) )),
+("glass", VoxelStyle( empty: false, color: (1.0, 1.0, 1.0) ))	
 ]
