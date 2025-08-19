@@ -10,7 +10,7 @@ use crate::world::{Node, World};
 use client::common::math::HitResult;
 use client::common::resources::VoxelPack;
 use client::GameState;
-use glam::{ivec3, uvec2, vec3, UVec2};
+use glam::{ivec3, uvec2, uvec3, vec3, UVec2};
 use std::time::SystemTime;
 use winit::event::*;
 use winit::event_loop::EventLoop;
@@ -114,15 +114,21 @@ impl<'a> AppState<'a> {
         );
 
         let world_size = 10;
-        let mut world = World::new(100_000, world_size);
+        let mut world = World::new(ivec3(0, 0, 0), 100_000, world_size);
         // Create a world (in-dev)
-        _ = world.set_voxel(ivec3(0, 1, 0), world::Voxel(1), |_| {});
-        _ = world.set_voxel(ivec3(3, 1, 0), world::Voxel(1), |_| {});
-        _ = world.set_voxel(ivec3(0, 1, 3), world::Voxel(1), |_| {});
-        _ = world.set_voxel(ivec3(6, 1, 0), world::Voxel(1), |_| {});
-        _ = world.set_voxel(ivec3(0, 1, 6), world::Voxel(1), |_| {});
-        _ = world.set_voxel(ivec3(9, 1, 0), world::Voxel(1), |_| {});
-        _ = world.set_voxel(ivec3(0, 1, 9), world::Voxel(1), |_| {});
+        world.put_chunk(uvec3(0, 0, 0), &[Node::new(world::Voxel(0))]);
+        _ = world.set_voxel(ivec3(0, 1, 0), world::Voxel(1));
+        _ = world.set_voxel(ivec3(3, 1, 0), world::Voxel(1));
+        _ = world.set_voxel(ivec3(6, 1, 0), world::Voxel(1));
+        _ = world.set_voxel(ivec3(9, 1, 0), world::Voxel(1));
+        _ = world.set_voxel(ivec3(0, 1, 3), world::Voxel(1));
+        _ = world.set_voxel(ivec3(0, 1, 6), world::Voxel(1));
+        _ = world.set_voxel(ivec3(0, 1, 9), world::Voxel(1));
+
+        println!(
+            "{:?}",
+            world.chunks.chunks[0].as_ref().unwrap().alloc.free_mem[0]
+        );
 
         let mut player = Player::new(vec3(1.0, 0.0, 1.0), 0.2);
         player.flying = true;
@@ -135,7 +141,10 @@ impl<'a> AppState<'a> {
             world_size,
         );
         gpu_res.buffers.nodes.write(&gpu, 0, world.nodes());
-        gpu_res.buffers.chunks.write(&gpu, 0, &world.chunks);
+        gpu_res
+            .buffers
+            .chunk_roots
+            .write(&gpu, 0, &world.chunk_roots());
         gpu_res.buffers.settings.write(&gpu, &settings);
         gpu_res
             .buffers

@@ -1,7 +1,7 @@
 pub mod egui;
 pub mod texture;
 
-use crate::world::{ChunkHeader, Node, World};
+use crate::world::{Node, NodeAddr, World};
 use glam::{uvec2, Mat4, UVec2, Vec2, Vec3};
 use texture::Texture;
 
@@ -283,7 +283,7 @@ impl PixelShader {
                 3 => buffers.voxel_materials.0.as_entire_binding(),
                 5 => buffers.world_data.0.as_entire_binding(),
                 6 => buffers.nodes.0.as_entire_binding(),
-                7 => buffers.chunks.0.as_entire_binding(),
+                7 => buffers.chunk_roots.0.as_entire_binding(),
             ),
         })
     }
@@ -309,7 +309,7 @@ pub struct Buffers {
     pub world_data: SimpleBuffer<WorldData>,
     pub nodes: ArrayBuffer<Node>,
     pub voxel_materials: SimpleBuffer<[Material; 256]>,
-    pub chunks: ArrayBuffer<ChunkHeader>,
+    pub chunk_roots: ArrayBuffer<NodeAddr>,
 }
 impl Buffers {
     pub fn new(gpu: &Gpu, max_nodes: u32, world_size: u32) -> Self {
@@ -324,7 +324,7 @@ impl Buffers {
             world_data: SimpleBuffer::new(gpu, "world_data", COPY_DST | UNIFORM),
             nodes: ArrayBuffer::new(gpu, "nodes", COPY_DST | STORAGE, max_nodes),
             voxel_materials: SimpleBuffer::new(gpu, "voxel_mats", COPY_DST | STORAGE),
-            chunks: ArrayBuffer::new(gpu, "chunks", COPY_DST | STORAGE, chunk_count),
+            chunk_roots: ArrayBuffer::new(gpu, "chunk_roots", COPY_DST | STORAGE, chunk_count),
         }
     }
 }

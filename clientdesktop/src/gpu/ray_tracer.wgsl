@@ -29,11 +29,6 @@ struct Material {
     polish_scatter: f32,
 }
 
-struct ChunkHeader {
-    root: u32,
-    alloc: u32,
-}
-
 @group(0) @binding(0) var output_texture_: texture_storage_2d<rgba8unorm, write>;
 @group(0) @binding(1) var<uniform> cam_data_: CamData;
 @group(0) @binding(2) var<uniform> settings_: Settings;
@@ -41,7 +36,7 @@ struct ChunkHeader {
 
 @group(0) @binding(5) var<uniform> world_: World;
 @group(0) @binding(6) var<storage, read> nodes_: array<u32>;
-@group(0) @binding(7) var<storage, read> chunks_: array<ChunkHeader>;
+@group(0) @binding(7) var<storage, read> chunk_roots_: array<u32>;
 
 fn get_node(idx: u32) -> u32 {
     return nodes_[idx];
@@ -122,7 +117,7 @@ fn find_node(pos: vec3<f32>, max_depth: u32) -> FoundNode {
     let chunk_idx = u32(chunk_coords.x)
         + u32(chunk_coords.y) * world_chunk_w
         + u32(chunk_coords.z) * world_chunk_w * world_chunk_w;
-    let root = chunks_[chunk_idx].root;
+    let root = chunk_roots_[chunk_idx];
     return find_chunk_node(pos, max_depth, min, root);
 }
 

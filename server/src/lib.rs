@@ -18,8 +18,9 @@ pub struct ServerState {
     pub address: SocketAddr,
     pub name: String,
     pub clients: Vec<Client>,
-    pub live_chunks: Vec<Chunk>,
+    pub live_chunks: HashMap<IVec3, Chunk>,
     pub new_clients: Option<Receiver<Result<Client, anyhow::Error>>>,
+    pub resources: Resources,
 }
 impl ServerState {
     pub fn new(addr: SocketAddr, name: String) -> Self {
@@ -80,7 +81,18 @@ impl ServerState {
                     }
                 }
                 ServerCmd::GetVoxelData(id, pos) => {}
-                ServerCmd::GetChunkData(id, pos) => {}
+                ServerCmd::GetChunkData(id, pos) => {
+                    if self.live_chunks.get(&pos).is_none() {
+                        self.live_chunks.insert(pos, chunk);
+                    }
+                    let voxels = self.live_chunks.get(&pos).unwrap();
+                    if let Err(err) = client.conn.write(ClientCmd::GiveChunkData(id, pos, voxels)) {
+                        println!(
+                            "Error sending chunk data to client {:?} : {:?}",
+                            client.name, err
+                        );
+                    }
+                }
                 ServerCmd::PlaceVoxelData(v, pos) => {}
             }
         }
