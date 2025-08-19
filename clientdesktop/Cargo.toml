@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-client = { package = "blockworld-client", path = "../client2" }
+client = { package = "blockworld-client", path = "../client" }
 glam = "0.29"
 wgpu = "25"
 env_logger = "0.10"
