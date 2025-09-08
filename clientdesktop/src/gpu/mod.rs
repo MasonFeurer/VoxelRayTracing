@@ -1,7 +1,8 @@
 pub mod egui;
 pub mod texture;
 
-use crate::world::{Node, NodeAddr, World};
+use crate::world::World;
+use client::common::world::{Node, NodeAddr};
 use glam::{uvec2, Mat4, UVec2, Vec2, Vec3};
 use texture::Texture;
 

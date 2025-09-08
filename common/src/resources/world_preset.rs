@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 use super::{FeatureUid, Source};
-use crate::Voxel;
+use crate::world::Voxel;
 
 #[derive(Deserialize, Debug)]
 pub struct Biome {

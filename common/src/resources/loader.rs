@@ -124,7 +124,10 @@ pub fn parse_voxel_stylepack(src: &str, voxels: &VoxelPack) -> anyhow::Result<Vo
     let mut styles = vec![VoxelStyle::ZERO; parsed.len()];
 
     for (vox_name, style) in parsed {
-        let vox_id = voxels.by_name(&vox_name).ok_or(VoxelNotFoundError)?.0;
+        let vox_id = voxels
+            .by_name(&vox_name)
+            .ok_or(VoxelNotFoundError)?
+            .as_data();
         styles[vox_id as usize] = style;
     }
 

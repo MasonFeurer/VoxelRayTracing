@@ -1,5 +1,5 @@
 use crate::server::PlayerInfo;
-use crate::Voxel;
+use crate::world::{Node, Voxel};
 use glam::IVec3;
 
 impl std::error::Error for ConnError {}
@@ -35,5 +35,5 @@ pub enum ClientCmd {
     Kick(String),
     PlayersList(Vec<PlayerInfo>),
     GiveVoxelData(u32, IVec3, Voxel),
-    GiveChunkData(u32, IVec3, Vec<Voxel>),
+    GiveChunkData(u32, IVec3, Vec<Node>),
 }

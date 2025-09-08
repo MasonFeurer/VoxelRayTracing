@@ -3,7 +3,7 @@ use crate::input::{InputState, Key, NamedKey};
 use crate::world::World;
 use client::common::math::Aabb;
 use client::common::math::{axis_rot_to_ray, cast_ray, HitResult};
-use client::common::Voxel;
+use client::common::world::Voxel;
 use glam::{vec2, vec3, BVec3, Mat4, Vec2, Vec3};
 
 const GRAVITY: f32 = -0.060;

@@ -3,8 +3,8 @@ use serde::Deserialize;
 pub mod loader;
 pub mod world_preset;
 
-use crate::Voxel;
-use world_preset::{WorldFeature, WorldPreset};
+use crate::world::Voxel;
+pub use world_preset::{WorldFeature, WorldPreset};
 
 #[derive(Deserialize, Clone, Debug)]
 pub enum Source {
@@ -13,17 +13,6 @@ pub enum Source {
 }
 
 pub type FeatureUid = usize;
-
-pub struct ClientResources {
-    pub voxelpack: VoxelPack,
-    pub voxel_stylepacks: Vec<VoxelStylePack>,
-}
-
-pub struct ServerResources {
-    pub world_presets: Vec<WorldPreset>,
-    pub world_features: WorldFeatures,
-    pub voxelpack: VoxelPack,
-}
 
 #[derive(Debug)]
 pub struct WorldFeatures(Vec<WorldFeature>);
@@ -54,11 +43,11 @@ impl VoxelPack {
             .iter()
             .enumerate()
             .find(|(_, d)| d.name.as_str() == name)
-            .map(|(idx, _)| Voxel(idx as u16))
+            .map(|(idx, _)| Voxel::from_data(idx as u16))
     }
 
     pub fn get(&self, v: Voxel) -> Option<&VoxelData> {
-        self.voxels.get(v.0 as usize)
+        self.voxels.get(v.as_data() as usize)
     }
 }
 #[derive(Deserialize, Debug)]

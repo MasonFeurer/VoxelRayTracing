@@ -2,7 +2,7 @@
 A native application that uses blockworld-server to create a server and provides an interface through the cmdline.
 */
 
-use server::ServerState;
+use server::{Resources, ServerState};
 use std::sync::mpsc::{channel, Receiver};
 use std::{
     net::{SocketAddr, TcpStream},
@@ -14,13 +14,17 @@ use std::{
 static SHUTDOWN_FLAG: AtomicBool = AtomicBool::new(false);
 
 fn main() -> anyhow::Result<()> {
-    let address = std::env::args().nth(1).unwrap_or("127.0.0.1:60000".into());
+    let address = String::from("127.0.0.1:60000");
+    let resfolder = std::env::args().nth(1).unwrap();
+
+    let resources = Resources::load(&resfolder)?;
 
     println!("Using address {address:?}");
 
     let mut server = ServerState::new(
         SocketAddr::from_str(&address).unwrap(),
         format!("My Dev Server"),
+        resources,
     );
     if let Err(err) = server.listen_for_clients(&SHUTDOWN_FLAG) {
         println!("Failed to listen for clients: {err:?}");
@@ -39,8 +43,16 @@ fn main() -> anyhow::Result<()> {
                     .iter()
                     .map(|client| client.name.as_str())
                     .collect();
-                let list_str = names.join(", ");
-                println!("{list_str}");
+                if names.len() == 0 {
+                    println!("no players online!");
+                } else {
+                    println!("players: {}", names.join(", "));
+                }
+            }
+            Ok(CliCmd::ShowWorldSummary) => {
+                println!("--- World ---");
+                println!("chunk count: {}", server.world.chunks.len());
+                println!("chunks: {:#?}", server.world.chunks);
             }
             Ok(CliCmd::Stop) => break,
             Err(_) => {}
@@ -54,6 +66,7 @@ fn main() -> anyhow::Result<()> {
 
 pub enum CliCmd {
     GetPlayers,
+    ShowWorldSummary,
     Stop,
 }
 
@@ -72,6 +85,7 @@ pub fn spawn_cli() -> Receiver<CliCmd> {
                     break;
                 }
                 "players" => _ = send.send(CliCmd::GetPlayers),
+                "world" => _ = send.send(CliCmd::ShowWorldSummary),
                 _ => println!("Error: Unrecognized command!"),
             }
             std::thread::sleep(Duration::from_millis(100));

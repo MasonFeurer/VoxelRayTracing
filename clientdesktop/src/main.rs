@@ -6,11 +6,11 @@ pub mod world;
 use crate::gpu::{egui::Egui, Gpu, GpuResources, Material, Settings, WorldData};
 use crate::input::{InputState, Key};
 use crate::player::Player;
-use crate::world::{Node, World};
+use crate::world::World;
 
 use client::common::math::HitResult;
 use client::common::resources::VoxelPack;
-use client::common::Voxel;
+use client::common::world::{Node, Voxel};
 use client::GameState;
 use glam::{ivec3, uvec2, uvec3, vec3, UVec2};
 use std::time::SystemTime;

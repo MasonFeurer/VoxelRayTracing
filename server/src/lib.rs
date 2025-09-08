@@ -5,31 +5,61 @@ A library that provides an interface for creating and managing a BlockWorld serv
 pub mod net;
 pub mod world;
 
+pub use common;
+
 use common::net::{ClientCmd, ServerCmd};
+use common::resources::{loader, VoxelPack, WorldFeatures, WorldPreset};
 use common::server::PlayerInfo;
-use glam::Vec3;
+use glam::{IVec3, Vec3};
 use net::ClientConn;
+use std::collections::HashMap;
 use std::net::{SocketAddr, TcpListener};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver};
-use world::Chunk;
+use world::ServerWorld;
+
+pub struct Resources {
+    pub voxelpack: VoxelPack,
+    pub world_features: WorldFeatures,
+    pub world_presets: Vec<WorldPreset>,
+}
+impl Resources {
+    pub fn load(dir: &String) -> anyhow::Result<Self> {
+        let voxelpack = std::fs::read_to_string(format!("{dir}/voxelpack.ron"))?;
+        let voxelpack = loader::parse_voxelpack(&voxelpack)?;
+
+        let world_features = std::fs::read_to_string(format!("{dir}/features.ron"))?;
+        let world_features = loader::parse_world_features(&world_features, &voxelpack)?;
+
+        let world_presets = std::fs::read_to_string(format!("{dir}/worldpresets.ron"))?;
+        let world_presets =
+            loader::parse_world_presets(&world_presets, &voxelpack, &world_features)?;
+
+        Ok(Self {
+            voxelpack,
+            world_features,
+            world_presets,
+        })
+    }
+}
 
 pub struct ServerState {
     pub address: SocketAddr,
     pub name: String,
     pub clients: Vec<Client>,
-    pub live_chunks: HashMap<IVec3, Chunk>,
+    pub world: ServerWorld,
     pub new_clients: Option<Receiver<Result<Client, anyhow::Error>>>,
     pub resources: Resources,
 }
 impl ServerState {
-    pub fn new(addr: SocketAddr, name: String) -> Self {
+    pub fn new(addr: SocketAddr, name: String, res: Resources) -> Self {
         Self {
             address: addr,
             name,
             clients: vec![],
-            live_chunks: vec![],
+            world: ServerWorld::new(),
             new_clients: None,
+            resources: res,
         }
     }
 
@@ -69,7 +99,9 @@ impl ServerState {
             };
             println!("Recieved cmd from client {:?} : {:?}", client.name, cmd);
             match cmd {
-                ServerCmd::Handshake { name: String } => {}
+                ServerCmd::Handshake { .. } => {
+                    println!("Unexpectedly received Handshake cmd from {:?}", client.name);
+                }
 
                 ServerCmd::DisconnectNotice => clients_disconnecting.push(idx),
                 ServerCmd::GetPlayersList => {
@@ -82,11 +114,13 @@ impl ServerState {
                 }
                 ServerCmd::GetVoxelData(id, pos) => {}
                 ServerCmd::GetChunkData(id, pos) => {
-                    if self.live_chunks.get(&pos).is_none() {
-                        self.live_chunks.insert(pos, chunk);
+                    if self.world.get_chunk(pos).is_none() {
+                        self.world.create_chunk(pos, &self.resources);
                     }
-                    let voxels = self.live_chunks.get(&pos).unwrap();
-                    if let Err(err) = client.conn.write(ClientCmd::GiveChunkData(id, pos, voxels)) {
+                    let chunk = self.world.get_chunk(pos).unwrap();
+                    let nodes = chunk.nodes.clone();
+
+                    if let Err(err) = client.conn.write(ClientCmd::GiveChunkData(id, pos, nodes)) {
                         println!(
                             "Error sending chunk data to client {:?} : {:?}",
                             client.name, err

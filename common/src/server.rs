@@ -1,4 +1,4 @@
-use crate::Voxel;
+use crate::world::Voxel;
 use glam::{IVec3, Vec3};
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]

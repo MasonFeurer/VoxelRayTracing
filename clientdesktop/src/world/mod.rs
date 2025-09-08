@@ -1,104 +1,7 @@
 use client::common::math::Aabb;
-use client::common::Voxel;
+use client::common::world::*;
 use glam::{ivec3, uvec3, IVec3, UVec3};
 use std::ops::Range;
-
-pub type NodeAddr = u32;
-pub type NodeRange = Range<NodeAddr>;
-
-/// The voxel-width of a chunk.
-pub const CHUNK_SIZE: u32 = 32;
-
-/// The depth in a Chunk's SVO where nodes are the same size as voxels.
-/// Derived from "2^(CHUNK_DEPTH) = CHUNK_SIZE"
-pub const CHUNK_DEPTH: u32 = 5;
-
-/// The maximum number of nodes a chunk could need to represent it's state.
-/// Derived from "1 + 2^3 + 4^3 + 8^3 + 16^3 + 32^3"
-pub const NODES_PER_CHUNK: u32 = 37_449;
-
-/// When adding a chunk to the world, this is the number of extra nodes the chunk makes room for.
-/// When a chunk needs to use more than this amount more of extra memory for storing nodes,
-/// The chunk will have to be re-located in memory.
-pub const CHUNK_INIT_FREE_MEM: u32 = 256;
-
-#[inline(always)]
-pub fn vox_to_chunk_pos(pos: IVec3) -> IVec3 {
-    pos.div_euclid(IVec3::splat(CHUNK_SIZE as i32))
-}
-
-struct FoundNode {
-    idx: NodeAddr,
-    depth: u32,
-    center: UVec3,
-    size: u32,
-}
-
-/// Represents a node in the sparse voxel octree (SVO) for each chunk.
-///
-/// # States
-/// ## 0_______________xxxxxxxxxxxxxxxx
-/// Entire node is occupied by voxel `x`.
-///
-/// ## 1yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
-/// Node splits into 8 nodes of half size at `y`.
-
-/// Note: By storing the nodes in a specific way, we can remove the need for a Node to point to it's child.
-///
-/// chunk: 16^3 = 4_096
-/// max nodes: 16^3+8^3+4^3+2^3+1^3 = 4_681
-/// bitlen: 13
-///
-/// chunk: 32^3 = 32_768
-/// max nodes: 32^3+16^3+8^3+4^3+2^3+1^3 = 37_449
-/// bitlen: 16
-///
-/// chunk: 64^3 = 262_144
-/// max nodes: 64^3+32^3+16^3+8^3+4^3+2^3+1^3 = 299_593
-/// bitlen: 19
-///
-#[derive(Clone, Copy)]
-#[repr(transparent)]
-pub struct Node(u32);
-impl Node {
-    pub const ZERO: Self = Self(0);
-    const SPLIT_MASK: u32 = 0x8000_0000;
-    const DATA_MASK: u32 = 0x7FFF_FFFF;
-
-    pub fn new(vox: Voxel) -> Self {
-        Self((vox.as_data() as u32) & Self::DATA_MASK)
-    }
-    pub fn new_split(child_idx: u32) -> Self {
-        Self(child_idx | Self::SPLIT_MASK)
-    }
-
-    pub fn voxel(self) -> Voxel {
-        Voxel::from_data((self.0 & 0xFFFF) as u16)
-    }
-    pub fn set_voxel(&mut self, voxel: Voxel) {
-        self.0 = (self.0 & Self::SPLIT_MASK) | voxel.as_data() as u32;
-    }
-
-    pub fn is_split(self) -> bool {
-        (self.0 >> 31) != 0
-    }
-    pub fn set_split(&mut self, split: bool) {
-        self.0 = (self.0 & Self::DATA_MASK) | ((split as u32) << 31);
-    }
-
-    pub fn child_idx(self) -> u32 {
-        self.0 & Self::DATA_MASK
-    }
-    pub fn set_child_idx(&mut self, idx: u32) {
-        self.0 = (self.0 & Self::SPLIT_MASK) | idx;
-    }
-}
-
-pub enum SetVoxelErr {
-    PosOutOfBounds,
-    OutOfMemory,
-    NoChunk,
-}
 
 #[derive(Clone)]
 pub struct Chunk {
@@ -121,116 +24,32 @@ impl Chunk {
         }
     }
 
-    fn find_node(
-        &self,
-        nodes: &[Node],
-        pos: UVec3,
-        max_depth: u32,
-    ) -> Result<FoundNode, SetVoxelErr> {
-        let mut center = UVec3::splat(CHUNK_SIZE / 2);
-        let mut size = CHUNK_SIZE;
-        let mut idx = self.range.start;
-        let mut depth: u32 = 0;
-
-        loop {
-            let node = nodes[idx as usize];
-            if !node.is_split() || depth == max_depth {
-                return Ok(FoundNode {
-                    idx,
-                    depth,
-                    center,
-                    size,
-                });
-            }
-            size /= 2;
-
-            let gt = uvec3(
-                (pos.x >= center.x) as u32,
-                (pos.y >= center.y) as u32,
-                (pos.z >= center.z) as u32,
-            );
-            let child_idx = (gt.x << 0) | (gt.y << 1) | (gt.z << 2);
-            idx = node.child_idx() + child_idx;
-            let child_dir = gt.as_ivec3() * 2 - IVec3::ONE;
-            center = (center.as_ivec3() + IVec3::splat(size as i32 / 2) * child_dir).as_uvec3();
-            depth += 1;
-        }
-    }
-
     pub fn set_voxel(
         &mut self,
         nodes: &mut [Node],
         pos: UVec3,
         voxel: Voxel,
     ) -> Result<(), SetVoxelErr> {
-        let FoundNode {
-            mut idx,
-            mut center,
-            mut size,
-            depth,
-            ..
-        } = self.find_node(nodes, pos, CHUNK_DEPTH)?;
+        let mut svo = SvoMut {
+            nodes,
+            root: self.range.start,
+            size: CHUNK_SIZE,
+        };
 
-        let parent_voxel = nodes[idx as usize].voxel();
-        // on_change(idx..idx + 1);
-
-        // If depth is less than target_depth,
-        // the SVO doesn't go to desired depth, so we must split until it does
-        for _ in depth..CHUNK_DEPTH {
-            let first_child = self.alloc.alloc()?;
-            nodes[first_child as usize..(first_child as usize + 8)]
-                .copy_from_slice(&[Node::new(parent_voxel); 8]);
-
-            nodes[idx as usize] = Node::new_split(first_child);
-            // on_change(first_child..first_child + 8);
-            size /= 2;
-
-            let gt = uvec3(
-                (pos.x >= center.x) as u32,
-                (pos.y >= center.y) as u32,
-                (pos.z >= center.z) as u32,
-            );
-            let child_idx = (gt.x << 0) | (gt.y << 1) | (gt.z << 2);
-            idx = first_child + child_idx;
-            let child_dir = gt.as_ivec3() * 2 - IVec3::ONE;
-            center = (center.as_ivec3() + IVec3::splat(size as i32 / 2) * child_dir).as_uvec3();
-        }
-        // SVO now goes to desired depth, so we can mutate the node now.
-        nodes[idx as usize] = Node::new(voxel);
-        Ok(())
+        set_svo_voxel(&mut svo, pos, voxel, CHUNK_DEPTH, &mut self.alloc)
     }
 
     pub fn get_voxel(&self, nodes: &[Node], pos: UVec3) -> Result<Voxel, SetVoxelErr> {
-        Ok(nodes[self.find_node(nodes, pos, CHUNK_DEPTH)?.idx as usize].voxel())
-    }
-}
+        // TODO: bounds checks
 
-#[derive(Clone)]
-pub struct NodeAlloc {
-    // The range in the Node list that this chunk occupies.
-    _range: NodeRange,
+        let svo = SvoRef {
+            nodes,
+            root: self.range.start,
+            size: CHUNK_SIZE,
+        };
 
-    // Spans of free memory where this allocator is able to place new nodes.
-    pub free_mem: Vec<NodeRange>,
-}
-impl NodeAlloc {
-    pub fn new(used: NodeRange, free: NodeRange) -> Self {
-        Self {
-            _range: used.start..free.end,
-            free_mem: vec![free],
-        }
-    }
-
-    pub fn alloc(&mut self) -> Result<NodeAddr, SetVoxelErr> {
-        // Assuming theres only ever one free_mem NodeRange for now.
-        let free = &mut self.free_mem[0];
-
-        if free.end - free.start < 8 {
-            return Err(SetVoxelErr::OutOfMemory);
-        }
-        let result_addr = free.start;
-        free.start += 8;
-        Ok(result_addr)
+        let idx = find_svo_node(&svo, pos, CHUNK_DEPTH).idx;
+        Ok(nodes[idx as usize].voxel())
     }
 }
 
