@@ -123,20 +123,29 @@ impl<'a> AppState<'a> {
 
         let world_size = 10;
         let mut world = World::new(ivec3(0, 0, 0), 100_000, world_size);
-        // Create a world (in-dev)
-        if let Err(err) = game.send_cmd(ServerCmd::GetChunkData(0, ivec3(0, 0, 0))) {
-            println!("Failed to send cmd to server: {err:?}");
-        }
 
-        match game.recv_cmd() {
-            Ok(ClientCmd::GiveChunkData(_id, _pos, nodes)) => {
-                world.create_chunk(uvec3(0, 0, 0), &nodes);
+        // Get world date from server
+        for chunk in world.empty_chunks().collect::<Vec<_>>() {
+            if chunk.pos().y != 0 || chunk.pos().x > 3 || chunk.pos().z > 3 {
+                continue;
             }
-            Ok(other) => {
-                println!("Error receiving chunk data from server: unexpected command received: {other:?}");
+            if let Err(err) = game.send_cmd(ServerCmd::GetChunkData(
+                chunk.idx() as u32,
+                chunk.pos().as_ivec3(),
+            )) {
+                println!("Failed to send cmd to server: {err:?}");
             }
-            Err(err) => {
-                println!("Error receiving chunk data from server: {err:?}");
+
+            match game.recv_cmd() {
+                Ok(ClientCmd::GiveChunkData(_id, pos, nodes)) => {
+                    world.create_chunk(pos.as_uvec3(), &nodes);
+                }
+                Ok(other) => {
+                    println!("Error receiving chunk data from server: unexpected command received: {other:?}");
+                }
+                Err(err) => {
+                    println!("Error receiving chunk data from server: {err:?}");
+                }
             }
         }
 
@@ -153,10 +162,10 @@ impl<'a> AppState<'a> {
         // _ = world.set_voxel(ivec3(0, 1, 1), sand);
         // _ = world.set_voxel(ivec3(1, 1, 0), sand);
 
-        println!(
-            "{:?}",
-            world.chunks.chunks[0].as_ref().unwrap().alloc.free_mem[0]
-        );
+        // println!(
+        //     "{:?}",
+        //     world.chunks.chunks[0].as_ref().unwrap().alloc.free_mem[0]
+        // );
 
         let mut player = Player::new(vec3(1.0, 0.0, 1.0), 0.2);
         player.flying = true;

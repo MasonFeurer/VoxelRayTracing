@@ -102,7 +102,7 @@ impl ChunkGrid {
         self.chunks
             .iter()
             .enumerate()
-            .filter(|(_idx, chunk)| chunk.is_some())
+            .filter(|(_idx, chunk)| chunk.is_none())
             .map(|(idx, _)| ChunkPtr(idx, self.chunk_pos_map[idx], self.size))
     }
 

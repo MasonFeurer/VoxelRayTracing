@@ -8,3 +8,4 @@ common = { package = "blockworld-common", path = "../common" }
 anyhow = "1.0.93"
 glam = "0.29.2"
 bincode = { version = "2.0.1", features = ["serde"] }
+fastrand = "2.3.0"

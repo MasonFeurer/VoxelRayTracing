@@ -267,6 +267,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "blockworld-common",
+ "fastrand",
  "glam",
 ]
 

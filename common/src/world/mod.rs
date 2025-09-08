@@ -276,5 +276,13 @@ pub fn set_svo_voxel(
     }
     // SVO now goes to desired depth, so we can mutate the node now.
     svo.nodes[idx as usize] = Node::new(voxel);
+
+    //
+    if depth == target_depth {
+        // TODO: if the SVO's depth was already at the target depth,
+        // we should check if this voxel is being set to the same value
+        // as the adjacent nodes, and if so, set the parent and remove
+        //  this node to simplify the SVO.
+    }
     Ok(())
 }

@@ -69,6 +69,8 @@ struct FoundNode {
     max: vec3<f32>,
     center: vec3<f32>,
     size: f32,
+    // the root idx of the chunk that contains this voxel.
+    root: u32,
 }
 
 fn find_chunk_node(
@@ -79,11 +81,11 @@ fn find_chunk_node(
 ) -> FoundNode {
     var center = min + vec3(16.0);
     var size = 32.0;
-    var idx = root;
+    var idx: u32 = 0;
     var depth: u32 = 0u;
 
     loop {
-        let node = get_node(idx);
+        let node = get_node(root + idx);
         if !node_is_split(node) || depth == max_depth {
             var out: FoundNode;
             out.idx = idx;
@@ -91,6 +93,7 @@ fn find_chunk_node(
             out.max = center + vec3(size * 0.5);
             out.center = center;
             out.size = size;
+            out.root = root;
             return out;
         }
         size *= 0.5;
@@ -203,7 +206,7 @@ fn ray_world(start_ray: Ray) -> HitResult {
         iter_count += 1u;
         
         let found_node = find_node(ray_pos, 5u); // the most child one
-        voxel = node_voxel(get_node(found_node.idx)); // just voxel - most time air
+        voxel = node_voxel(get_node(found_node.root + found_node.idx)); // just voxel - most time air
         
         if voxel != 0u { // not air, so return it
             break;
