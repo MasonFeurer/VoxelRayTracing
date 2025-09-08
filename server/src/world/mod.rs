@@ -34,7 +34,7 @@ impl std::fmt::Debug for ServerChunk {
             nodes: &'a [Node],
         }
         let c = Chunk {
-            nodes: &self.nodes[0..=self.node_alloc.last_used_addr() as usize],
+            nodes: self.used_nodes().clone(),
         };
         std::fmt::Debug::fmt(&c, f)
     }
@@ -49,5 +49,9 @@ impl ServerChunk {
             nodes,
             node_alloc: NodeAlloc::new(0..1, 1..cap),
         }
+    }
+
+    pub fn used_nodes(&self) -> &[Node] {
+        &self.nodes[0..=self.node_alloc.last_used_addr() as usize]
     }
 }

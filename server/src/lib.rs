@@ -118,7 +118,7 @@ impl ServerState {
                         self.world.create_chunk(pos, &self.resources);
                     }
                     let chunk = self.world.get_chunk(pos).unwrap();
-                    let nodes = chunk.nodes.clone();
+                    let nodes = Vec::from(chunk.used_nodes());
 
                     if let Err(err) = client.conn.write(ClientCmd::GiveChunkData(id, pos, nodes)) {
                         println!(

@@ -3,6 +3,22 @@ use client::common::world::*;
 use glam::{ivec3, uvec3, IVec3, UVec3};
 use std::ops::Range;
 
+#[derive(Clone, Copy, Debug)]
+pub struct ChunkPtr(usize, UVec3, u32);
+impl ChunkPtr {
+    pub fn idx(self) -> usize {
+        self.0
+    }
+
+    pub fn pos(self) -> UVec3 {
+        self.1
+    }
+
+    pub fn world_size(self) -> u32 {
+        self.2
+    }
+}
+
 #[derive(Clone)]
 pub struct Chunk {
     // The range in the Node list that this chunk occupies.
@@ -55,36 +71,58 @@ impl Chunk {
 
 pub struct ChunkGrid {
     pub chunks: Box<[Option<Chunk>]>,
+    // A table that stores the local-position of every chunk at the given indices.
+    pub chunk_pos_map: Box<[UVec3]>,
     pub chunk_count: usize,
     pub size: u32,
 }
 impl ChunkGrid {
-    // the distance from the center to the edge of the grid.
-    // the grids width is derived from (`size` * 2 + 1).
     pub fn new(size: u32) -> Self {
-        let width = size * 2 + 1;
-        let area = (width * width) as usize;
-        let chunks = vec![<Option<Chunk>>::None; area].into_boxed_slice();
+        let volume = (size * size * size) as usize;
+        let chunks = vec![<Option<Chunk>>::None; volume].into_boxed_slice();
+        let mut chunk_pos_map = vec![UVec3::ZERO; volume].into_boxed_slice();
+        for x in 0..size {
+            for y in 0..size {
+                for z in 0..size {
+                    let idx = x + y * size + z * size * size;
+                    chunk_pos_map[idx as usize] = UVec3 { x, y, z };
+                }
+            }
+        }
 
         Self {
             chunks,
-            chunk_count: area,
-            size: width,
+            chunk_pos_map,
+            chunk_count: volume,
+            size,
         }
     }
 
-    pub fn put_chunk(&mut self, pos: UVec3, chunk: Chunk) {
-        let idx = pos.x + pos.y * self.size + pos.z * self.size * self.size;
-        self.chunks[idx as usize] = Some(chunk);
+    pub fn empty_chunks<'a>(&'a self) -> impl Iterator<Item = ChunkPtr> + 'a {
+        self.chunks
+            .iter()
+            .enumerate()
+            .filter(|(_idx, chunk)| chunk.is_some())
+            .map(|(idx, _)| ChunkPtr(idx, self.chunk_pos_map[idx], self.size))
     }
-    pub fn get_chunk(&self, pos: UVec3) -> Option<&Chunk> {
-        let idx = pos.x + pos.y * self.size + pos.z * self.size * self.size;
 
-        self.chunks.get(idx as usize)?.as_ref()
-    }
-    pub fn get_chunk_mut(&mut self, pos: UVec3) -> Option<&mut Chunk> {
+    pub fn chunk_at(&self, pos: UVec3) -> Option<ChunkPtr> {
+        // TODO: bounds checks
         let idx = pos.x + pos.y * self.size + pos.z * self.size * self.size;
-        self.chunks.get_mut(idx as usize)?.as_mut()
+        Some(ChunkPtr(idx as usize, pos, self.size))
+    }
+
+    pub fn put_chunk(&mut self, ptr: ChunkPtr, chunk: Chunk) {
+        // TODO: make sure ptr is valid (world may have been resized since ptr was created)
+        self.chunks[ptr.idx()] = Some(chunk);
+    }
+    pub fn get_chunk(&self, ptr: ChunkPtr) -> Option<&Chunk> {
+        // TODO: make sure ptr is valid (world may have been resized since ptr was created)
+        self.chunks.get(ptr.idx())?.as_ref()
+    }
+    pub fn get_chunk_mut(&mut self, ptr: ChunkPtr) -> Option<&mut Chunk> {
+        // TODO: make sure ptr is valid (world may have been resized since ptr was created)
+        self.chunks.get_mut(ptr.idx())?.as_mut()
     }
 
     pub fn resize(&mut self, _new_size: u32) {
@@ -135,6 +173,12 @@ pub struct World {
     pub nodes: Box<[Node]>,
     pub chunk_alloc: ChunkAlloc,
 }
+impl std::ops::Deref for World {
+    type Target = ChunkGrid;
+    fn deref(&self) -> &ChunkGrid {
+        &self.chunks
+    }
+}
 impl World {
     pub fn new(origin: IVec3, max_nodes: u32, size: u32) -> Self {
         let mut nodes = vec![Node::ZERO; max_nodes as usize].into_boxed_slice();
@@ -169,34 +213,41 @@ impl World {
             .collect()
     }
 
-    pub fn put_chunk(&mut self, pos: UVec3, nodes: &[Node]) {
+    pub fn create_chunk(&mut self, pos: UVec3, nodes: &[Node]) -> Result<(), SetVoxelErr> {
+        let chunk_ptr = self.chunk_at(pos).ok_or(SetVoxelErr::PosOutOfBounds)?;
+
         let chunk = self.chunk_alloc.alloc_chunk(nodes.len() as u32);
         let range = chunk.range.start..(chunk.range.start + nodes.len() as u32);
 
         self.nodes[(range.start as usize)..(range.end as usize)].copy_from_slice(&nodes);
-        self.chunks.put_chunk(pos, chunk);
+        self.chunks.put_chunk(chunk_ptr, chunk);
+        Ok(())
     }
 
     pub fn set_voxel(&mut self, pos: IVec3, voxel: Voxel) -> Result<(), SetVoxelErr> {
+        // TODO: check bounds
         let pos = (pos - self.origin).as_uvec3();
         let chunk_pos = vox_to_chunk_pos(pos.as_ivec3()).as_uvec3();
         let pos_in_chunk = pos - (chunk_pos * CHUNK_SIZE);
 
-        self.chunks
-            .get_chunk_mut(chunk_pos)
-            .ok_or(SetVoxelErr::NoChunk)?
-            .set_voxel(&mut self.nodes, pos_in_chunk, voxel)
+        let chunk = self.chunk_at(chunk_pos).unwrap();
+        let chunk = self.chunks.chunks[chunk.idx()]
+            .as_mut()
+            .ok_or(SetVoxelErr::NoChunk)?;
+        chunk.set_voxel(&mut self.nodes, pos_in_chunk, voxel)
     }
 
     pub fn get_voxel(&self, pos: IVec3) -> Result<Voxel, SetVoxelErr> {
+        // TODO: check bounds
         let pos = (pos - self.origin).as_uvec3();
         let chunk_pos = vox_to_chunk_pos(pos.as_ivec3()).as_uvec3();
         let pos_in_chunk = pos - (chunk_pos * CHUNK_SIZE);
 
-        self.chunks
-            .get_chunk(chunk_pos)
-            .ok_or(SetVoxelErr::NoChunk)?
-            .get_voxel(&self.nodes, pos_in_chunk)
+        let chunk = self.chunk_at(chunk_pos).unwrap();
+        let chunk = self.chunks.chunks[chunk.idx()]
+            .as_ref()
+            .ok_or(SetVoxelErr::NoChunk)?;
+        chunk.get_voxel(&self.nodes, pos_in_chunk)
     }
 }
 impl World {

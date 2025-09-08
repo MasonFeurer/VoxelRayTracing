@@ -9,10 +9,12 @@ use crate::player::Player;
 use crate::world::World;
 
 use client::common::math::HitResult;
+use client::common::net::{ClientCmd, ServerCmd};
 use client::common::resources::VoxelPack;
 use client::common::world::{Node, Voxel};
 use client::GameState;
 use glam::{ivec3, uvec2, uvec3, vec3, UVec2};
+use std::net::SocketAddr;
 use std::time::SystemTime;
 use winit::event::*;
 use winit::event_loop::EventLoop;
@@ -92,11 +94,15 @@ pub struct AppState<'a> {
 impl<'a> AppState<'a> {
     pub fn new(
         res_dir: String,
-        game: GameState,
+        mut game: GameState,
         win_size: UVec2,
         gpu: Gpu<'a>,
         max_nodes: u32,
     ) -> Self {
+        if let Err(err) = game.join_server(SocketAddr::new("127.0.0.1".parse().unwrap(), 60000)) {
+            println!("Failed to connect to server: {err:?}");
+        }
+
         let win_aspect = win_size.x as f32 / win_size.y as f32;
 
         let voxelpack = load_voxelpack(&res_dir).unwrap();
@@ -118,18 +124,34 @@ impl<'a> AppState<'a> {
         let world_size = 10;
         let mut world = World::new(ivec3(0, 0, 0), 100_000, world_size);
         // Create a world (in-dev)
-        world.put_chunk(uvec3(0, 0, 0), &[Node::new(Voxel::EMPTY)]);
-        let stone = voxelpack.by_name("stone").unwrap();
-        let grass = voxelpack.by_name("grass").unwrap();
-        let sand = voxelpack.by_name("sand").unwrap();
+        if let Err(err) = game.send_cmd(ServerCmd::GetChunkData(0, ivec3(0, 0, 0))) {
+            println!("Failed to send cmd to server: {err:?}");
+        }
 
-        _ = world.set_voxel(ivec3(0, 0, 0), stone);
-        _ = world.set_voxel(ivec3(1, 0, 0), stone);
-        _ = world.set_voxel(ivec3(0, 0, 1), stone);
+        match game.recv_cmd() {
+            Ok(ClientCmd::GiveChunkData(_id, _pos, nodes)) => {
+                world.create_chunk(uvec3(0, 0, 0), &nodes);
+            }
+            Ok(other) => {
+                println!("Error receiving chunk data from server: unexpected command received: {other:?}");
+            }
+            Err(err) => {
+                println!("Error receiving chunk data from server: {err:?}");
+            }
+        }
 
-        _ = world.set_voxel(ivec3(0, 1, 0), grass);
-        _ = world.set_voxel(ivec3(0, 1, 1), sand);
-        _ = world.set_voxel(ivec3(1, 1, 0), sand);
+        // world.create_chunk(uvec3(0, 0, 0), &[Node::new(Voxel::EMPTY)]);
+        // let stone = voxelpack.by_name("stone").unwrap();
+        // let grass = voxelpack.by_name("grass").unwrap();
+        // let sand = voxelpack.by_name("sand").unwrap();
+
+        // _ = world.set_voxel(ivec3(0, 0, 0), stone);
+        // _ = world.set_voxel(ivec3(1, 0, 0), stone);
+        // _ = world.set_voxel(ivec3(0, 0, 1), stone);
+
+        // _ = world.set_voxel(ivec3(0, 1, 0), grass);
+        // _ = world.set_voxel(ivec3(0, 1, 1), sand);
+        // _ = world.set_voxel(ivec3(1, 1, 0), sand);
 
         println!(
             "{:?}",
@@ -354,7 +376,10 @@ pub fn main() {
         e if input.update(&e) => {}
         Event::WindowEvent { event, .. } => match event {
             e if !cursor_hidden && egui.winit.on_window_event(&window, &e).consumed => {}
-            WindowEvent::CloseRequested => ael.exit(),
+            WindowEvent::CloseRequested => {
+                ael.exit();
+                _ = app_state.game.disconnect();
+            }
             WindowEvent::RedrawRequested => {
                 let last_frame_age = SystemTime::now()
                     .duration_since(last_frame)
