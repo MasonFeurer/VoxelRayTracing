@@ -1,15 +1,18 @@
 use crate::Resources;
-pub use common::world::*;
-use glam::{uvec3, IVec3, UVec3};
+pub use common::world::{noise::NoiseMap, *};
+use glam::{uvec3, vec2, IVec3, UVec3};
 use std::collections::HashMap;
 
 pub struct ServerWorld {
     pub chunks: HashMap<IVec3, ServerChunk>,
+    pub noise: NoiseMap,
 }
 impl ServerWorld {
     pub fn new() -> Self {
+        noise::init_gradients();
         Self {
             chunks: HashMap::new(),
+            noise: NoiseMap::new(fastrand::i64(..), 0.03, 50.0),
         }
     }
 
@@ -22,7 +25,7 @@ impl ServerWorld {
         self.chunks.insert(pos, chunk);
     }
 
-    pub fn create_dev_chunk(&mut self, pos: IVec3, res: &Resources) {
+    pub fn create_dev_chunk(&mut self, chunk_pos: IVec3, res: &Resources) {
         let mut chunk = ServerChunk::with_capacity(16384 * 2 * 2);
         let mut alloc = &mut chunk.node_alloc;
         let mut svo = SvoMut {
@@ -41,32 +44,21 @@ impl ServerWorld {
             );
         };
 
-        if pos.y == 0 {
-            for x in 1..(CHUNK_SIZE - 1) {
-                for z in 1..(CHUNK_SIZE - 1) {
-                    set_vox(uvec3(x, 0, z), "stone");
-                    set_vox(uvec3(x, 1, z), "dirt");
-                    set_vox(uvec3(x, 2, z), "grass");
+        for x in 0..CHUNK_SIZE {
+            for z in 0..CHUNK_SIZE {
+                let world_pos = inchunk_to_world_pos(chunk_pos, uvec3(x, 0, z));
+                let h = self.noise.get(vec2(world_pos.x as f32, world_pos.z as f32)) as u32;
 
-                    if fastrand::u8(0..10) == 0 {
-                        set_vox(uvec3(x, 3, z), "snow");
+                for y in 0u32..CHUNK_SIZE {
+                    if y as i32 + world_pos.y < h as i32 {
+                        set_vox(uvec3(x, y, z), "stone");
+                    } else if y as i32 + world_pos.y == h as i32 {
+                        set_vox(uvec3(x, y, z), "grass");
                     }
                 }
             }
-
-            for y in 0..pos.x as u32 {
-                set_vox(uvec3(3, y + 3, 3), "clay");
-            }
-            for y in 0..pos.z as u32 {
-                set_vox(uvec3(4, y + 3, 3), "mud");
-            }
         }
-
-        // if pos.x == 1 && pos.z == 2 {
-        //     set_vox(uvec3(3, 4, 3), "stone")
-        // }
-
-        self.chunks.insert(pos, chunk);
+        self.chunks.insert(chunk_pos, chunk);
     }
 }
 

@@ -227,7 +227,7 @@ impl World {
     pub fn set_voxel(&mut self, pos: IVec3, voxel: Voxel) -> Result<(), SetVoxelErr> {
         // TODO: check bounds
         let pos = (pos - self.origin).as_uvec3();
-        let chunk_pos = vox_to_chunk_pos(pos.as_ivec3()).as_uvec3();
+        let chunk_pos = world_to_chunk_pos(pos.as_ivec3()).as_uvec3();
         let pos_in_chunk = pos - (chunk_pos * CHUNK_SIZE);
 
         let chunk = self.chunk_at(chunk_pos).unwrap();
@@ -240,7 +240,7 @@ impl World {
     pub fn get_voxel(&self, pos: IVec3) -> Result<Voxel, SetVoxelErr> {
         // TODO: check bounds
         let pos = (pos - self.origin).as_uvec3();
-        let chunk_pos = vox_to_chunk_pos(pos.as_ivec3()).as_uvec3();
+        let chunk_pos = world_to_chunk_pos(pos.as_ivec3()).as_uvec3();
         let pos_in_chunk = pos - (chunk_pos * CHUNK_SIZE);
 
         let chunk = self.chunk_at(chunk_pos).unwrap();

@@ -122,11 +122,11 @@ impl<'a> AppState<'a> {
         );
 
         let world_size = 10;
-        let mut world = World::new(ivec3(0, 0, 0), 100_000, world_size);
+        let mut world = World::new(ivec3(0, 0, 0), 400_000_000, world_size);
 
         // Get world date from server
         for chunk in world.empty_chunks().collect::<Vec<_>>() {
-            if chunk.pos().y != 0 || chunk.pos().x > 3 || chunk.pos().z > 3 {
+            if chunk.pos().y > 2 {
                 continue;
             }
             if let Err(err) = game.send_cmd(ServerCmd::GetChunkData(

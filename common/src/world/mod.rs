@@ -1,3 +1,5 @@
+pub mod noise;
+
 use glam::{uvec3, IVec3, UVec3};
 
 pub type NodeAddr = u32;
@@ -46,8 +48,23 @@ pub const NODES_PER_CHUNK: u32 = 37_449;
 pub const CHUNK_INIT_FREE_MEM: u32 = 256;
 
 #[inline(always)]
-pub fn vox_to_chunk_pos(pos: IVec3) -> IVec3 {
+pub fn world_to_chunk_pos(pos: IVec3) -> IVec3 {
     pos.div_euclid(IVec3::splat(CHUNK_SIZE as i32))
+}
+
+#[inline(always)]
+pub fn world_to_inchunk_pos(pos: IVec3) -> UVec3 {
+    (pos - world_to_chunk_pos(pos)).as_uvec3()
+}
+
+#[inline(always)]
+pub fn chunk_to_world_pos(pos: IVec3) -> IVec3 {
+    pos * CHUNK_SIZE as i32
+}
+
+#[inline(always)]
+pub fn inchunk_to_world_pos(chunk: IVec3, pos: UVec3) -> IVec3 {
+    (chunk * CHUNK_SIZE as i32) + pos.as_ivec3()
 }
 
 /// Represents a node in the sparse voxel octree (SVO) for each chunk.
