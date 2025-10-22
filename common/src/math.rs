@@ -120,9 +120,8 @@ impl Aabb {
             && (c.to.z > self.from.z && c.from.z < self.to.z)
     }
 
-    pub fn translate(&mut self, a: Vec3) {
-        self.from += a;
-        self.to += a;
+    pub fn translate(&self, a: Vec3) -> Self {
+        Self::new(self.from + a, self.to + a)
     }
 }
 

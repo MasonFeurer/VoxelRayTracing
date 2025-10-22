@@ -52,8 +52,8 @@ impl VoxelPack {
 }
 #[derive(Deserialize, Debug)]
 pub struct VoxelData {
-    name: String,
-    empty: bool,
+    pub name: String,
+    pub empty: bool,
 }
 
 #[derive(Debug)]

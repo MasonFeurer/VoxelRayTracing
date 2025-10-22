@@ -14,6 +14,7 @@ pub enum SetVoxelErr {
 
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[allow(dead_code)] // Linter claims Voxel.0 is unused
 pub struct Voxel(u16);
 impl Voxel {
     pub const EMPTY: Self = Self(0);
@@ -132,6 +133,7 @@ impl Node {
 impl std::fmt::Debug for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         #[derive(Debug)]
+        #[allow(dead_code)] // Fields used by #derive Debug
         enum NodeEnum {
             Split(u32),
             Voxel(u16),

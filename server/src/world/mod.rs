@@ -20,14 +20,14 @@ impl ServerWorld {
         self.chunks.get(&pos)
     }
 
-    pub fn create_chunk(&mut self, pos: IVec3, res: &Resources) {
+    pub fn create_chunk(&mut self, pos: IVec3, _res: &Resources) {
         let chunk = ServerChunk::new();
         self.chunks.insert(pos, chunk);
     }
 
     pub fn create_dev_chunk(&mut self, chunk_pos: IVec3, res: &Resources) {
         let mut chunk = ServerChunk::with_capacity(16384 * 2 * 2);
-        let mut alloc = &mut chunk.node_alloc;
+        let alloc = &mut chunk.node_alloc;
         let mut svo = SvoMut {
             nodes: &mut chunk.nodes,
             root: 0,
@@ -35,7 +35,7 @@ impl ServerWorld {
         };
 
         let mut set_vox = |pos: UVec3, name: &str| {
-            set_svo_voxel(
+            _ = set_svo_voxel(
                 &mut svo,
                 pos,
                 res.voxelpack.by_name(name).unwrap(),
@@ -70,10 +70,11 @@ impl std::fmt::Debug for ServerChunk {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         #[derive(Debug)]
         struct Chunk<'a> {
+            #[allow(dead_code)] // used by  #derive Debug
             nodes: &'a [Node],
         }
         let c = Chunk {
-            nodes: self.used_nodes().clone(),
+            nodes: self.used_nodes(),
         };
         std::fmt::Debug::fmt(&c, f)
     }

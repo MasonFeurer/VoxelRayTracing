@@ -5,7 +5,7 @@ A native application that uses blockworld-server to create a server and provides
 use server::{Resources, ServerState};
 use std::sync::mpsc::{channel, Receiver};
 use std::{
-    net::{SocketAddr, TcpStream},
+    net::SocketAddr,
     str::FromStr,
     sync::atomic::{AtomicBool, Ordering},
     time::Duration,
@@ -58,7 +58,7 @@ fn main() -> anyhow::Result<()> {
             Err(_) => {}
         }
 
-        std::thread::sleep(Duration::from_millis(5));
+        std::thread::sleep(Duration::from_millis(1));
     }
     println!("SERVER CLI PROGRAM IS DONE");
     Ok(())
@@ -81,7 +81,7 @@ pub fn spawn_cli() -> Receiver<CliCmd> {
             match cmd_buf.as_str() {
                 "stop" => {
                     SHUTDOWN_FLAG.store(true, Ordering::Relaxed);
-                    send.send(CliCmd::Stop);
+                    _ = send.send(CliCmd::Stop);
                     break;
                 }
                 "players" => _ = send.send(CliCmd::GetPlayers),

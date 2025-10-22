@@ -109,7 +109,7 @@ pub fn parse_world_presets(
     }
     Ok(constructs)
 }
-pub fn parse_world_features(src: &str, voxels: &VoxelPack) -> anyhow::Result<WorldFeatures> {
+pub fn parse_world_features(src: &str, _voxels: &VoxelPack) -> anyhow::Result<WorldFeatures> {
     let parsed: Vec<WorldFeature> = ron::de::from_str(src)?;
     Ok(WorldFeatures(parsed))
 }

@@ -1,9 +1,9 @@
 use glam::{vec2, Vec2};
 use std::collections::HashSet;
 use winit::event::*;
+use winit::keyboard::PhysicalKey;
 
-pub type NamedKey = winit::keyboard::NamedKey;
-pub type Key = winit::keyboard::Key;
+pub type Key = winit::keyboard::KeyCode;
 pub type MouseButton = winit::event::MouseButton;
 
 #[derive(Default)]
@@ -43,54 +43,57 @@ impl InputState {
         self.pressed_mouse_buttons.clear();
     }
 
-    pub fn update<T>(&mut self, event: &Event<T>) -> bool {
+    pub fn on_window_event(&mut self, event: &WindowEvent) -> bool {
         match event {
-            Event::WindowEvent { event, .. } => match event {
-                WindowEvent::KeyboardInput { event, .. } => {
-                    let key = event.logical_key.clone();
-                    if event.state == ElementState::Pressed {
-                        self.pressed_keys.insert(key.clone());
-                        self.down_keys.insert(key);
-                    } else {
-                        self.down_keys.remove(&key);
+            WindowEvent::KeyboardInput { event, .. } => {
+                let PhysicalKey::Code(key) = event.physical_key else {
+                    return false;
+                };
+                if event.state == ElementState::Pressed {
+                    self.pressed_keys.insert(key.clone());
+                    self.down_keys.insert(key);
+                } else {
+                    self.down_keys.remove(&key);
+                }
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                match state == &ElementState::Pressed {
+                    true => {
+                        self.pressed_mouse_buttons.insert(*button);
+                        self.down_mouse_buttons.insert(*button);
                     }
-                }
-                WindowEvent::MouseInput { state, button, .. } => {
-                    match state == &ElementState::Pressed {
-                        true => {
-                            self.pressed_mouse_buttons.insert(*button);
-                            self.down_mouse_buttons.insert(*button);
-                        }
-                        false => {
-                            self.down_mouse_buttons.remove(button);
-                        }
-                    };
-                }
-                WindowEvent::MouseWheel { delta, .. } => {
-                    let delta = match *delta {
-                        MouseScrollDelta::PixelDelta(pos) => vec2(pos.x as f32, pos.y as f32),
-                        MouseScrollDelta::LineDelta(x, y) => vec2(x, y),
-                    };
-                    self.scroll_delta += delta;
-                }
-                _ => return false,
-            },
-            Event::DeviceEvent { event, .. } => match event {
-                DeviceEvent::MouseMotion { delta } => {
-                    self.cursor_pos.x += delta.0 as f32;
-                    self.cursor_pos.y += delta.1 as f32;
-                    self.cursor_delta.x += delta.0 as f32;
-                    self.cursor_delta.y += delta.1 as f32;
-                }
-                DeviceEvent::MouseWheel { delta } => {
-                    let delta = match *delta {
-                        MouseScrollDelta::PixelDelta(pos) => vec2(pos.x as f32, pos.y as f32),
-                        MouseScrollDelta::LineDelta(x, y) => vec2(x, y),
-                    };
-                    self.scroll_delta += delta;
-                }
-                _ => return false,
-            },
+                    false => {
+                        self.down_mouse_buttons.remove(button);
+                    }
+                };
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let delta = match *delta {
+                    MouseScrollDelta::PixelDelta(pos) => vec2(pos.x as f32, pos.y as f32),
+                    MouseScrollDelta::LineDelta(x, y) => vec2(x, y),
+                };
+                self.scroll_delta += delta;
+            }
+            _ => return false,
+        }
+        false
+    }
+
+    pub fn on_device_event(&mut self, event: &DeviceEvent) -> bool {
+        match event {
+            DeviceEvent::MouseMotion { delta } => {
+                self.cursor_pos.x += delta.0 as f32;
+                self.cursor_pos.y += delta.1 as f32;
+                self.cursor_delta.x += delta.0 as f32;
+                self.cursor_delta.y += delta.1 as f32;
+            }
+            DeviceEvent::MouseWheel { delta } => {
+                let delta = match *delta {
+                    MouseScrollDelta::PixelDelta(pos) => vec2(pos.x as f32, pos.y as f32),
+                    MouseScrollDelta::LineDelta(x, y) => vec2(x, y),
+                };
+                self.scroll_delta += delta;
+            }
             _ => return false,
         }
         false

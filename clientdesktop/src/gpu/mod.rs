@@ -1,10 +1,12 @@
 pub mod egui;
 pub mod texture;
 
-use crate::world::World;
 use client::common::world::{Node, NodeAddr};
-use glam::{uvec2, Mat4, UVec2, Vec2, Vec3};
+use client::world::ClientWorld;
+use glam::{uvec2, vec2, Mat4, UVec2, Vec2, Vec3};
 use texture::Texture;
+
+use std::sync::Arc;
 
 use wgpu::*;
 
@@ -340,6 +342,25 @@ pub struct CamData {
     pub proj_size: Vec2,
     pub _padding1: [u32; 2],
 }
+impl CamData {
+    pub fn create(cam: Vec3, eye: Vec3, fov: f32, proj_size: Vec2) -> Self {
+        let inv_view_mat = Mat4::from_translation(eye)
+            * Mat4::from_rotation_x(cam.x.to_radians())
+            * Mat4::from_rotation_y(-cam.y.to_radians())
+            * Mat4::from_rotation_z(cam.z.to_radians());
+        let inv_proj_mat =
+            Mat4::perspective_rh(fov.to_radians(), proj_size.x / proj_size.y, 0.001, 1000.0)
+                .inverse();
+
+        CamData {
+            pos: eye,
+            inv_view_mat,
+            inv_proj_mat,
+            proj_size: vec2(proj_size.x, proj_size.y),
+            ..Default::default()
+        }
+    }
+}
 
 #[derive(Clone, Copy, Default)]
 #[repr(C)]
@@ -350,7 +371,7 @@ pub struct WorldData {
     _padding: [u32; 3],
 }
 impl WorldData {
-    pub fn from(world: &World) -> Self {
+    pub fn from(world: &ClientWorld) -> Self {
         Self {
             min: world.min().into(),
             size: world.size(),
@@ -433,14 +454,27 @@ impl GpuResources {
     }
 }
 
-pub struct Gpu<'a> {
+pub async fn gpu_limits() -> Limits {
+    let instance = Instance::new(&Default::default());
+    let adapter = instance
+        .request_adapter(&RequestAdapterOptions {
+            power_preference: Default::default(),
+            compatible_surface: None,
+            force_fallback_adapter: false,
+        })
+        .await
+        .unwrap();
+    adapter.limits()
+}
+
+pub struct Gpu {
     pub device: Device,
     pub queue: Queue,
-    pub surface: Surface<'a>,
+    pub surface: Surface<'static>,
     pub surface_config: SurfaceConfiguration,
 }
-impl<'a> Gpu<'a> {
-    pub async fn new(window: &'a winit::window::Window) -> Self {
+impl Gpu {
+    pub async fn new(window: Arc<winit::window::Window>) -> Self {
         let size = window.inner_size();
         let size = uvec2(size.width, size.height);
 

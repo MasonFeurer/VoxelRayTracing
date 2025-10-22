@@ -10,9 +10,8 @@ pub use common;
 use common::net::{ClientCmd, ServerCmd};
 use common::resources::{loader, VoxelPack, WorldFeatures, WorldPreset};
 use common::server::PlayerInfo;
-use glam::{IVec3, Vec3};
+use glam::Vec3;
 use net::ClientConn;
-use std::collections::HashMap;
 use std::net::{SocketAddr, TcpListener};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver};
@@ -70,7 +69,7 @@ impl ServerState {
         while let Ok(client) = clients.try_recv() {
             match client {
                 Ok(client) => self.clients.push(client),
-                Err(err) => {}
+                Err(_err) => {}
             }
         }
     }
@@ -112,7 +111,7 @@ impl ServerState {
                         );
                     }
                 }
-                ServerCmd::GetVoxelData(id, pos) => {}
+                ServerCmd::GetVoxelData(_id, _pos) => {}
                 ServerCmd::GetChunkData(id, pos) => {
                     if self.world.get_chunk(pos).is_none() {
                         self.world.create_dev_chunk(pos, &self.resources);
@@ -127,7 +126,7 @@ impl ServerState {
                         );
                     }
                 }
-                ServerCmd::PlaceVoxelData(v, pos) => {}
+                ServerCmd::PlaceVoxelData(_v, _pos) => {}
             }
         }
         for idx in clients_disconnecting.iter().rev() {
@@ -160,17 +159,17 @@ impl ServerState {
                                     address: conn.stream.local_addr().unwrap(),
                                     conn,
                                 };
-                                sender.send(Ok(client));
+                                _ = sender.send(Ok(client));
                             }
                             Err(err) => {
                                 println!("Failed to connect client: {err:?}");
-                                sender.send(Err(err));
+                                _ = sender.send(Err(err));
                             }
                         };
                     }
                     Err(err) => {
                         println!("Failed to connect client : {err:?}");
-                        sender.send(Err(err.into()));
+                        _ = sender.send(Err(err.into()));
                     }
                 }
             }

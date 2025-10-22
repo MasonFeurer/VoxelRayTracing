@@ -4,23 +4,32 @@ Does not provide any graphics, just game-state.
 */
 
 pub mod net;
+pub mod player;
+pub mod world;
 
 pub use common;
 
 use anyhow::Context;
 use common::net::{ClientCmd, ConnError, ServerCmd};
+use glam::vec3;
 use net::ServerConn;
+use player::Player;
 use std::net::SocketAddr;
+use world::ClientWorld;
 
 pub struct GameState {
     pub user_name: String,
+    pub player: Player,
     pub server_conn: Option<ServerConn>,
+    pub world: ClientWorld,
 }
 impl GameState {
-    pub fn new(user_name: String) -> Self {
+    pub fn new(user_name: String, world: ClientWorld) -> Self {
         Self {
             user_name,
+            player: Player::new(vec3(0.5, 0.0, 0.5), 0.2),
             server_conn: None,
+            world,
         }
     }
 }

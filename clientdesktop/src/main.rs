@@ -1,29 +1,39 @@
 pub mod gpu;
 pub mod input;
-pub mod player;
 pub mod world;
 
-use crate::gpu::{egui::Egui, Gpu, GpuResources, Material, Settings, WorldData};
+use crate::gpu::{egui::Egui, CamData, Gpu, GpuResources, Material, Settings, WorldData};
 use crate::input::{InputState, Key};
-use crate::player::Player;
-use crate::world::World;
 
 use client::common::math::HitResult;
 use client::common::net::{ClientCmd, ServerCmd};
 use client::common::resources::VoxelPack;
-use client::common::world::{Node, Voxel};
+use client::common::world::Node;
+use client::player::PlayerInput;
+use client::world::ClientWorld;
 use client::GameState;
-use glam::{ivec3, uvec2, uvec3, vec3, UVec2};
+use glam::{ivec3, uvec2, UVec2, Vec3};
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::SystemTime;
+use winit::application::ApplicationHandler;
 use winit::event::*;
-use winit::event_loop::EventLoop;
-use winit::window::{CursorGrabMode, Fullscreen, Window, WindowAttributes};
+use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::window::{CursorGrabMode, Fullscreen, Window, WindowAttributes, WindowId};
 
-pub struct FrameInput {
-    pub fps: u32,
-    pub prev_win_size: UVec2,
-    pub win_size: UVec2,
+pub fn main() {
+    env_logger::init();
+
+    let username = String::from("Baba");
+    let res_dir = std::env::args()
+        .nth(1)
+        .expect("Missing cmdline arg for resource directory path");
+
+    let mut app_state = AppState::new(username, res_dir);
+
+    if let Err(err) = EventLoop::new().unwrap().run_app(&mut app_state) {
+        eprintln!("Failed to run app: {err:?}");
+    }
 }
 
 #[derive(Default)]
@@ -44,15 +54,6 @@ pub fn hide_cursor(window: &Window, hide: bool) {
         (_, false) => CursorGrabMode::Confined,
     };
     _ = window.set_cursor_grab(grab_mode);
-}
-pub fn toggle_fullscreen(window: &Window) {
-    window.set_fullscreen(match window.fullscreen() {
-        Some(_) => None,
-        None => Some(Fullscreen::Borderless(None)),
-    });
-}
-pub fn win_size(window: &Window) -> UVec2 {
-    UVec2::from(<[u32; 2]>::from(window.inner_size()))
 }
 
 pub fn load_voxelpack(res_folder: &str) -> anyhow::Result<VoxelPack> {
@@ -80,31 +81,26 @@ pub fn load_voxel_mats(res_folder: &str, voxels: &VoxelPack) -> anyhow::Result<V
     Ok(materials)
 }
 
-pub struct AppState<'a> {
-    pub gpu: Gpu<'a>,
-    pub gpu_res: GpuResources,
+pub struct AppState {
+    pub window: Option<Arc<Window>>,
+    pub gpu: Option<Gpu>,
+    pub gpu_res: Option<GpuResources>,
+    pub egui: Option<Egui>,
+    pub input: InputState,
+    timers: Timers,
+    pub prev_win_size: UVec2,
+    pub cursor_hidden: bool,
+
+    pub voxelpack: VoxelPack,
+    pub voxel_mats: Vec<Material>,
+
     pub settings: Settings,
     pub vertical_samples: u32,
 
-    pub player: Player,
-    pub world: World,
-
     pub game: GameState,
 }
-impl<'a> AppState<'a> {
-    pub fn new(
-        res_dir: String,
-        mut game: GameState,
-        win_size: UVec2,
-        gpu: Gpu<'a>,
-        max_nodes: u32,
-    ) -> Self {
-        if let Err(err) = game.join_server(SocketAddr::new("127.0.0.1".parse().unwrap(), 60000)) {
-            println!("Failed to connect to server: {err:?}");
-        }
-
-        let win_aspect = win_size.x as f32 / win_size.y as f32;
-
+impl AppState {
+    pub fn new(username: String, res_dir: String) -> Self {
         let voxelpack = load_voxelpack(&res_dir).unwrap();
         let voxel_mats = load_voxel_mats(&res_dir, &voxelpack).unwrap();
 
@@ -114,18 +110,15 @@ impl<'a> AppState<'a> {
         settings.sky_color = [0.81, 0.93, 1.0];
         settings.samples_per_pixel = 1;
 
-        let vertical_samples = 400;
+        let world = ClientWorld::new(ivec3(0, 0, 0), 400_000_000, 8);
+        let mut game = GameState::new(username, world);
 
-        let result_tex_size = uvec2(
-            (vertical_samples as f32 * win_aspect) as u32,
-            vertical_samples,
-        );
+        if let Err(err) = game.join_server(SocketAddr::new("127.0.0.1".parse().unwrap(), 60000)) {
+            println!("Failed to connect to server: {err:?}");
+        }
 
-        let world_size = 10;
-        let mut world = World::new(ivec3(0, 0, 0), 400_000_000, world_size);
-
-        // Get world date from server
-        for chunk in world.empty_chunks().collect::<Vec<_>>() {
+        // Get world data from server
+        for chunk in game.world.empty_chunks().collect::<Vec<_>>() {
             if chunk.pos().y > 2 {
                 continue;
             }
@@ -138,7 +131,7 @@ impl<'a> AppState<'a> {
 
             match game.recv_cmd() {
                 Ok(ClientCmd::GiveChunkData(_id, pos, nodes)) => {
-                    world.create_chunk(pos.as_uvec3(), &nodes);
+                    _ = game.world.create_chunk(pos.as_uvec3(), &nodes);
                 }
                 Ok(other) => {
                     println!("Error receiving chunk data from server: unexpected command received: {other:?}");
@@ -149,67 +142,35 @@ impl<'a> AppState<'a> {
             }
         }
 
-        // world.create_chunk(uvec3(0, 0, 0), &[Node::new(Voxel::EMPTY)]);
-        // let stone = voxelpack.by_name("stone").unwrap();
-        // let grass = voxelpack.by_name("grass").unwrap();
-        // let sand = voxelpack.by_name("sand").unwrap();
-
-        // _ = world.set_voxel(ivec3(0, 0, 0), stone);
-        // _ = world.set_voxel(ivec3(1, 0, 0), stone);
-        // _ = world.set_voxel(ivec3(0, 0, 1), stone);
-
-        // _ = world.set_voxel(ivec3(0, 1, 0), grass);
-        // _ = world.set_voxel(ivec3(0, 1, 1), sand);
-        // _ = world.set_voxel(ivec3(1, 1, 0), sand);
-
-        // println!(
-        //     "{:?}",
-        //     world.chunks.chunks[0].as_ref().unwrap().alloc.free_mem[0]
-        // );
-
-        let mut player = Player::new(vec3(1.0, 0.0, 1.0), 0.2);
-        player.flying = true;
-
-        let gpu_res = GpuResources::new(
-            &gpu,
-            gpu.surface_config.format,
-            result_tex_size,
-            max_nodes,
-            world_size,
-        );
-        gpu_res.buffers.nodes.write(&gpu, 0, world.nodes());
-        gpu_res
-            .buffers
-            .chunk_roots
-            .write(&gpu, 0, &world.chunk_roots());
-        gpu_res.buffers.settings.write(&gpu, &settings);
-        gpu_res
-            .buffers
-            .world_data
-            .write(&gpu, &WorldData::from(&world));
-        gpu_res
-            .buffers
-            .voxel_materials
-            .write_slice(&gpu, 0, &voxel_mats);
-
         Self {
-            gpu,
-            gpu_res,
-            settings,
-            vertical_samples,
-            game,
+            window: None,
+            gpu: None,
+            gpu_res: None,
+            egui: None,
+            input: InputState::default(),
+            timers: Timers::new(),
+            prev_win_size: UVec2::ZERO,
+            cursor_hidden: false,
 
-            player,
-            world,
+            voxelpack,
+            voxel_mats,
+
+            settings,
+            vertical_samples: 600,
+
+            game,
         }
     }
 
     fn on_resize(&mut self, new_size: UVec2) {
-        let prev_result_size = self.gpu_res.result_texture.size();
+        let gpu = self.gpu.as_mut().unwrap();
+        let gpu_res = self.gpu_res.as_mut().unwrap();
+
+        let prev_result_size = gpu_res.result_texture.size();
         let new_aspect = new_size.x as f32 / new_size.y as f32;
         let prev_aspect = prev_result_size.x as f32 / prev_result_size.y as f32;
 
-        self.gpu.resize(new_size);
+        gpu.resize(new_size);
 
         if prev_aspect != new_aspect {
             let result_size = uvec2(
@@ -217,69 +178,63 @@ impl<'a> AppState<'a> {
                 self.vertical_samples,
             );
 
-            self.gpu_res.resize_result_texture(&self.gpu, result_size);
+            gpu_res.resize_result_texture(gpu, result_size);
         }
     }
 
-    pub fn update(&mut self, input: &InputState) -> UpdateResult {
+    pub fn update(input: &InputState, game: &mut GameState) -> UpdateResult {
         let mut output = UpdateResult::default();
 
         // -------- Player Updates --------
         // Update player pos with input
         {
-            let prev_pos = self.player.pos;
-            let prev_rot = self.player.rot;
-            self.player.update(1.0, input, &self.world);
+            let in_ = PlayerInput {
+                cursor_movement: input.cursor_delta,
+                left: input.key_down(&Key::KeyA),
+                right: input.key_down(&Key::KeyD),
+                forward: input.key_down(&Key::KeyW),
+                backward: input.key_down(&Key::KeyS),
+                jump: input.key_down(&Key::Space),
+                crouch: input.key_down(&Key::ShiftLeft),
+                toggle_fly: input.key_pressed(&Key::KeyZ),
+            };
+            let player_updates = game.player.process_input(1.0, &in_);
+            game.player
+                .update(&player_updates, |bb| game.world.get_collisions_w(bb));
 
-            if prev_pos != self.player.pos || prev_rot != self.player.rot {
+            if player_updates.cam_moved || player_updates.frame_vel != Vec3::ZERO {
                 output.player_moved = true;
             }
         }
-
-        // Toggle settings with key presses
-        // if input.key_pressed(Key::N) {
-        // self.move_world ^= true;
-        // }
-        // if input.key_pressed(Key::M) {
-        // self.build_chunks ^= true;
-        // }
-
-        // Handle player interactions with input
-        // output.hit_result = self.check_player_interactions(input);
         output
     }
 
-    pub fn frame(
-        &mut self,
-        _window: &Window,
-        _update: &UpdateResult,
-        frame: &FrameInput,
-        _input: &InputState,
-        _egui: &mut Egui,
-    ) -> Result<(), wgpu::SurfaceError> {
-        if frame.win_size != frame.prev_win_size {
-            self.on_resize(frame.win_size);
-        }
+    pub fn frame(&mut self, _update: &UpdateResult) -> Result<(), wgpu::SurfaceError> {
+        let (gpu, gpu_res) = (self.gpu.as_ref().unwrap(), self.gpu_res.as_ref().unwrap());
 
-        let (output, view) = self.gpu.get_output()?;
-        let mut encoder = self.gpu.create_command_encoder();
-        let result_tex_size = self.gpu_res.result_texture.size();
+        let (output, view) = gpu.get_output()?;
+        let mut encoder = gpu.create_command_encoder();
+        let result_tex_size = gpu_res.result_texture.size();
 
         // Upload camera data to GPU
-        let buffers = &self.gpu_res.buffers;
-        let cam_data = self.player.create_cam_data(result_tex_size.as_vec2());
-        buffers.cam_data.write(&self.gpu, &cam_data);
+        let buffers = &gpu_res.buffers;
+
+        let cam_data = CamData::create(
+            self.game.player.rot,
+            self.game.player.eye_pos(),
+            self.game.player.fov,
+            result_tex_size.as_vec2(),
+        );
+        buffers.cam_data.write(&gpu, &cam_data);
 
         let workgroups = result_tex_size / 8;
-        self.gpu_res
-            .ray_tracer
-            .encode_pass(&mut encoder, workgroups);
+        gpu_res.ray_tracer.encode_pass(&mut encoder, workgroups);
 
-        self.gpu_res.screen_shader.encode_pass(&mut encoder, &view);
+        gpu_res.screen_shader.encode_pass(&mut encoder, &view);
 
         // // --- egui ---
         // {
-        //     let surface_size = self.gpu.surface_size();
+        //     let surface_size = gpu.surface_size();
         //     // --- create scene ---
         //     let egui_input = egui.winit.take_egui_input(window);
 
@@ -292,7 +247,7 @@ impl<'a> AppState<'a> {
         //                 (self.vertical_samples as f32 * aspect) as u32,
         //                 self.vertical_samples,
         //             );
-        //             self.gpu_res.resize_result_texture(&self.gpu, result_size);
+        //             gpu_res.resize_result_texture(&gpu, result_size);
         //         }
         //     });
         //     let egui_prims = egui.ctx.tessellate(egui_output.shapes);
@@ -304,11 +259,11 @@ impl<'a> AppState<'a> {
         //     // --- update buffers ---
         //     for (id, image) in egui_output.textures_delta.set {
         //         egui.wgpu
-        //             .update_texture(&self.gpu.device, &self.gpu.queue, id, &image);
+        //             .update_texture(&gpu.device, &gpu.queue, id, &image);
         //     }
         //     egui.wgpu.update_buffers(
-        //         &self.gpu.device,
-        //         &self.gpu.queue,
+        //         &gpu.device,
+        //         &gpu.queue,
         //         &mut encoder,
         //         &egui_prims,
         //         &screen_desc,
@@ -336,115 +291,176 @@ impl<'a> AppState<'a> {
         // };
 
         // --- submit passes ---
-        self.gpu.queue.submit(std::iter::once(encoder.finish()));
+        gpu.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
         Ok(())
     }
 }
 
-pub fn main() {
-    env_logger::init();
+impl ApplicationHandler for AppState {
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        self.window.as_ref().map(|win| win.request_redraw());
+    }
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.window.is_some() {
+            return;
+        }
+        let window = event_loop
+            .create_window(WindowAttributes::default().with_title("BlockWorld"))
+            .unwrap();
+        let window = Arc::new(window);
+        let gpu = pollster::block_on(Gpu::new(Arc::clone(&window)));
+        let win_size: UVec2 = <[u32; 2]>::from(window.inner_size()).into();
 
-    let res_dir = std::env::args()
-        .nth(1)
-        .expect("Missing cmdline arg for resource directory path");
+        let max_nodes = gpu.device.limits().max_storage_buffer_binding_size
+            / std::mem::size_of::<Node>() as u32;
 
-    let mut fps_temp: u32 = 0;
-    let mut fps: u32 = 0;
-    let mut last_second = SystemTime::now();
-    let mut last_frame = SystemTime::now();
-    let mut input = InputState::default();
-    let mut cursor_hidden = true;
+        let win_aspect = win_size.x as f32 / win_size.y as f32;
+        let result_tex_size = uvec2(
+            (self.vertical_samples as f32 * win_aspect) as u32,
+            self.vertical_samples,
+        );
 
-    let event_loop = EventLoop::new().unwrap();
+        let gpu_res = GpuResources::new(
+            &gpu,
+            gpu.surface_config.format,
+            result_tex_size,
+            max_nodes,
+            self.game.world.size_in_chunks(),
+        );
+        gpu_res
+            .buffers
+            .nodes
+            .write(&gpu, 0, self.game.world.nodes());
+        gpu_res
+            .buffers
+            .chunk_roots
+            .write(&gpu, 0, &self.game.world.chunk_roots());
+        gpu_res.buffers.settings.write(&gpu, &self.settings);
+        gpu_res
+            .buffers
+            .world_data
+            .write(&gpu, &WorldData::from(&self.game.world));
+        gpu_res
+            .buffers
+            .voxel_materials
+            .write_slice(&gpu, 0, &self.voxel_mats);
 
-    let window = event_loop
-        .create_window(WindowAttributes::default().with_title("BlockWorld"))
-        .unwrap();
+        hide_cursor(&window, true);
+        self.cursor_hidden = true;
 
-    let mut prev_win_size = win_size(&window);
-    hide_cursor(&window, true);
+        self.prev_win_size = win_size;
 
-    let gpu = pollster::block_on(Gpu::new(&window));
-    let limits = gpu.device.limits();
-    let max_supported_nodes =
-        limits.max_storage_buffer_binding_size / std::mem::size_of::<Node>() as u32;
-    let max_nodes = max_supported_nodes.min(u32::MAX);
+        self.egui = Some(Egui::new(&window, &gpu));
+        self.window = Some(window);
+        self.gpu = Some(gpu);
+        self.gpu_res = Some(gpu_res);
+    }
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device_id: DeviceId,
+        event: DeviceEvent,
+    ) {
+        self.input.on_device_event(&event);
+    }
+    fn window_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        _window_id: WindowId,
+        event: WindowEvent,
+    ) {
+        let window = self.window.as_ref().unwrap();
+        let egui = self.egui.as_mut().unwrap();
+        self.input.on_window_event(&event);
 
-    let mut egui = Egui::new(&window, &gpu);
-    let mut app_state = AppState::new(
-        res_dir,
-        GameState::new(String::from("GOOD_USERNAME")),
-        win_size(&window),
-        gpu,
-        max_nodes,
-    );
+        let mut resize = None;
 
-    _ = event_loop.run(|event, ael| match event {
-        e if input.update(&e) => {}
-        Event::WindowEvent { event, .. } => match event {
-            e if !cursor_hidden && egui.winit.on_window_event(&window, &e).consumed => {}
+        match event {
+            e if !self.cursor_hidden && egui.winit.on_window_event(window, &e).consumed => {}
             WindowEvent::CloseRequested => {
-                ael.exit();
-                _ = app_state.game.disconnect();
+                event_loop.exit();
+                _ = self.game.disconnect();
             }
             WindowEvent::RedrawRequested => {
                 let last_frame_age = SystemTime::now()
-                    .duration_since(last_frame)
+                    .duration_since(self.timers.last_frame)
                     .unwrap()
                     .as_millis();
 
                 if last_frame_age < (1000 / 60) {
                     return;
                 }
-                last_frame = SystemTime::now();
-                let win_size = win_size(&window);
+                self.timers.last_frame = SystemTime::now();
 
-                let update_rs = if cursor_hidden {
-                    app_state.update(&input)
+                let win_size = <[u32; 2]>::from(window.inner_size()).into();
+                if win_size != self.prev_win_size {
+                    resize = Some(win_size);
+                }
+                self.prev_win_size = win_size;
+
+                let update_rs = if self.cursor_hidden {
+                    Self::update(&self.input, &mut self.game)
                 } else {
                     UpdateResult::default()
                 };
 
-                if input.key_pressed(&Key::Character("t".into())) {
-                    cursor_hidden = !cursor_hidden;
-                    hide_cursor(&window, cursor_hidden);
+                if self.input.key_pressed(&Key::KeyT) {
+                    self.cursor_hidden = !self.cursor_hidden;
+                    hide_cursor(window, self.cursor_hidden);
                 }
-                if input.key_pressed(&Key::Character("f".into())) {
-                    toggle_fullscreen(&window);
+                if self.input.key_pressed(&Key::KeyF) {
+                    window.set_fullscreen(match window.fullscreen() {
+                        Some(_) => None,
+                        None => Some(Fullscreen::Borderless(None)),
+                    });
                 }
 
-                let frame_in = FrameInput {
-                    fps,
-                    prev_win_size,
-                    win_size,
-                };
-                prev_win_size = win_size;
-
-                let frame_rs = app_state.frame(&window, &update_rs, &frame_in, &input, &mut egui);
+                let frame_rs = self.frame(&update_rs);
                 match frame_rs {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Lost) => println!("SurfaceError: Lost"),
-                    Err(wgpu::SurfaceError::OutOfMemory) => ael.exit(),
+                    Err(wgpu::SurfaceError::OutOfMemory) => event_loop.exit(),
                     Err(e) => eprintln!("{e:?}"),
                 };
 
-                input.finish_frame();
+                self.input.finish_frame();
 
-                fps_temp += 1;
+                self.timers.frame_counter += 1;
                 let now = SystemTime::now();
-                if now.duration_since(last_second).unwrap().as_secs() >= 1 {
-                    last_second = now;
-                    fps = fps_temp;
-                    fps_temp = 0;
+                if now
+                    .duration_since(self.timers.last_second)
+                    .unwrap()
+                    .as_secs()
+                    >= 1
+                {
+                    self.timers.last_second = now;
+                    self.timers.fps = self.timers.frame_counter;
+                    self.timers.frame_counter = 0;
                 }
             }
             _ => {}
-        },
-        Event::AboutToWait => {
-            window.request_redraw();
         }
-        _ => {}
-    });
+        if let Some(size) = resize {
+            self.on_resize(size);
+        }
+    }
+}
+
+struct Timers {
+    frame_counter: u32,
+    fps: u32,
+    last_second: SystemTime,
+    last_frame: SystemTime,
+}
+impl Timers {
+    fn new() -> Self {
+        Self {
+            frame_counter: 0,
+            fps: 0,
+            last_second: SystemTime::now(),
+            last_frame: SystemTime::now(),
+        }
+    }
 }

@@ -1,6 +1,5 @@
 use anyhow::Context;
 use common::net::{ClientCmd, ConnError, ServerCmd};
-use glam::IVec3;
 use std::io::Read;
 use std::net::TcpStream;
 
