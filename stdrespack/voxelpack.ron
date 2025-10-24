@@ -22,5 +22,15 @@ VoxelData( name: "spruce_leaves", empty: false ),
 // Other
 VoxelData( name: "water", empty: false ),
 VoxelData( name: "mirror", empty: false ),
-VoxelData( name: "glass", empty: false )
+VoxelData( name: "glass", empty: false ),
+
+// Debug
+VoxelData( name: "dev_black", empty: false ),
+VoxelData( name: "dev_red", empty: false ),
+VoxelData( name: "dev_green", empty: false ),
+VoxelData( name: "dev_yellow", empty: false ),
+VoxelData( name: "dev_blue", empty: false ),
+VoxelData( name: "dev_magenta", empty: false ),
+VoxelData( name: "dev_cyan", empty: false ),
+VoxelData( name: "dev_white", empty: false ),
 ]

@@ -5,6 +5,30 @@ use glam::{uvec3, IVec3, UVec3};
 pub type NodeAddr = u32;
 pub type NodeRange = std::ops::Range<NodeAddr>;
 
+#[derive(Clone, Copy, Debug)]
+// Represents a tempurature somewhere in the world.
+// Can represent a tempurature between -100°C - 100°C (-148°F - 212°F).
+// Stores the tempurature as an i8, representing the value in Celcius.
+pub struct Temp(i8);
+impl Temp {
+    // Taked a percentage from the min to max temp.
+    pub fn new(value: f32) -> Self {
+        assert!(value >= 0.0 && value <= 1.0);
+        Self((value * 200.0 - 100.0) as i8)
+    }
+    pub fn from_value_c(value: i32) -> Self {
+        assert!(value >= -100 && value <= 100);
+        Self(value as i8)
+    }
+
+    pub fn as_value_c(self) -> f32 {
+        self.0 as f32
+    }
+    pub fn as_value_f(self) -> f32 {
+        self.0 as f32 * 1.8 + 32.0
+    }
+}
+
 #[derive(Debug)]
 pub enum SetVoxelErr {
     PosOutOfBounds,

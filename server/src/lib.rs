@@ -56,7 +56,7 @@ impl ServerState {
             address: addr,
             name,
             clients: vec![],
-            world: ServerWorld::new(),
+            world: ServerWorld::new(&res.world_presets[0]),
             new_clients: None,
             resources: res,
         }
@@ -114,7 +114,7 @@ impl ServerState {
                 ServerCmd::GetVoxelData(_id, _pos) => {}
                 ServerCmd::GetChunkData(id, pos) => {
                     if self.world.get_chunk(pos).is_none() {
-                        self.world.create_dev_chunk(pos, &self.resources);
+                        self.world.create_chunk(pos, &self.resources);
                     }
                     let chunk = self.world.get_chunk(pos).unwrap();
                     let nodes = Vec::from(chunk.used_nodes());

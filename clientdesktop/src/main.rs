@@ -110,7 +110,7 @@ impl AppState {
         settings.sky_color = [0.81, 0.93, 1.0];
         settings.samples_per_pixel = 1;
 
-        let world = ClientWorld::new(ivec3(0, 0, 0), 400_000_000, 8);
+        let world = ClientWorld::new(ivec3(0, 0, 0), 400_000_000, 5);
         let mut game = GameState::new(username, world);
 
         if let Err(err) = game.join_server(SocketAddr::new("127.0.0.1".parse().unwrap(), 60000)) {

@@ -6,10 +6,10 @@ pub mod world_preset;
 use crate::world::Voxel;
 pub use world_preset::{WorldFeature, WorldPreset};
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Clone, Copy, Debug)]
 pub enum Source {
     Value(f32),
-    Map { scale: f32, freq: f32 },
+    Map { scale: f32, freq: f32, offset: f32 },
 }
 
 pub type FeatureUid = usize;

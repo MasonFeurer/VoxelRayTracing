@@ -22,5 +22,15 @@
 // Other
 ("water", VoxelStyle( empty: false, color: (0.076, 0.563, 0.563) )),
 ("mirror", VoxelStyle( empty: false, color: (1.0, 1.0, 1.0) )),
-("glass", VoxelStyle( empty: false, color: (1.0, 1.0, 1.0) ))	
+("glass", VoxelStyle( empty: false, color: (1.0, 1.0, 1.0) )),
+
+// Debug
+("dev_black", VoxelStyle (empty: false, color: (0.0, 0.0, 0.0) )),
+("dev_red", VoxelStyle (empty: false, color: (1.0, 0.0, 0.0) )),
+("dev_green", VoxelStyle (empty: false, color: (0.0, 1.0, 0.0) )),
+("dev_yellow", VoxelStyle (empty: false, color: (1.0, 1.0, 0.0) )),
+("dev_blue", VoxelStyle (empty: false, color: (0.0, 0.0, 1.0) )),
+("dev_magenta", VoxelStyle (empty: false, color: (1.0, 0.0, 1.0) )),
+("dev_cyan", VoxelStyle (empty: false, color: (0.0, 1.0, 1.0) )),
+("dev_white", VoxelStyle (empty: false, color: (1.0, 1.0, 1.0) )),
 ]

@@ -1,83 +1,124 @@
 [
 WorldPresetSource (
+	name: "Standard World Gen",
+	
+	temp: Map ( scale: 1.0, freq: 0.02, offset: 0.0 ),
+	humidity: Map ( scale: 1.0, freq: 0.02, offset: 0.0 ),
+	weirdness: Map ( scale: 1.0, freq: 0.02, offset: 0.0 ),
+	
+	height: Map ( freq: 0.04, scale: 18.0, offset: 10.0 ),
+	sea_level: 80,
+	
+	biome_lookup: (
+		(0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 4, 4),
+		(0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 4, 4),
+		(0, 0, 0, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 3, 3, 4, 4),
+		(0, 0, 0, 5, 5, 5, 5, 5, 5, 7, 7, 7, 7, 7, 7, 7, 7, 7, 4, 4),
+	),
+	
+	earth: "stone",
+	biomes: [
+		BiomeSource (
+			name: "Arctic Desert",
+			layers: [
+				LayerSource ( voxel: "dev_white", depth: 5 ),
+				LayerSource ( voxel: "snow", depth: 5 ),
+				LayerSource ( voxel: "dirt", depth: 3 ),
+			],
+			surface_features: [],
+		),
+		BiomeSource (
+			name: "Snowy Desert",
+			layers: [
+				LayerSource ( voxel: "dev_cyan", depth: 5 ),
+				LayerSource ( voxel: "snow", depth: 1 ),
+				LayerSource ( voxel: "dirt", depth: 3 ),
+			],
+			surface_features: ["Evergreen"],
+		),
+		BiomeSource (
+			name: "Plains",
+			layers: [
+				LayerSource ( voxel: "dev_green", depth: 5 ),
+				LayerSource ( voxel: "grass", depth: 1 ),
+				LayerSource ( voxel: "dirt", depth: 4 ),
+			],
+			surface_features: ["Oak Tree"],
+		),
+		BiomeSource (
+			name: "Savannah",
+			layers: [
+				LayerSource ( voxel: "dev_red", depth: 5 ),
+				LayerSource ( voxel: "grass", depth: 1 ),
+				LayerSource ( voxel: "dirt", depth: 4 ),
+			],
+			surface_features: ["Acacia Tree"],
+		),
+		BiomeSource (
+			name: "Desert",
+			layers: [
+				LayerSource ( voxel: "dev_yellow", depth: 5 ),
+				LayerSource ( voxel: "sand", depth: 7 ),
+				LayerSource ( voxel: "sandstone", depth: 4),
+			],
+			surface_features: ["Cactus"],
+		),
+		BiomeSource (
+			name: "Icy Desert",
+			layers: [
+				LayerSource ( voxel: "dev_blue", depth: 5 ),
+				LayerSource ( voxel: "snow", depth: 2 ),
+				LayerSource ( voxel: "dirt", depth: 3 ),
+			],
+			surface_features: ["Evergreen", "Mega Evergreen", "Ice Spike", "Frozen Oak Tree"],
+		),
+		BiomeSource (
+			name: "Forest",
+			layers: [
+				LayerSource ( voxel: "dev_magenta", depth: 5 ),
+				LayerSource ( voxel: "grass", depth: 1 ),
+				LayerSource ( voxel: "dirt", depth: 5 ),
+			],
+			surface_features: ["Oak Tree", "Birch Tree"],
+		),
+		BiomeSource (
+			name: "Rain Forest",
+			layers: [
+				LayerSource ( voxel: "dev_black", depth: 5 ),
+				LayerSource ( voxel: "grass", depth: 2 ),
+				LayerSource ( voxel: "dirt", depth: 5 ),
+			],
+			surface_features: ["Jungle Tree"],
+		),
+	]
+),
+WorldPresetSource (
 	name: "Superflat",
 	
 	temp: Value(70.0),
 	humidity: Value(20.0),
+	weirdness: Value(0.0),
 	
 	height: Value(12),
 	sea_level: 10,
 	
+	biome_lookup: (
+		(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+	),
+	
 	earth: "stone",
 	biomes: [
 		BiomeSource (
 			name: "Default",
-			temp: (60.0, 90.0),
-			humidity: (0.3, 0.7),
-			weird: (0.0, 5.0),
-			
-			surface: [("dirt", 3), ("grass", 1)],
-			surface_features: ["Tree"],
+			layers: [
+				LayerSource ( voxel: "grass", depth: 1 ),
+				LayerSource ( voxel: "dirt", depth: 3 ),
+			],
+			surface_features: ["Oak Tree"],
 		)
 	]
 ),
-WorldPresetSource (
-	name: "Standard World Gen",
-	
-	temp: Map ( scale: 0.0, freq: 0.0 ),
-	humidity: Map ( scale: 0.0, freq: 0.0 ),
-	weirdness: Map ( scale: 0.0, freq: 0.0 ),
-	
-	height: Map ( scale: 0.0, freq: 0.0 ),
-	sea_level: 80,
-	
-	earth: "stone",
-	biomes: [
-		BiomeSource (
-			name: "Default",
-			temp: (60.0, 90.0),
-			humidity: (0.3, 0.7),
-			weird: (0.0, 5.0),
-			
-			surface: [("dirt", 3), ("grass", 1)],
-			surface_features: ["Tree"],
-		),
-		BiomeSource (
-			name: "Desert",
-			temp: (90.0, 120.0),
-			humidity: (0.0, 0.5),
-			weird: (0.0, 5.0),
-			
-			surface: [("sandstone", 3), ("sand", 7)],
-			surface_features: ["Cactus"],
-		),
-		BiomeSource (
-			name: "Jungle",
-			temp: (90.0, 120.0),
-			humidity: (0.5, 1.0),
-			weird: (0.0, 5.0),
-			
-			surface: [("dirt", 4), ("grass", 1)],
-			surface_features: ["JungleTree"],
-		),
-		BiomeSource (
-			name: "Cold Desert",
-			temp: (-30.0, 20.0),
-			humidity: (0.0, 1.0),
-			weird: (0.0, 5.0),
-			
-			surface: [("dirt", 3), ("snow", 1)],
-			surface_features: ["Evergreen"],
-		),
-		BiomeSource (
-			name: "Arctic Desert",
-			temp: (-120.0, -30.0),
-			humidity: (0.0, 1.0),
-			weird: (0.0, 1.0),
-			
-			surface: [("dirt", 3), ("snow", 5)],
-			surface_features: [],
-		),
-	]
-)
 ]

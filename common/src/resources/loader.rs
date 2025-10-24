@@ -24,24 +24,27 @@ impl std::fmt::Display for FeatureNotFoundError {
 impl std::error::Error for FeatureNotFoundError {}
 
 #[derive(Deserialize)]
+pub struct LayerSource {
+    voxel: String,
+    depth: u32,
+}
+
+#[derive(Deserialize)]
 pub struct BiomeSource {
     name: String,
-    temp: (f32, f32),
-    humidity: (f32, f32),
-    weird: (f32, f32),
-    surface: Vec<(String, u32)>,
+    layers: Vec<LayerSource>,
     surface_features: Vec<String>,
 }
 impl BiomeSource {
     pub fn construct(&self, voxels: &VoxelPack, features: &WorldFeatures) -> anyhow::Result<Biome> {
-        let mut surface = Vec::with_capacity(self.surface.len());
-        for idx in 0..self.surface.len() {
-            surface.push((
+        let mut layers = Vec::with_capacity(self.layers.len());
+        for idx in 0..self.layers.len() {
+            layers.extend(&vec![
                 voxels
-                    .by_name(&self.surface[idx].0)
-                    .ok_or(VoxelNotFoundError)?,
-                self.surface[idx].1,
-            ))
+                    .by_name(&self.layers[idx].voxel)
+                    .ok_or(VoxelNotFoundError)?;
+                self.layers[idx].depth as usize
+            ])
         }
         let mut surface_features = Vec::with_capacity(self.surface_features.len());
         for idx in 0..self.surface_features.len() {
@@ -54,10 +57,7 @@ impl BiomeSource {
 
         Ok(Biome {
             name: self.name.clone(),
-            temp: self.temp,
-            humidity: self.humidity,
-            weird: self.weird,
-            surface,
+            layers,
             surface_features,
         })
     }
@@ -70,9 +70,11 @@ pub struct WorldPresetSource {
     temp: Source,
     humidity: Source,
     height: Source,
+    weirdness: Source,
 
     sea_level: u32,
     earth: String,
+    biome_lookup: [[u32; 20]; 4],
     biomes: Vec<BiomeSource>,
 }
 impl WorldPresetSource {
@@ -89,9 +91,11 @@ impl WorldPresetSource {
             name: self.name.clone(),
             temp: self.temp.clone(),
             humidity: self.humidity.clone(),
+            weirdness: self.weirdness.clone(),
             height: self.height.clone(),
             sea_level: self.sea_level,
             earth: voxels.by_name(&self.earth).ok_or(VoxelNotFoundError)?,
+            biome_lookup: self.biome_lookup.clone(),
             biomes,
         })
     }

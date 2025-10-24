@@ -3,13 +3,10 @@ use serde::Deserialize;
 use super::{FeatureUid, Source};
 use crate::world::Voxel;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Biome {
     pub name: String,
-    pub temp: (f32, f32),
-    pub humidity: (f32, f32),
-    pub weird: (f32, f32),
-    pub surface: Vec<(Voxel, u32)>,
+    pub layers: Vec<Voxel>,
     pub surface_features: Vec<FeatureUid>,
 }
 
@@ -18,9 +15,12 @@ pub struct WorldPreset {
     pub name: String,
     pub temp: Source,
     pub humidity: Source,
+    pub weirdness: Source,
     pub height: Source,
     pub sea_level: u32,
     pub earth: Voxel,
+
+    pub biome_lookup: [[u32; 20]; 4],
     pub biomes: Vec<Biome>,
 }
 
