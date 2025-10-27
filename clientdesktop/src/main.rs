@@ -5,6 +5,7 @@ pub mod world;
 use crate::gpu::{egui::Egui, CamData, Gpu, GpuResources, Material, Settings, WorldData};
 use crate::input::{InputState, Key};
 
+use anyhow::Context;
 use client::common::math::HitResult;
 use client::common::net::{ClientCmd, ServerCmd};
 use client::common::resources::VoxelPack;
@@ -24,12 +25,27 @@ use winit::window::{CursorGrabMode, Fullscreen, Window, WindowAttributes, Window
 pub fn main() {
     env_logger::init();
 
-    let username = String::from("Baba");
-    let res_dir = std::env::args()
-        .nth(1)
-        .expect("Missing cmdline arg for resource directory path");
+    let usage = "blockworld (resource_folder) (username) (port)";
+    let mut args = std::env::args();
+    _ = args.next(); // First arg is always the path to this program.
 
-    let mut app_state = AppState::new(username, res_dir);
+    let res_folder = args.next().expect(&format!(
+        "Missing cmdline arg \"resource_folder\"\nUsage: {usage}"
+    ));
+
+    let username = args
+        .next()
+        .expect(&format!("Missing cmdline arg \"username\"\nUsage: {usage}"));
+
+    let port = args
+        .next()
+        .expect(&format!("Missing cmdline arg \"port\"\nUsage: {usage}"));
+    let port: u16 = port
+        .parse()
+        .with_context(|| "Invalid port address")
+        .expect(&format!("Invalid cmdline arg \"port\"\nUsage: {usage}"));
+
+    let mut app_state = AppState::new(username, res_folder, port);
 
     if let Err(err) = EventLoop::new().unwrap().run_app(&mut app_state) {
         eprintln!("Failed to run app: {err:?}");
@@ -100,7 +116,7 @@ pub struct AppState {
     pub game: GameState,
 }
 impl AppState {
-    pub fn new(username: String, res_dir: String) -> Self {
+    pub fn new(username: String, res_dir: String, port: u16) -> Self {
         let voxelpack = load_voxelpack(&res_dir).unwrap();
         let voxel_mats = load_voxel_mats(&res_dir, &voxelpack).unwrap();
 
@@ -113,7 +129,7 @@ impl AppState {
         let world = ClientWorld::new(ivec3(0, 0, 0), 400_000_000, 5);
         let mut game = GameState::new(username, world);
 
-        if let Err(err) = game.join_server(SocketAddr::new("127.0.0.1".parse().unwrap(), 60000)) {
+        if let Err(err) = game.join_server(SocketAddr::new("127.0.0.1".parse().unwrap(), port)) {
             println!("Failed to connect to server: {err:?}");
         }
 
