@@ -5,30 +5,6 @@ use glam::{uvec3, IVec3, UVec3};
 pub type NodeAddr = u32;
 pub type NodeRange = std::ops::Range<NodeAddr>;
 
-#[derive(Clone, Copy, Debug)]
-// Represents a tempurature somewhere in the world.
-// Can represent a tempurature between -100°C - 100°C (-148°F - 212°F).
-// Stores the tempurature as an i8, representing the value in Celcius.
-pub struct Temp(i8);
-impl Temp {
-    // Taked a percentage from the min to max temp.
-    pub fn new(value: f32) -> Self {
-        assert!(value >= 0.0 && value <= 1.0);
-        Self((value * 200.0 - 100.0) as i8)
-    }
-    pub fn from_value_c(value: i32) -> Self {
-        assert!(value >= -100 && value <= 100);
-        Self(value as i8)
-    }
-
-    pub fn as_value_c(self) -> f32 {
-        self.0 as f32
-    }
-    pub fn as_value_f(self) -> f32 {
-        self.0 as f32 * 1.8 + 32.0
-    }
-}
-
 #[derive(Debug)]
 pub enum SetVoxelErr {
     PosOutOfBounds,
@@ -183,6 +159,8 @@ pub struct NodeAlloc {
 
     // Spans of free memory where this allocator is able to place new nodes.
     pub free_mem: Vec<NodeRange>,
+
+    pub last_used_addr: NodeAddr,
 }
 impl NodeAlloc {
     pub fn new(used: NodeRange, free: NodeRange) -> Self {
@@ -190,34 +168,56 @@ impl NodeAlloc {
         Self {
             range: used.start..free.end,
             free_mem: vec![free],
+            last_used_addr: used.end - 1,
         }
     }
 
     pub fn next(&mut self) -> Option<NodeAddr> {
-        // Assuming theres only ever one free_mem NodeRange for now.
-        let free = &mut self.free_mem[0];
+        let mut earliest_free = 0;
+        let mut earliest_free_addr = u32::MAX;
 
-        if free.end - free.start < 8 {
+        for (idx, free) in self.free_mem.iter().enumerate() {
+            if free.end.saturating_sub(free.start) < 8 {
+                continue;
+            }
+            if free.start < earliest_free_addr {
+                earliest_free_addr = free.start;
+                earliest_free = idx;
+            }
+        }
+        if earliest_free_addr == u32::MAX {
             return None;
         }
-        let result_addr = free.start;
+
+        let free = &mut self.free_mem[earliest_free];
+        let result = free.start.clone();
         free.start += 8;
-        Some(result_addr)
+        if free.start + 1 == free.end {
+            _ = self.free_mem.remove(earliest_free);
+        }
+        self.last_used_addr = self.last_used_addr.max(result + 7);
+        Some(result)
     }
 
-    pub fn free(&mut self, _addr: NodeAddr) {
-        unimplemented!()
-    }
-
-    pub fn available_space(&self) -> u32 {
-        // Assuming theres only ever one free_mem NodeRange for now.
-        self.free_mem[0].end - self.free_mem[0].start
+    pub fn free(&mut self, addr: NodeAddr) {
+        let range = addr..addr + 8;
+        // check if this span can be extended from an existing free memory span
+        for free in &mut self.free_mem {
+            if free.start == range.end {
+                free.start -= 8;
+                return;
+            }
+            if free.end == addr {
+                free.end += 8;
+                return;
+            }
+        }
+        self.free_mem.push(range);
     }
 
     // The highest-most address that is being used to store data.
-    pub fn last_used_addr(&self) -> u32 {
-        // Assuming theres only ever one free_mem NodeRange for now.
-        self.free_mem[0].start - 1
+    pub fn last_used_addr(&self) -> NodeAddr {
+        self.last_used_addr
     }
 }
 
@@ -247,6 +247,40 @@ pub struct FoundNode {
     pub depth: u32,
     pub center: UVec3,
     pub size: u32,
+}
+
+pub fn node_parent(node_in: &FoundNode, svo: &SvoRef) -> Option<FoundNode> {
+    if node_in.depth == 0 {
+        return None;
+    }
+    let mut size = svo.size;
+    let mut idx = svo.root;
+    let mut center = UVec3::splat(size / 2);
+    let mut depth: u32 = 0;
+
+    loop {
+        let node = svo.nodes[idx as usize];
+        if !node.is_split() || depth == node_in.depth - 1 {
+            return Some(FoundNode {
+                idx,
+                depth,
+                center,
+                size,
+            });
+        }
+        size /= 2;
+
+        let gt = uvec3(
+            (node_in.center.x >= center.x) as u32,
+            (node_in.center.y >= center.y) as u32,
+            (node_in.center.z >= center.z) as u32,
+        );
+        let child_idx = (gt.x << 0) | (gt.y << 1) | (gt.z << 2);
+        idx = node.child_idx() + child_idx;
+        let child_dir = gt.as_ivec3() * 2 - IVec3::ONE;
+        center = (center.as_ivec3() + IVec3::splat(size as i32 / 2) * child_dir).as_uvec3();
+        depth += 1;
+    }
 }
 
 pub fn find_svo_node(svo: &SvoRef, pos: UVec3, max_depth: u32) -> FoundNode {
@@ -287,45 +321,64 @@ pub fn set_svo_voxel(
     target_depth: u32,
     alloc: &mut NodeAlloc,
 ) -> Result<(), SetVoxelErr> {
-    let FoundNode {
-        mut idx,
-        mut center,
-        mut size,
-        depth,
-        ..
-    } = find_svo_node(&svo.as_ref(), pos, target_depth);
-
-    let parent_voxel = svo.nodes[idx as usize].voxel();
+    let mut node = find_svo_node(&svo.as_ref(), pos, target_depth);
+    let parent_voxel = svo.nodes[node.idx as usize].voxel();
 
     // If depth is less than target_depth,
     // the SVO doesn't go to desired depth, so we must split until it does
-    for _ in depth..target_depth {
+    while node.depth < target_depth {
         let first_child = alloc.next().ok_or(SetVoxelErr::OutOfMemory)?;
         svo.nodes[first_child as usize..(first_child as usize + 8)]
             .copy_from_slice(&[Node::new(parent_voxel); 8]);
 
-        svo.nodes[idx as usize] = Node::new_split(first_child);
-        size /= 2;
+        svo.nodes[node.idx as usize] = Node::new_split(first_child);
+        node.size /= 2;
 
         let gt = uvec3(
-            (pos.x >= center.x) as u32,
-            (pos.y >= center.y) as u32,
-            (pos.z >= center.z) as u32,
+            (pos.x >= node.center.x) as u32,
+            (pos.y >= node.center.y) as u32,
+            (pos.z >= node.center.z) as u32,
         );
-        let child_idx = (gt.x << 0) | (gt.y << 1) | (gt.z << 2);
-        idx = first_child + child_idx;
+        node.idx = first_child + (gt.x << 0) | (gt.y << 1) | (gt.z << 2);
         let child_dir = gt.as_ivec3() * 2 - IVec3::ONE;
-        center = (center.as_ivec3() + IVec3::splat(size as i32 / 2) * child_dir).as_uvec3();
+        node.center = (node.center.as_ivec3() + (node.size as i32 / 2) * child_dir).as_uvec3();
+        node.depth += 1;
     }
     // SVO now goes to desired depth, so we can mutate the node now.
-    svo.nodes[idx as usize] = Node::new(voxel);
+    svo.nodes[node.idx as usize] = Node::new(voxel);
 
-    //
-    if depth == target_depth {
-        // TODO: if the SVO's depth was already at the target depth,
-        // we should check if this voxel is being set to the same value
-        // as the adjacent nodes, and if so, set the parent and remove
-        //  this node to simplify the SVO.
+    // if the SVO's depth was already at the target depth,
+    // we should check if this voxel is being set to the same value
+    // as the adjacent nodes, and if so, set the parent and remove
+    // this set of nodes to simplify the SVO.
+    loop {
+        if let Some(parent_node) = node_parent(&node, &svo.as_ref()) {
+            // println!("node {found_node:?} has parent {node:?}");
+            node = parent_node;
+        } else {
+            break;
+        }
+        let parent_idx = node.idx;
+        let idx = svo.nodes[parent_idx as usize].child_idx();
+        let child_nodes = &svo.nodes[idx as usize..idx as usize + 8];
+        if nodes_are_eq(&child_nodes) {
+            alloc.free(idx);
+            svo.nodes[parent_idx as usize] = Node::new(voxel);
+        } else {
+            break;
+        }
     }
     Ok(())
+}
+
+#[inline(always)]
+fn nodes_are_eq(n: &[Node]) -> bool {
+    assert_eq!(n.len(), 8);
+    n[0] == n[1]
+        && n[0] == n[2]
+        && n[0] == n[3]
+        && n[0] == n[4]
+        && n[0] == n[5]
+        && n[0] == n[6]
+        && n[0] == n[7]
 }
