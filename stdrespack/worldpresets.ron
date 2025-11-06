@@ -1,0 +1,116 @@
+[
+WorldPresetSource (
+	name: "Standard World Gen",
+	
+	temp: Map ( scale: 1.0, freq: 0.02, offset: 0.0 ),
+	humidity: Map ( scale: 1.0, freq: 0.02, offset: 0.0 ),
+	weirdness: Map ( scale: 1.0, freq: 0.02, offset: 0.0 ),
+	
+	height: Map ( freq: 0.04, scale: 18.0, offset: 40.0 ),
+	sea_level: 80,
+	
+	biome_lookup: (
+		(0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 4, 4),
+		(0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 4, 4),
+		(0, 0, 0, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 3, 3, 4, 4),
+		(0, 0, 0, 5, 5, 5, 5, 5, 5, 7, 7, 7, 7, 7, 7, 7, 7, 7, 4, 4),
+	),
+	
+	earth: "stone",
+	biomes: [
+		BiomeSource (
+			name: "Arctic Desert",
+			layers: [
+				LayerSource ( voxel: "snow", depth: 5 ),
+				LayerSource ( voxel: "dirt", depth: 3 ),
+			],
+			surface_features: [],
+		),
+		BiomeSource (
+			name: "Snowy Desert",
+			layers: [
+				LayerSource ( voxel: "snow", depth: 1 ),
+				LayerSource ( voxel: "dirt", depth: 3 ),
+			],
+			surface_features: ["Evergreen"],
+		),
+		BiomeSource (
+			name: "Plains",
+			layers: [
+				LayerSource ( voxel: "grass", depth: 1 ),
+				LayerSource ( voxel: "dirt", depth: 4 ),
+			],
+			surface_features: ["Oak Tree"],
+		),
+		BiomeSource (
+			name: "Savannah",
+			layers: [
+				LayerSource ( voxel: "grass", depth: 1 ),
+				LayerSource ( voxel: "dirt", depth: 4 ),
+			],
+			surface_features: ["Acacia Tree"],
+		),
+		BiomeSource (
+			name: "Desert",
+			layers: [
+				LayerSource ( voxel: "sand", depth: 7 ),
+				LayerSource ( voxel: "sandstone", depth: 4),
+			],
+			surface_features: ["Cactus"],
+		),
+		BiomeSource (
+			name: "Icy Desert",
+			layers: [
+				LayerSource ( voxel: "snow", depth: 2 ),
+				LayerSource ( voxel: "dirt", depth: 3 ),
+			],
+			surface_features: ["Evergreen", "Mega Evergreen", "Ice Spike", "Frozen Oak Tree"],
+		),
+		BiomeSource (
+			name: "Forest",
+			layers: [
+				LayerSource ( voxel: "grass", depth: 1 ),
+				LayerSource ( voxel: "dirt", depth: 5 ),
+			],
+			surface_features: ["Oak Tree", "Birch Tree"],
+		),
+		BiomeSource (
+			name: "Rain Forest",
+			layers: [
+				LayerSource ( voxel: "grass", depth: 2 ),
+				LayerSource ( voxel: "dirt", depth: 5 ),
+			],
+			surface_features: ["Jungle Tree"],
+		),
+	]
+),
+WorldPresetSource (
+	name: "Superflat",
+	
+	temp: Value(70.0),
+	humidity: Value(20.0),
+	weirdness: Value(0.0),
+	
+	height: Value(12),
+	sea_level: 10,
+	
+	biome_lookup: (
+		(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+	),
+	
+	earth: "stone",
+	biomes: [
+		BiomeSource (
+			name: "Default",
+			layers: [
+				LayerSource ( voxel: "grass", depth: 1 ),
+				LayerSource ( voxel: "dirt", depth: 3 ),
+			],
+			surface_features: ["Oak Tree"],
+		)
+	]
+),
+]

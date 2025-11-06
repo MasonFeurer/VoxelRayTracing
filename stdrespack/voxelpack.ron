@@ -1,0 +1,36 @@
+[
+VoxelData( name: "air", empty: true ),
+
+VoxelData( name: "stone", empty: false ),
+VoxelData( name: "sandstone", empty: false ),
+VoxelData( name: "dirt", empty: false ),
+VoxelData( name: "grass", empty: false ),
+VoxelData( name: "snow", empty: false ),
+VoxelData( name: "ice", empty: false ),
+VoxelData( name: "sand", empty: false ),
+VoxelData( name: "mud", empty: false ),
+VoxelData( name: "clay", empty: false ),
+
+// Wood
+VoxelData( name: "oak_wood", empty: false ),
+VoxelData( name: "birch_wood", empty: false ),
+VoxelData( name: "spruce_wood", empty: false ),
+VoxelData( name: "oak_leaves", empty: false ),
+VoxelData( name: "birch_leaves", empty: false ),
+VoxelData( name: "spruce_leaves", empty: false ),
+
+// Other
+VoxelData( name: "water", empty: false ),
+VoxelData( name: "mirror", empty: false ),
+VoxelData( name: "glass", empty: false ),
+
+// Debug
+VoxelData( name: "dev_black", empty: false ),
+VoxelData( name: "dev_red", empty: false ),
+VoxelData( name: "dev_green", empty: false ),
+VoxelData( name: "dev_yellow", empty: false ),
+VoxelData( name: "dev_blue", empty: false ),
+VoxelData( name: "dev_magenta", empty: false ),
+VoxelData( name: "dev_cyan", empty: false ),
+VoxelData( name: "dev_white", empty: false ),
+]

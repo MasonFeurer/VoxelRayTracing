@@ -1,0 +1,11 @@
+[
+WorldFeature( name: "Cactus", freq: 0.1 ),
+WorldFeature( name: "Oak Tree", freq: 0.1 ),
+WorldFeature( name: "Birch Tree", freq: 0.1 ),
+WorldFeature( name: "Acacia Tree", freq: 0.1 ),
+WorldFeature( name: "Evergreen", freq: 0.1 ),
+WorldFeature( name: "Jungle Tree", freq: 0.1 ),
+WorldFeature( name: "Mega Evergreen", freq: 0.1 ),
+WorldFeature( name: "Ice Spike", freq: 0.1 ),
+WorldFeature( name: "Frozen Oak Tree", freq: 0.1 ),
+]

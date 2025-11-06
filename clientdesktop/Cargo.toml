@@ -1,0 +1,20 @@
+[package]
+name = "blockworld-client-desktop"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+client = { package = "blockworld-client", path = "../client" }
+glam = "0.29"
+wgpu = "25"
+env_logger = "0.10"
+log = "0.4"
+pollster = "0.3"
+fastrand = "2.0"
+bincode = { version = "2.0.1", features = ["serde"] }
+anyhow = "1.0.98"
+winit = "0.30.11"
+
+egui = "0.32.0"
+egui-winit = "0.32.0"
+egui-wgpu = "0.32.0"

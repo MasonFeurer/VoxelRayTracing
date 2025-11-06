@@ -1,0 +1,36 @@
+[
+("air", VoxelStyle( empty: true, color: (0.0, 0.0, 0.0) )),
+
+("stone", VoxelStyle( empty: false, color: (0.4, 0.4, 0.4) )),
+("sandstone", VoxelStyle( empty: false, color: (0.7, 0.6, 0.25) )),
+("dirt", VoxelStyle( empty: false, color: (0.4, 0.2, 0.0) )),
+("grass", VoxelStyle( empty: false, color: (0.011, 0.58, 0.11) )),
+("snow", VoxelStyle( empty: false, color: (1.0, 1.0, 1.0) )),
+("ice", VoxelStyle( empty: false, color: (0.7, 0.94, 0.98) )),
+("sand", VoxelStyle( empty: false, color: (1.0, 0.9, 0.3) )),
+("mud", VoxelStyle( empty: false, color: (0.22, 0.13, 0.02) )),
+("clay", VoxelStyle( empty: false, color: (0.35, 0.30, 0.25) )),
+
+// Wood
+("birch_wood", VoxelStyle( empty: false, color: (1.0, 1.0, 1.0) )),
+("birch_leaves", VoxelStyle( empty: false, color: (0.43, 0.72, 0.00) )),
+("oak_wood", VoxelStyle( empty: false, color: (0.25, 0.10, 0.00) )),
+("oak_leaves", VoxelStyle( empty: false, color: (0.23, 0.52, 0.00) )),
+("spruce_wood", VoxelStyle( empty: false, color: (0.06, 0.04, 0.00) )),
+("spruce_leaves", VoxelStyle( empty: false, color: (0.04, 0.22, 0.00) )),
+
+// Other
+("water", VoxelStyle( empty: false, color: (0.076, 0.563, 0.563) )),
+("mirror", VoxelStyle( empty: false, color: (1.0, 1.0, 1.0) )),
+("glass", VoxelStyle( empty: false, color: (1.0, 1.0, 1.0) )),
+
+// Debug
+("dev_black", VoxelStyle (empty: false, color: (0.0, 0.0, 0.0) )),
+("dev_red", VoxelStyle (empty: false, color: (1.0, 0.0, 0.0) )),
+("dev_green", VoxelStyle (empty: false, color: (0.0, 1.0, 0.0) )),
+("dev_yellow", VoxelStyle (empty: false, color: (1.0, 1.0, 0.0) )),
+("dev_blue", VoxelStyle (empty: false, color: (0.0, 0.0, 1.0) )),
+("dev_magenta", VoxelStyle (empty: false, color: (1.0, 0.0, 1.0) )),
+("dev_cyan", VoxelStyle (empty: false, color: (0.0, 1.0, 1.0) )),
+("dev_white", VoxelStyle (empty: false, color: (1.0, 1.0, 1.0) )),
+]
