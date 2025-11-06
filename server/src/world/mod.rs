@@ -1,9 +1,7 @@
-use crate::Resources;
-
 use common::resources::world_preset::Biome;
 use common::resources::{Source, WorldPreset};
 pub use common::world::{noise::NoiseMap, *};
-use glam::{uvec3, vec2, IVec3, UVec3};
+use glam::{uvec3, vec2, IVec3};
 use std::collections::HashMap;
 
 enum WorldValue {
@@ -75,8 +73,8 @@ impl ServerWorld {
         self.chunks.get(&pos)
     }
 
-    pub fn create_chunk(&mut self, chunk_pos: IVec3, res: &Resources) {
-        let mut chunk = ServerChunk::with_capacity(16384 * 2 * 2);
+    pub fn create_chunk(&mut self, chunk_pos: IVec3) {
+        let mut chunk = ServerChunk::with_capacity((CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE) / 2);
         let alloc = &mut chunk.node_alloc;
         let mut svo = SvoMut {
             nodes: &mut chunk.nodes,

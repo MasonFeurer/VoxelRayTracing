@@ -96,7 +96,7 @@ impl ServerState {
             let Ok(Some(cmd)) = rs else {
                 continue;
             };
-            println!("Recieved cmd from client {:?} : {:?}", client.name, cmd);
+            // println!("Recieved cmd from client {:?} : {:?}", client.name, cmd);
             match cmd {
                 ServerCmd::Handshake { .. } => {
                     println!("Unexpectedly received Handshake cmd from {:?}", client.name);
@@ -114,7 +114,7 @@ impl ServerState {
                 ServerCmd::GetVoxelData(_id, _pos) => {}
                 ServerCmd::GetChunkData(id, pos) => {
                     if self.world.get_chunk(pos).is_none() {
-                        self.world.create_chunk(pos, &self.resources);
+                        self.world.create_chunk(pos);
                     }
                     let chunk = self.world.get_chunk(pos).unwrap();
                     let nodes = Vec::from(chunk.used_nodes());
@@ -124,6 +124,7 @@ impl ServerState {
                             "Error sending chunk data to client {:?} : {:?}",
                             client.name, err
                         );
+                        clients_disconnecting.push(idx);
                     }
                 }
                 ServerCmd::PlaceVoxelData(_v, _pos) => {}

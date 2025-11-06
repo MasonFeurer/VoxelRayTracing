@@ -9,7 +9,7 @@ use anyhow::Context;
 use client::common::math::HitResult;
 use client::common::net::{ClientCmd, ServerCmd};
 use client::common::resources::VoxelPack;
-use client::common::world::Node;
+use client::common::world::{chunk_to_world_pos, Node};
 use client::player::PlayerInput;
 use client::world::ClientWorld;
 use client::GameState;
@@ -114,6 +114,8 @@ pub struct AppState {
     pub vertical_samples: u32,
 
     pub game: GameState,
+
+    pub chunk_requests_sent: std::collections::HashSet<u32>,
 }
 impl AppState {
     pub fn new(username: String, res_dir: String, port: u16) -> Self {
@@ -126,36 +128,11 @@ impl AppState {
         settings.sky_color = [0.81, 0.93, 1.0];
         settings.samples_per_pixel = 1;
 
-        let world = ClientWorld::new(ivec3(0, 0, 0), 400_000_000, 5);
+        let world = ClientWorld::new(ivec3(0, 0, 0), 300_000_000, 15);
         let mut game = GameState::new(username, world);
 
         if let Err(err) = game.join_server(SocketAddr::new("127.0.0.1".parse().unwrap(), port)) {
-            println!("Failed to connect to server: {err:?}");
-        }
-
-        // Get world data from server
-        for chunk in game.world.empty_chunks().collect::<Vec<_>>() {
-            if chunk.pos().y > 2 {
-                continue;
-            }
-            if let Err(err) = game.send_cmd(ServerCmd::GetChunkData(
-                chunk.idx() as u32,
-                chunk.pos().as_ivec3(),
-            )) {
-                println!("Failed to send cmd to server: {err:?}");
-            }
-
-            match game.recv_cmd() {
-                Ok(ClientCmd::GiveChunkData(_id, pos, nodes)) => {
-                    _ = game.world.create_chunk(pos.as_uvec3(), &nodes);
-                }
-                Ok(other) => {
-                    println!("Error receiving chunk data from server: unexpected command received: {other:?}");
-                }
-                Err(err) => {
-                    println!("Error receiving chunk data from server: {err:?}");
-                }
-            }
+            panic!("Failed to connect to server: {err:?}");
         }
 
         Self {
@@ -172,9 +149,11 @@ impl AppState {
             voxel_mats,
 
             settings,
-            vertical_samples: 600,
+            vertical_samples: 800,
 
             game,
+
+            chunk_requests_sent: Default::default(),
         }
     }
 
@@ -195,6 +174,72 @@ impl AppState {
             );
 
             gpu_res.resize_result_texture(gpu, result_size);
+        }
+    }
+
+    pub fn update_world(&mut self) {
+        let mut chunks = self.game.world.empty_chunks().collect::<Vec<_>>();
+        chunks.sort_by(|a, b| {
+            let center = self.game.player.pos;
+            let a_dist = center.distance(chunk_to_world_pos(a.pos().as_ivec3()).as_vec3());
+            let b_dist = center.distance(chunk_to_world_pos(b.pos().as_ivec3()).as_vec3());
+            a_dist
+                .partial_cmp(&b_dist)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        for chunk in chunks {
+            if self.chunk_requests_sent.contains(&(chunk.idx() as u32)) {
+                continue;
+            }
+
+            if let Err(err) = self.game.send_cmd(ServerCmd::GetChunkData(
+                chunk.idx() as u32,
+                chunk.pos().as_ivec3(),
+            )) {
+                println!("Failed to send cmd to server: {err:?}");
+                continue;
+            }
+            self.chunk_requests_sent.insert(chunk.idx() as u32);
+        }
+
+        let mut update_roots = false;
+        let mut max_cmds: i32 = 200;
+        while max_cmds > 0 {
+            max_cmds -= 1;
+            match self.game.try_recv_cmd() {
+                Ok(Some(ClientCmd::GiveChunkData(idx, pos, nodes))) => {
+                    self.chunk_requests_sent.remove(&idx);
+
+                    match self.game.world.create_chunk(pos.as_uvec3(), &nodes) {
+                        Ok(addr) => {
+                            self.gpu_res.as_ref().unwrap().buffers.nodes.write(
+                                &self.gpu.as_ref().unwrap(),
+                                addr as u64,
+                                &nodes,
+                            );
+                            update_roots = true;
+                        }
+                        Err(err) => {
+                            eprintln!("Error creating chunk at {pos:?}: {err:?}");
+                        }
+                    };
+                }
+                Ok(Some(other)) => {
+                    println!("Received other cmd from server: {other:?}")
+                }
+                Ok(None) => (),
+                Err(err) => {
+                    eprintln!("Error getting commands from server: {err:?}");
+                    break;
+                }
+            }
+        }
+        if update_roots {
+            self.gpu_res.as_ref().unwrap().buffers.chunk_roots.write(
+                self.gpu.as_ref().unwrap(),
+                0,
+                &self.game.world.chunk_roots(),
+            );
         }
     }
 
@@ -387,14 +432,14 @@ impl ApplicationHandler for AppState {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
-        let window = self.window.as_ref().unwrap();
+        let window = Arc::clone(self.window.as_ref().unwrap());
         let egui = self.egui.as_mut().unwrap();
         self.input.on_window_event(&event);
 
         let mut resize = None;
 
         match event {
-            e if !self.cursor_hidden && egui.winit.on_window_event(window, &e).consumed => {}
+            e if !self.cursor_hidden && egui.winit.on_window_event(&window, &e).consumed => {}
             WindowEvent::CloseRequested => {
                 event_loop.exit();
                 _ = self.game.disconnect();
@@ -416,6 +461,7 @@ impl ApplicationHandler for AppState {
                 }
                 self.prev_win_size = win_size;
 
+                self.update_world();
                 let update_rs = if self.cursor_hidden {
                     Self::update(&self.input, &mut self.game)
                 } else {
@@ -424,7 +470,7 @@ impl ApplicationHandler for AppState {
 
                 if self.input.key_pressed(&Key::KeyT) {
                     self.cursor_hidden = !self.cursor_hidden;
-                    hide_cursor(window, self.cursor_hidden);
+                    hide_cursor(&window, self.cursor_hidden);
                 }
                 if self.input.key_pressed(&Key::KeyF) {
                     window.set_fullscreen(match window.fullscreen() {

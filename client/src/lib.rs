@@ -27,7 +27,7 @@ impl GameState {
     pub fn new(user_name: String, world: ClientWorld) -> Self {
         Self {
             user_name,
-            player: Player::new(vec3(0.5, 0.0, 0.5), 0.2),
+            player: Player::new(vec3(200.5, 80.0, 200.5), 0.3),
             server_conn: None,
             world,
         }
@@ -44,6 +44,12 @@ impl GameState {
     }
     pub fn recv_cmd(&mut self) -> anyhow::Result<ClientCmd> {
         self.server_conn.as_mut().ok_or(ConnError::NoServer)?.read()
+    }
+    pub fn try_recv_cmd(&mut self) -> anyhow::Result<Option<ClientCmd>> {
+        self.server_conn
+            .as_mut()
+            .ok_or(ConnError::NoServer)?
+            .try_read()
     }
 
     pub fn disconnect(&mut self) -> anyhow::Result<()> {
