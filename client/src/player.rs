@@ -43,7 +43,7 @@ impl Player {
         Self {
             fov: 70.0,
 
-            flying: true,
+            flying: false,
             on_ground: false,
 
             pos,

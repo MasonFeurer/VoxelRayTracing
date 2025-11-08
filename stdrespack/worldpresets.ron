@@ -2,11 +2,21 @@
 WorldPresetSource (
 	name: "Standard World Gen",
 	
-	temp: Map ( scale: 1.0, freq: 0.02, offset: 0.0 ),
-	humidity: Map ( scale: 1.0, freq: 0.02, offset: 0.0 ),
-	weirdness: Map ( scale: 1.0, freq: 0.02, offset: 0.0 ),
+	temp: Noise(Noise ( scale: 1.0, freq: 0.0004, offset: 0.0 )),
+	humidity: Noise(Noise ( scale: 1.0, freq: 0.0004, offset: 0.0 )),
+	weirdness: Noise(Noise ( scale: 1.0, freq: 0.001, offset: 0.0 )),
 	
-	height: Map ( freq: 0.04, scale: 18.0, offset: 40.0 ),
+	height: ComplexNoise (
+		freq: Noise ( freq: 0.0001, scale: 7.0, offset: 0.0 ),
+        scale: Noise ( freq: 0.003, scale: 40.0, offset: 0.0 ),
+        base: Noise ( freq: 0.003, scale: 2.5, offset: 1.0 ),
+        layers: [
+            // small terrain bumps
+        	Noise ( freq: 0.15, scale: 4.0, offset: 0.0 ),
+        	// big hills
+        	Noise ( freq: 0.001, scale: 60.0, offset: 0.0 ),
+        ]
+	),
 	sea_level: 80,
 	
 	biome_lookup: (

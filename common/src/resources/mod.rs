@@ -7,9 +7,22 @@ use crate::world::Voxel;
 pub use world_preset::{WorldFeature, WorldPreset};
 
 #[derive(Deserialize, Clone, Copy, Debug)]
+pub struct Noise {
+    pub scale: f32,
+    pub freq: f32,
+    pub offset: f32,
+}
+
+#[derive(Deserialize, Clone, Debug)]
 pub enum Source {
     Value(f32),
-    Map { scale: f32, freq: f32, offset: f32 },
+    Noise(Noise),
+    ComplexNoise {
+        freq: Noise,
+        scale: Noise,
+        base: Noise,
+        layers: Vec<Noise>,
+    },
 }
 
 pub type FeatureUid = usize;

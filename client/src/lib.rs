@@ -27,7 +27,7 @@ impl GameState {
     pub fn new(user_name: String, world: ClientWorld) -> Self {
         Self {
             user_name,
-            player: Player::new(vec3(200.5, 80.0, 200.5), 0.3),
+            player: Player::new(vec3(200.5, 200.0, 200.5), 0.3),
             server_conn: None,
             world,
         }

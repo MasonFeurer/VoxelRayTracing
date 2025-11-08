@@ -6,13 +6,33 @@ use std::collections::HashMap;
 
 enum WorldValue {
     Constant(f32),
-    Noise(NoiseMap, f32),
+    Noise(NoiseMap),
+    ComplexNoise {
+        freq: NoiseMap,
+        scale: NoiseMap,
+        base: NoiseMap,
+        layers: Vec<NoiseMap>,
+    },
 }
 impl WorldValue {
     fn eval(&self, x: f32, z: f32) -> f32 {
         match self {
             Self::Constant(v) => *v,
-            Self::Noise(n, offset) => n.get(vec2(x, z)) + offset,
+            Self::Noise(noise) => noise.get(vec2(x, z)),
+            Self::ComplexNoise {
+                freq,
+                scale,
+                base,
+                layers,
+            } => {
+                let freq = freq.get(vec2(x, z));
+                let scale = scale.get(vec2(x, z));
+                let mut height = base.get(vec2(x, z) * freq) * scale;
+                for layer in layers {
+                    height += layer.get(vec2(x, z));
+                }
+                height
+            }
         }
     }
 }
@@ -32,16 +52,28 @@ impl ServerWorld {
     pub fn new(preset: &WorldPreset) -> Self {
         noise::init_gradients();
 
-        let create_map = |src: Source| match src {
-            Source::Value(v) => WorldValue::Constant(v),
-            Source::Map {
+        let noise_from_src = |src: &common::resources::Noise| -> NoiseMap {
+            NoiseMap::new(
+                fastrand::i64(..),
+                src.freq as f64,
+                src.scale as f64,
+                src.offset as f64,
+            )
+        };
+        let create_map = |src: &Source| match src {
+            Source::Value(v) => WorldValue::Constant(*v),
+            Source::Noise(noise) => WorldValue::Noise(noise_from_src(noise)),
+            Source::ComplexNoise {
                 freq,
                 scale,
-                offset,
-            } => WorldValue::Noise(
-                NoiseMap::new(fastrand::i64(..), freq as f64, scale as f64),
-                offset,
-            ),
+                base,
+                layers,
+            } => WorldValue::ComplexNoise {
+                freq: noise_from_src(freq),
+                scale: noise_from_src(scale),
+                base: noise_from_src(base),
+                layers: layers.into_iter().map(noise_from_src).collect(),
+            },
         };
 
         Self {
@@ -50,10 +82,10 @@ impl ServerWorld {
             biomes: preset.biomes.clone(),
             biome_lookup: preset.biome_lookup.clone(),
             earth: preset.earth,
-            height_map: create_map(preset.height),
-            temp_map: create_map(preset.temp),
-            humidity_map: create_map(preset.humidity),
-            weird_map: create_map(preset.weirdness),
+            height_map: create_map(&preset.height),
+            temp_map: create_map(&preset.temp),
+            humidity_map: create_map(&preset.humidity),
+            weird_map: create_map(&preset.weirdness),
         }
     }
 
