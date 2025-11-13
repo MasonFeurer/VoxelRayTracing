@@ -74,7 +74,7 @@ pub fn hide_cursor(window: &Window, hide: bool) {
 
 pub fn load_voxelpack(res_folder: &str) -> anyhow::Result<VoxelPack> {
     let src = std::fs::read_to_string(format!("{res_folder}/voxelpack.ron"))?;
-    client::common::resources::loader::parse_voxelpack(&src)
+    Ok(client::common::resources::loader::parse_voxelpack(&src)?)
 }
 
 pub fn load_voxel_mats(res_folder: &str, voxels: &VoxelPack) -> anyhow::Result<Vec<Material>> {

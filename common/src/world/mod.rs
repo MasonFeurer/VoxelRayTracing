@@ -55,7 +55,7 @@ pub fn world_to_chunk_pos(pos: IVec3) -> IVec3 {
 
 #[inline(always)]
 pub fn world_to_inchunk_pos(pos: IVec3) -> UVec3 {
-    (pos - world_to_chunk_pos(pos)).as_uvec3()
+    (pos - (world_to_chunk_pos(pos) * CHUNK_SIZE as i32)).as_uvec3()
 }
 
 #[inline(always)]

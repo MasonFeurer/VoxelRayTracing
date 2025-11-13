@@ -1,10 +1,66 @@
 use serde::Deserialize;
+use std::collections::HashMap;
 
 pub mod loader;
-pub mod world_preset;
 
 use crate::world::Voxel;
-pub use world_preset::{WorldFeature, WorldPreset};
+
+#[derive(Clone, Debug)]
+pub struct WorldPreset {
+    pub name: String,
+    pub temp: Source,
+    pub humidity: Source,
+    pub weirdness: Source,
+    pub height: Source,
+    pub sea_level: u32,
+    pub earth: Voxel,
+
+    pub biome_lookup: [[u32; 20]; 4],
+    pub biomes: Vec<Biome>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Biome {
+    pub name: String,
+    pub layers: Vec<Voxel>,
+    pub features: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+pub enum Feature {
+    Tree {
+        trunk_voxel: Voxel,
+        branch_voxel: Voxel,
+        leaf_voxel: Voxel,
+
+        height: std::ops::Range<u32>,
+        leaf_decay: f32,
+        branch_count: std::ops::Range<u32>,
+        branch_height: std::ops::Range<f32>,
+        branch_len: std::ops::Range<u32>,
+    },
+    CanopyTree {
+        trunk_voxel: Voxel,
+        leaf_voxel: Voxel,
+        height: std::ops::Range<u32>,
+        slope_offset: std::ops::Range<u32>,
+    },
+    Evergreen {
+        trunk_voxel: Voxel,
+        leaf_voxel: Voxel,
+        height: std::ops::Range<u32>,
+        bottom_branch: std::ops::Range<u32>,
+    },
+    Cactus {
+        voxel: Voxel,
+        height: std::ops::Range<u32>,
+    },
+    Spike {
+        voxel: Voxel,
+        height: std::ops::Range<u32>,
+        width: std::ops::Range<u32>,
+    },
+}
 
 #[derive(Deserialize, Clone, Copy, Debug)]
 pub struct Noise {
@@ -25,17 +81,11 @@ pub enum Source {
     },
 }
 
-pub type FeatureUid = usize;
-
-#[derive(Debug)]
-pub struct WorldFeatures(Vec<WorldFeature>);
+#[derive(Debug, Clone)]
+pub struct WorldFeatures(HashMap<String, Feature>);
 impl WorldFeatures {
-    pub fn by_name(&self, name: &str) -> Option<FeatureUid> {
-        self.0
-            .iter()
-            .enumerate()
-            .find(|(_, d)| d.name.as_str() == name)
-            .map(|(idx, _)| idx)
+    pub fn get(&self, id: &str) -> Option<&Feature> {
+        self.0.get(id)
     }
 }
 
@@ -63,6 +113,7 @@ impl VoxelPack {
         self.voxels.get(v.as_data() as usize)
     }
 }
+
 #[derive(Deserialize, Debug)]
 pub struct VoxelData {
     pub name: String,
@@ -74,7 +125,7 @@ pub struct VoxelStylePack {
     pub styles: Vec<VoxelStyle>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Deserialize, Clone, Copy, Debug)]
 pub struct VoxelStyle {
     pub empty: bool,
     pub color: [f32; 3],

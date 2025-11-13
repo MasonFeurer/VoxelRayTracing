@@ -15,9 +15,12 @@ VoxelData( name: "clay", empty: false ),
 VoxelData( name: "oak_wood", empty: false ),
 VoxelData( name: "birch_wood", empty: false ),
 VoxelData( name: "spruce_wood", empty: false ),
+VoxelData( name: "jungle_wood", empty: false ),
 VoxelData( name: "oak_leaves", empty: false ),
 VoxelData( name: "birch_leaves", empty: false ),
 VoxelData( name: "spruce_leaves", empty: false ),
+VoxelData( name: "jungle_leaves", empty: false ),
+VoxelData( name: "cactus", empty: false ),
 
 // Other
 VoxelData( name: "water", empty: false ),

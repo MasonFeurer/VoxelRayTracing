@@ -56,9 +56,29 @@ impl ServerState {
             address: addr,
             name,
             clients: vec![],
-            world: ServerWorld::new(&res.world_presets[0]),
+            world: ServerWorld::new(&res.world_presets[0], res.world_features.clone()),
             new_clients: None,
             resources: res,
+        }
+    }
+
+    pub fn place_world_features(&mut self) {
+        for chunk_pos in self.world.place_features() {
+            let chunk = self.world.get_chunk(chunk_pos).unwrap();
+            let nodes = Vec::from(chunk.used_nodes());
+
+            for client in &mut self.clients {
+                if let Err(err) =
+                    client
+                        .conn
+                        .write(ClientCmd::GiveChunkData(0, chunk_pos, nodes.clone()))
+                {
+                    println!(
+                        "Error sending chunk data to client {:?} : {:?}",
+                        client.name, err
+                    );
+                }
+            }
         }
     }
 

@@ -1,11 +1,84 @@
-[
-WorldFeature( name: "Cactus", freq: 0.1 ),
-WorldFeature( name: "Oak Tree", freq: 0.1 ),
-WorldFeature( name: "Birch Tree", freq: 0.1 ),
-WorldFeature( name: "Acacia Tree", freq: 0.1 ),
-WorldFeature( name: "Evergreen", freq: 0.1 ),
-WorldFeature( name: "Jungle Tree", freq: 0.1 ),
-WorldFeature( name: "Mega Evergreen", freq: 0.1 ),
-WorldFeature( name: "Ice Spike", freq: 0.1 ),
-WorldFeature( name: "Frozen Oak Tree", freq: 0.1 ),
-]
+{
+"cactus" : Cactus (
+	voxel: "cactus",
+	height: (2, 8),
+),
+"oak_tree" : Tree (
+	trunk_voxel: "oak_wood",
+	branch_voxel: "oak_wood",
+	leaf_voxel: "oak_leaves",
+
+	height: (6, 19),
+	leaf_decay: 0.1,
+	branch_count: (1, 4),
+	branch_height: (0.5, 0.8),
+	branch_len: (3, 8),
+),
+"birch_tree" : Tree (
+	trunk_voxel: "birch_wood",
+	branch_voxel: "birch_wood",
+	leaf_voxel: "birch_leaves",
+
+	height: (9, 26),
+	leaf_decay: 0.1,
+	branch_count: (1, 4),
+	branch_height: (0.5, 0.8),
+	branch_len: (3, 8),
+),
+"acacia_tree" : CanopyTree (
+	trunk_voxel: "oak_wood",
+	leaf_voxel: "oak_leaves",
+	height: (7, 14),
+	slope_offset: (1, 6),
+),
+"evergreen" : Evergreen (
+	trunk_voxel: "spruce_wood",
+	leaf_voxel: "spruce_leaves",
+	height: (10, 18),
+    bottom_branch: (4, 8),
+),
+"jungle_tree" : Tree (
+	trunk_voxel: "jungle_wood",
+    branch_voxel: "jungle_wood",
+    leaf_voxel: "jungle_leaves",
+    
+	height: (4, 26),
+    leaf_decay: 0.1,
+    branch_count: (0, 3),
+    branch_height: (0.2, 0.8),
+    branch_len: (3, 6),
+),
+"mega_jungle_tree" : Tree (
+	trunk_voxel: "jungle_wood",
+    branch_voxel: "jungle_wood",
+    leaf_voxel: "jungle_leaves",
+    
+	height: (28, 54),
+    leaf_decay: 0.1,
+    branch_count: (6, 14),
+    branch_height: (0.1, 1.0),
+    branch_len: (3, 12),
+),
+"mega_evergreen" : Evergreen (
+	trunk_voxel: "spruce_wood",
+	leaf_voxel: "spruce_leaves",
+	height: (15, 28),
+    bottom_branch: (10, 22),
+),
+"ice_spike" : Spike (
+	voxel: "ice",
+	height: (9, 20),
+	width: (3, 8),
+),
+"frozen_oak_tree" : Tree (
+	trunk_voxel: "oak_wood",
+    branch_voxel: "oak_wood",
+    leaf_voxel: "ice",
+    
+	height: (6, 19),
+    leaf_decay: 0.6,
+    branch_count: (1, 4),
+    branch_height: (0.5, 0.8),
+    branch_len: (3, 8),
+),
+}

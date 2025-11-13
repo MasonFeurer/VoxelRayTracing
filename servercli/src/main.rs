@@ -35,6 +35,7 @@ fn main() -> anyhow::Result<()> {
     loop {
         server.process_clients();
         server.respond_to_clients();
+        server.place_world_features();
 
         match cli_cmds.try_recv() {
             Ok(CliCmd::GetPlayers) => {
