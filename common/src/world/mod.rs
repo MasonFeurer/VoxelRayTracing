@@ -1,6 +1,6 @@
 pub mod noise;
 
-use glam::{uvec3, IVec3, UVec3};
+use glam::{uvec3, IVec3, UVec3, Vec3};
 
 pub type NodeAddr = u32;
 pub type NodeRange = std::ops::Range<NodeAddr>;
@@ -245,7 +245,7 @@ impl<'a> SvoMut<'a> {
 pub struct FoundNode {
     pub idx: NodeAddr,
     pub depth: u32,
-    pub center: UVec3,
+    pub center: Vec3,
     pub size: u32,
 }
 
@@ -255,7 +255,7 @@ pub fn node_parent(node_in: &FoundNode, svo: &SvoRef) -> Option<FoundNode> {
     }
     let mut size = svo.size;
     let mut idx = svo.root;
-    let mut center = UVec3::splat(size / 2);
+    let mut center = Vec3::splat(size as f32 * 0.5);
     let mut depth: u32 = 0;
 
     loop {
@@ -278,7 +278,7 @@ pub fn node_parent(node_in: &FoundNode, svo: &SvoRef) -> Option<FoundNode> {
         let child_idx = (gt.x << 0) | (gt.y << 1) | (gt.z << 2);
         idx = node.child_idx() + child_idx;
         let child_dir = gt.as_ivec3() * 2 - IVec3::ONE;
-        center = (center.as_ivec3() + IVec3::splat(size as i32 / 2) * child_dir).as_uvec3();
+        center += Vec3::splat(size as f32) * 0.5 * child_dir.as_vec3();
         depth += 1;
     }
 }
@@ -286,7 +286,7 @@ pub fn node_parent(node_in: &FoundNode, svo: &SvoRef) -> Option<FoundNode> {
 pub fn find_svo_node(svo: &SvoRef, pos: UVec3, max_depth: u32) -> FoundNode {
     let mut size = svo.size;
     let mut idx = svo.root;
-    let mut center = UVec3::splat(size / 2);
+    let mut center = Vec3::splat(size as f32 * 0.5);
     let mut depth: u32 = 0;
 
     loop {
@@ -302,14 +302,14 @@ pub fn find_svo_node(svo: &SvoRef, pos: UVec3, max_depth: u32) -> FoundNode {
         size /= 2;
 
         let gt = uvec3(
-            (pos.x >= center.x) as u32,
-            (pos.y >= center.y) as u32,
-            (pos.z >= center.z) as u32,
+            (pos.x as f32 >= center.x) as u32,
+            (pos.y as f32 >= center.y) as u32,
+            (pos.z as f32 >= center.z) as u32,
         );
         let child_idx = (gt.x << 0) | (gt.y << 1) | (gt.z << 2);
         idx = node.child_idx() + child_idx;
         let child_dir = gt.as_ivec3() * 2 - IVec3::ONE;
-        center = (center.as_ivec3() + IVec3::splat(size as i32 / 2) * child_dir).as_uvec3();
+        center += Vec3::splat(size as f32) * 0.5 * child_dir.as_vec3();
         depth += 1;
     }
 }
@@ -335,13 +335,14 @@ pub fn set_svo_voxel(
         node.size /= 2;
 
         let gt = uvec3(
-            (pos.x >= node.center.x) as u32,
-            (pos.y >= node.center.y) as u32,
-            (pos.z >= node.center.z) as u32,
+            (pos.x as f32 >= node.center.x) as u32,
+            (pos.y as f32 >= node.center.y) as u32,
+            (pos.z as f32 >= node.center.z) as u32,
         );
-        node.idx = first_child + (gt.x << 0) | (gt.y << 1) | (gt.z << 2);
         let child_dir = gt.as_ivec3() * 2 - IVec3::ONE;
-        node.center = (node.center.as_ivec3() + (node.size as i32 / 2) * child_dir).as_uvec3();
+        let child_idx = (gt.x << 0) | (gt.y << 1) | (gt.z << 2);
+        node.idx = first_child + child_idx;
+        node.center += Vec3::splat(node.size as f32) * 0.5 * child_dir.as_vec3();
         node.depth += 1;
     }
     // SVO now goes to desired depth, so we can mutate the node now.

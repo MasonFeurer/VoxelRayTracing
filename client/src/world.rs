@@ -218,6 +218,16 @@ impl ClientWorld {
 
     pub fn create_chunk(&mut self, pos: UVec3, nodes: &[Node]) -> Result<NodeAddr, SetVoxelErr> {
         let chunk_ptr = self.chunk_at(pos).ok_or(SetVoxelErr::PosOutOfBounds)?;
+        if let Some(chunk) = self.chunks.get_chunk_mut(chunk_ptr) {
+            if chunk.range.len() >= nodes.len() {
+                let start = chunk.range.start as usize;
+                let end = start + nodes.len();
+
+                self.nodes[start..end].copy_from_slice(&nodes);
+                chunk.alloc = NodeAlloc::new(start as u32..end as u32, end as u32..chunk.range.end);
+                return Ok(start as u32);
+            }
+        }
 
         let chunk = self.chunk_alloc.alloc_chunk(nodes.len() as u32);
         let range = chunk.range.start..(chunk.range.start + nodes.len() as u32);

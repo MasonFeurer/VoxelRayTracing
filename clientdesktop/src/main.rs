@@ -287,6 +287,9 @@ impl AppState {
             result_tex_size.as_vec2(),
         );
         buffers.cam_data.write(&gpu, &cam_data);
+        buffers
+            .chunk_roots
+            .write(gpu, 0, &self.game.world.chunk_roots());
 
         let workgroups = result_tex_size / 8;
         gpu_res.ray_tracer.encode_pass(&mut encoder, workgroups);
