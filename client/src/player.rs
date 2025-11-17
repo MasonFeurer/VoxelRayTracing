@@ -37,6 +37,8 @@ pub struct Player {
     pub rot: Vec3,
     pub vel: Vec3,
     pub speed: f32,
+
+    pub height: f32,
 }
 impl Player {
     pub fn new(pos: Vec3, speed: f32) -> Self {
@@ -50,16 +52,17 @@ impl Player {
             rot: Vec3::ZERO,
             vel: Vec3::ZERO,
             speed,
+
+            height: 4.0,
         }
     }
 
     pub fn create_aabb(&self) -> Aabb {
-        const WIDTH: f32 = 0.6;
-        const HEIGHT: f32 = 2.0;
+        const WIDTH: f32 = 0.9;
 
         Aabb::new(
-            self.pos - vec3(WIDTH, 0.0, WIDTH) * 0.5,
-            self.pos + vec3(WIDTH * 0.3, HEIGHT, WIDTH * 0.5),
+            self.pos - vec3(WIDTH * 0.5, 0.0, WIDTH * 0.5),
+            self.pos + vec3(WIDTH * 0.5, self.height, WIDTH * 0.5),
         )
     }
 
@@ -152,7 +155,7 @@ impl Player {
     }
 
     pub fn eye_pos(&self) -> Vec3 {
-        self.pos + vec3(0.0, 2.0, 0.0)
+        self.pos + vec3(0.0, self.height, 0.0)
     }
 
     pub fn facing(&self) -> Vec3 {

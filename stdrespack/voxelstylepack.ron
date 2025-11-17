@@ -4,7 +4,7 @@
 ("stone", VoxelStyle( empty: false, color: (0.4, 0.4, 0.4) )),
 ("sandstone", VoxelStyle( empty: false, color: (0.7, 0.6, 0.25) )),
 ("dirt", VoxelStyle( empty: false, color: (0.4, 0.2, 0.0) )),
-("grass", VoxelStyle( empty: false, color: (0.011, 0.58, 0.11) )),
+("grass", VoxelStyle( empty: false, color: (0.18, 0.45, 0.09) )),
 ("snow", VoxelStyle( empty: false, color: (1.0, 1.0, 1.0) )),
 ("ice", VoxelStyle( empty: false, color: (0.7, 0.94, 0.98) )),
 ("sand", VoxelStyle( empty: false, color: (1.0, 0.9, 0.3) )),

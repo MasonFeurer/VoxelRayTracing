@@ -13,8 +13,10 @@ WorldPresetSource (
         layers: [
             // small terrain bumps
         	Noise ( freq: 0.15, scale: 4.0, offset: 0.0 ),
-        	// big hills
-        	Noise ( freq: 0.001, scale: 60.0, offset: 0.0 ),
+        	// hills
+        	Noise ( freq: 0.01, scale: 30.0, offset: 0.0 ),
+        	// mountains
+        	Noise ( freq: 0.001, scale: 70.0, offset: 0.0 ),
         ]
 	),
 	sea_level: 80,
@@ -30,6 +32,7 @@ WorldPresetSource (
 	biomes: [
 		BiomeSource (
 			name: "Arctic Desert",
+			vegetation: Noise ( freq: 1.0, scale: 0.0, offset: 0.0 ),
 			layers: [
 				LayerSource ( voxel: "snow", depth: 5 ),
 				LayerSource ( voxel: "dirt", depth: 3 ),
@@ -38,6 +41,7 @@ WorldPresetSource (
 		),
 		BiomeSource (
 			name: "Snowy Desert",
+			vegetation: Noise ( freq: 0.02, scale: 1.0, offset: 0.0 ),
 			layers: [
 				LayerSource ( voxel: "snow", depth: 1 ),
 				LayerSource ( voxel: "dirt", depth: 3 ),
@@ -46,6 +50,7 @@ WorldPresetSource (
 		),
 		BiomeSource (
 			name: "Plains",
+			vegetation: Noise ( freq: 0.004, scale: 1.0, offset: 0.0 ),
 			layers: [
 				LayerSource ( voxel: "grass", depth: 1 ),
 				LayerSource ( voxel: "dirt", depth: 4 ),
@@ -54,6 +59,7 @@ WorldPresetSource (
 		),
 		BiomeSource (
 			name: "Savannah",
+			vegetation: Noise ( freq: 0.004, scale: 1.0, offset: 0.0 ),
 			layers: [
 				LayerSource ( voxel: "grass", depth: 1 ),
 				LayerSource ( voxel: "dirt", depth: 4 ),
@@ -62,6 +68,7 @@ WorldPresetSource (
 		),
 		BiomeSource (
 			name: "Desert",
+			vegetation: Noise ( freq: 0.02, scale: 1.0, offset: 0.0 ),
 			layers: [
 				LayerSource ( voxel: "sand", depth: 7 ),
 				LayerSource ( voxel: "sandstone", depth: 4),
@@ -69,6 +76,7 @@ WorldPresetSource (
 			features: ["cactus"],
 		),
 		BiomeSource (
+			vegetation: Noise ( freq: 0.02, scale: 1.0, offset: 0.0 ),
 			name: "Icy Desert",
 			layers: [
 				LayerSource ( voxel: "snow", depth: 2 ),
@@ -78,6 +86,7 @@ WorldPresetSource (
 		),
 		BiomeSource (
 			name: "Forest",
+			vegetation: Noise ( freq: 0.04, scale: 1.0, offset: 0.0 ),
 			layers: [
 				LayerSource ( voxel: "grass", depth: 1 ),
 				LayerSource ( voxel: "dirt", depth: 5 ),
@@ -86,6 +95,7 @@ WorldPresetSource (
 		),
 		BiomeSource (
 			name: "Rain Forest",
+			vegetation: Noise ( freq: 0.04, scale: 1.0, offset: 0.0 ),
 			layers: [
 				LayerSource ( voxel: "grass", depth: 2 ),
 				LayerSource ( voxel: "dirt", depth: 5 ),
@@ -115,6 +125,7 @@ WorldPresetSource (
 	biomes: [
 		BiomeSource (
 			name: "Default",
+			vegetation: Noise ( freq: 0.004, scale: 1.0, offset: 0.0 ),
 			layers: [
 				LayerSource ( voxel: "grass", depth: 1 ),
 				LayerSource ( voxel: "dirt", depth: 3 ),

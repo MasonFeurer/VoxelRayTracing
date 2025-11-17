@@ -11,7 +11,7 @@ pub use common;
 
 use anyhow::Context;
 use common::net::{ClientCmd, ConnError, ServerCmd};
-use glam::vec3;
+use glam::{vec3, Vec3};
 use net::ServerConn;
 use player::Player;
 use std::net::SocketAddr;
@@ -24,10 +24,10 @@ pub struct GameState {
     pub world: ClientWorld,
 }
 impl GameState {
-    pub fn new(user_name: String, world: ClientWorld) -> Self {
+    pub fn new(user_name: String, world: ClientWorld, player_pos: Vec3) -> Self {
         Self {
             user_name,
-            player: Player::new(vec3(200.5, 200.0, 200.5), 0.3),
+            player: Player::new(player_pos, 0.2),
             server_conn: None,
             world,
         }

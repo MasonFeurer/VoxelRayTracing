@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 use super::{
-    Biome, Feature, Source, VoxelData, VoxelPack, VoxelStyle, VoxelStylePack, WorldFeatures,
+    Biome, Feature, Noise, Source, VoxelData, VoxelPack, VoxelStyle, VoxelStylePack, WorldFeatures,
     WorldPreset,
 };
 
@@ -165,6 +165,7 @@ impl FeatureSource {
 #[derive(Deserialize)]
 pub struct BiomeSource {
     name: String,
+    vegetation: Noise,
     layers: Vec<LayerSource>,
     features: Vec<String>,
 }
@@ -192,6 +193,7 @@ impl BiomeSource {
 
         Ok(Biome {
             name: self.name.clone(),
+            vegetation: self.vegetation.clone(),
             layers,
             features: self.features.clone(),
         })

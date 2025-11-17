@@ -8,6 +8,11 @@ use common::world::{
 use glam::{ivec3, uvec3, vec2, IVec3, Vec3};
 use std::collections::{HashMap, HashSet};
 
+fn randf32(range: std::ops::Range<f32>) -> f32 {
+    let size = range.end - range.start;
+    fastrand::f32() * size + range.start
+}
+
 enum WorldValue {
     Constant(f32),
     Noise(NoiseMap),
@@ -53,6 +58,7 @@ pub struct ServerWorld {
     humidity_map: WorldValue,
     weird_map: WorldValue,
 
+    vegetation: NoiseMap,
     feat_map: NoiseMap,
     unplaced_features: Vec<BuiltFeature>,
 }
@@ -94,7 +100,8 @@ impl ServerWorld {
             humidity_map: create_map(&preset.humidity),
             weird_map: create_map(&preset.weirdness),
 
-            feat_map: NoiseMap::new(fastrand::i64(..), 0.1, 1.0, 0.0),
+            vegetation: NoiseMap::new(fastrand::i64(..), 0.0, 0.0, 0.0),
+            feat_map: NoiseMap::new(fastrand::i64(..), 0.06, 1.0, 0.0),
             unplaced_features: Vec::new(),
         }
     }
@@ -262,11 +269,6 @@ impl BuiltFeature {
     }
 }
 
-fn randf32(range: std::ops::Range<f32>) -> f32 {
-    let size = range.end - range.start;
-    fastrand::f32() * size + range.start
-}
-
 impl ServerWorld {
     pub fn build_feature(surface: IVec3, feature: Feature) -> BuiltFeature {
         let mut out = BuiltFeature::new();
@@ -368,7 +370,7 @@ impl ServerWorld {
             'a: for z in 0..CHUNK_SIZE {
                 let world_pos = inchunk_to_world_pos(chunk_pos, uvec3(x, 0, z));
 
-                let biome = self.biome_at(world_pos.x, world_pos.z);
+                let biome = self.biome_at(world_pos.x, world_pos.z).clone();
                 let h = self.height_map.eval(world_pos.x as f32, world_pos.z as f32) as i32;
 
                 let start_y = world_pos.y;
@@ -405,6 +407,17 @@ impl ServerWorld {
                     if veg_adj >= veg {
                         continue 'a;
                     }
+                }
+                // Remove an increasing number of features as `self.vegetation` produces lower results.
+                self.vegetation.update(
+                    biome.vegetation.freq as f64,
+                    biome.vegetation.scale as f64,
+                    biome.vegetation.offset as f64,
+                );
+                if (fastrand::u32(0..=1000).max(50) as f32)
+                    >= self.vegetation.get(vec2(x as f32, z as f32)) * 1000.0
+                {
+                    continue 'a;
                 }
 
                 // ### this is a peak, so place a feature here

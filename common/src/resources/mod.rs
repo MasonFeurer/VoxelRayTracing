@@ -22,6 +22,7 @@ pub struct WorldPreset {
 #[derive(Clone, Debug)]
 pub struct Biome {
     pub name: String,
+    pub vegetation: Noise,
     pub layers: Vec<Voxel>,
     pub features: Vec<String>,
 }

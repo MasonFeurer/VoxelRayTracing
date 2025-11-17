@@ -13,7 +13,7 @@ use client::common::world::{chunk_to_world_pos, Node};
 use client::player::PlayerInput;
 use client::world::ClientWorld;
 use client::GameState;
-use glam::{ivec3, uvec2, UVec2, Vec3};
+use glam::{ivec3, uvec2, vec3, UVec2, Vec3};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -128,8 +128,8 @@ impl AppState {
         settings.sky_color = [0.81, 0.93, 1.0];
         settings.samples_per_pixel = 1;
 
-        let world = ClientWorld::new(ivec3(0, 0, 0), 300_000_000, 15);
-        let mut game = GameState::new(username, world);
+        let world = ClientWorld::new(ivec3(0, 0, 0), 300_000_000, 20);
+        let mut game = GameState::new(username, world, vec3(200.0, 200.0, 200.0));
 
         if let Err(err) = game.join_server(SocketAddr::new("127.0.0.1".parse().unwrap(), port)) {
             panic!("Failed to connect to server: {err:?}");
