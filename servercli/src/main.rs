@@ -2,11 +2,11 @@
 A native application that uses blockworld-server to create a server and provides an interface through the cmdline.
 */
 
+use anyhow::Context;
 use server::{Resources, ServerState};
 use std::sync::mpsc::{channel, Receiver};
 use std::{
     net::SocketAddr,
-    str::FromStr,
     sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
@@ -14,18 +14,27 @@ use std::{
 static SHUTDOWN_FLAG: AtomicBool = AtomicBool::new(false);
 
 fn main() -> anyhow::Result<()> {
-    let address = String::from("127.0.0.1:60000");
-    let resfolder = std::env::args().nth(1).unwrap();
+    let usage = "servercli (resource_folder) (port)";
+    let mut args = std::env::args();
+    _ = args.next(); // First arg is always the path to this program.
 
-    let resources = Resources::load(&resfolder)?;
+    let res_folder = args.next().expect(&format!(
+        "Missing cmdline arg \"resource_folder\"\nUsage: {usage}"
+    ));
+    let port = args
+        .next()
+        .expect(&format!("Missing cmdline arg \"port\"\nUsage: {usage}"));
+    let port: u16 = port
+        .parse()
+        .with_context(|| "Invalid port address")
+        .expect(&format!("Invalid cmdline arg \"port\"\nUsage: {usage}"));
+
+    let address = SocketAddr::new("127.0.0.1".parse().unwrap(), port);
+    let resources = Resources::load(&res_folder)?;
 
     println!("Using address {address:?}");
 
-    let mut server = ServerState::new(
-        SocketAddr::from_str(&address).unwrap(),
-        format!("My Dev Server"),
-        resources,
-    );
+    let mut server = ServerState::new(address, format!("My Dev Server"), resources);
     if let Err(err) = server.listen_for_clients(&SHUTDOWN_FLAG) {
         println!("Failed to listen for clients: {err:?}");
     }

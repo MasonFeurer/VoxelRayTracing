@@ -11,7 +11,7 @@ pub use common;
 
 use anyhow::Context;
 use common::net::{ClientCmd, ConnError, ServerCmd};
-use glam::{vec3, Vec3};
+use glam::Vec3;
 use net::ServerConn;
 use player::Player;
 use std::net::SocketAddr;

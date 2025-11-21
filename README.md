@@ -26,7 +26,7 @@ This engine will have 2 seperate programs you need to run: the server, and the c
 So in one terminal, run the server with:
 ```sh
 cd VoxelRayTracing/servercli
-cargo r -r ../stdrespack
+cargo r -r ../stdrespack 60000
 ```
 
 Then run the client in another terminal:
