@@ -98,6 +98,14 @@ impl ChunkGrid {
         }
     }
 
+    pub fn populated_count(&self) -> usize {
+        let mut r = 0;
+        for chunk in &self.chunks {
+            r += chunk.is_some() as usize;
+        }
+        r
+    }
+
     pub fn empty_chunks<'a>(&'a self) -> impl Iterator<Item = ChunkPtr> + 'a {
         self.chunks
             .iter()

@@ -20,6 +20,6 @@ impl Egui {
     }
 
     pub fn ctx(&self) -> &egui::Context {
-        todo!()
+        self.winit.egui_ctx()
     }
 }

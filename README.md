@@ -3,6 +3,7 @@ Another Voxel Ray Tracing Engine, one with a creative name.
 This project has the goal of creating an easy-to-use, "realistic" looking, smaller voxel engine.
 
 ![Screenshot](./pictures/ss-2025-11-17_17-56-06.png)
+![Screenshot](./pictures/ss-2025-11-21_16-02-29.png)
 
 # World
 The world is organized into a grid of chunks 32x32x32 voxels in volume.

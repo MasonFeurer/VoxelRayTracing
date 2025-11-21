@@ -47,6 +47,10 @@ pub fn main() {
 
     let mut app_state = AppState::new(username, res_folder, port);
 
+    println!("AWSD - Move player");
+    println!("F1 - Toggle overlay");
+    println!("Z - Toggle flying");
+
     if let Err(err) = EventLoop::new().unwrap().run_app(&mut app_state) {
         eprintln!("Failed to run app: {err:?}");
     }
@@ -58,8 +62,6 @@ pub struct UpdateResult {
     pub world_changed: bool,
     pub player_moved: bool,
 }
-
-pub static LOCAL_SERVER_ADDR: &str = "127.0.0.1:60000";
 
 pub fn hide_cursor(window: &Window, hide: bool) {
     window.set_cursor_visible(!hide);
@@ -114,6 +116,7 @@ pub struct AppState {
     pub vertical_samples: u32,
 
     pub game: GameState,
+    hide_overlay: bool,
 
     pub chunk_requests_sent: std::collections::HashSet<u32>,
 }
@@ -152,6 +155,7 @@ impl AppState {
             vertical_samples: 800,
 
             game,
+            hide_overlay: false,
 
             chunk_requests_sent: Default::default(),
         }
@@ -272,6 +276,8 @@ impl AppState {
 
     pub fn frame(&mut self, _update: &UpdateResult) -> Result<(), wgpu::SurfaceError> {
         let (gpu, gpu_res) = (self.gpu.as_ref().unwrap(), self.gpu_res.as_ref().unwrap());
+        let egui = self.egui.as_mut().unwrap();
+        let window = Arc::clone(self.window.as_ref().unwrap());
 
         let (output, view) = gpu.get_output()?;
         let mut encoder = gpu.create_command_encoder();
@@ -296,63 +302,83 @@ impl AppState {
 
         gpu_res.screen_shader.encode_pass(&mut encoder, &view);
 
-        // // --- egui ---
-        // {
-        //     let surface_size = gpu.surface_size();
-        //     // --- create scene ---
-        //     let egui_input = egui.winit.take_egui_input(window);
+        // --- egui ---
+        if !self.hide_overlay {
+            let surface_size = gpu.surface_size();
+            // --- create scene ---
+            let egui_input = egui.winit.take_egui_input(&window);
 
-        //     let egui_output = egui.ctx.run(egui_input, |ctx| {
-        //         let rs = crate::ui::draw_ui(self, frame, update, ctx);
-        //         if rs.clear_result {
-        //             let aspect = result_tex_size.x as f32 / result_tex_size.y as f32;
-        //             self.frame_count = 0;
-        //             let result_size = uvec2(
-        //                 (self.vertical_samples as f32 * aspect) as u32,
-        //                 self.vertical_samples,
-        //             );
-        //             gpu_res.resize_result_texture(&gpu, result_size);
-        //         }
-        //     });
-        //     let egui_prims = egui.ctx.tessellate(egui_output.shapes);
-        //     let screen_desc = egui_wgpu::renderer::ScreenDescriptor {
-        //         size_in_pixels: surface_size.into(),
-        //         pixels_per_point: egui_winit::native_pixels_per_point(window),
-        //     };
+            let egui_output = egui.ctx().run(egui_input, |ctx| {
+                egui::Area::new(egui::Id::new("area1"))
+                    .default_pos(egui::pos2(0.0, 0.0))
+                    .movable(true)
+                    .show(ctx, |ui| {
+                        ui.visuals_mut().override_text_color = Some(egui::Color32::WHITE);
 
-        //     // --- update buffers ---
-        //     for (id, image) in egui_output.textures_delta.set {
-        //         egui.wgpu
-        //             .update_texture(&gpu.device, &gpu.queue, id, &image);
-        //     }
-        //     egui.wgpu.update_buffers(
-        //         &gpu.device,
-        //         &gpu.queue,
-        //         &mut encoder,
-        //         &egui_prims,
-        //         &screen_desc,
-        //     );
+                        ui.painter().rect_filled(
+                            ui.max_rect(),
+                            egui::CornerRadius::same(5),
+                            egui::Color32::from_rgba_unmultiplied(0, 0, 0, 200),
+                        );
+                        ui.add_space(40.0);
+                        ui.separator();
+                        ui.heading(format!(
+                            "pos: {:.2} {:.2} {:.2}",
+                            self.game.player.pos.x, self.game.player.pos.y, self.game.player.pos.z
+                        ));
+                        ui.separator();
+                        ui.heading(format!("world size: {}", self.game.world.chunks.size));
+                        ui.heading(format!(
+                            "chunk count: {} ({})",
+                            self.game.world.chunks.chunk_count,
+                            self.game.world.chunks.populated_count(),
+                        ));
+                    });
+            });
+            let screen_desc = egui_wgpu::ScreenDescriptor {
+                size_in_pixels: surface_size.into(),
+                pixels_per_point: egui_winit::pixels_per_point(egui.ctx(), &window),
+            };
+            let egui_prims = egui
+                .ctx()
+                .tessellate(egui_output.shapes, screen_desc.pixels_per_point);
 
-        //     // --- render pass ---
-        //     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        //         label: Some("#egui_render_pass"),
-        //         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-        //             view: &view,
-        //             resolve_target: None,
-        //             ops: wgpu::Operations {
-        //                 load: wgpu::LoadOp::Load,
-        //                 store: true,
-        //             },
-        //         })],
-        //         depth_stencil_attachment: None,
-        //     });
-        //     egui.wgpu.render(&mut pass, &egui_prims, &screen_desc);
-        //     std::mem::drop(pass);
+            // --- update buffers ---
+            for (id, image) in egui_output.textures_delta.set {
+                egui.wgpu
+                    .update_texture(&gpu.device, &gpu.queue, id, &image);
+            }
+            egui.wgpu.update_buffers(
+                &gpu.device,
+                &gpu.queue,
+                &mut encoder,
+                &egui_prims,
+                &screen_desc,
+            );
 
-        //     for id in egui_output.textures_delta.free {
-        //         egui.wgpu.free_texture(&id);
-        //     }
-        // };
+            // --- render pass ---
+            let mut pass = encoder
+                .begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("#egui_render_pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    depth_stencil_attachment: None,
+                })
+                .forget_lifetime();
+            egui.wgpu.render(&mut pass, &egui_prims, &screen_desc);
+
+            for id in egui_output.textures_delta.free {
+                egui.wgpu.free_texture(&id);
+            }
+        };
 
         // --- submit passes ---
         gpu.queue.submit(std::iter::once(encoder.finish()));
@@ -463,6 +489,10 @@ impl ApplicationHandler for AppState {
                     resize = Some(win_size);
                 }
                 self.prev_win_size = win_size;
+
+                if self.input.key_pressed(&Key::F1) {
+                    self.hide_overlay = !self.hide_overlay;
+                }
 
                 self.update_world();
                 let update_rs = if self.cursor_hidden {
