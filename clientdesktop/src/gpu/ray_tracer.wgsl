@@ -175,6 +175,9 @@ fn ray_world(start_ray: Ray) -> HitResult {
     let imask: vec3<f32> = 1.0 - mask;
     
     var ray_pos = start_ray.origin;
+    if any(ray_pos - floor(ray_pos) < vec3(0.001)) {
+    	ray_pos += 0.001 * dir;
+    }
     
     let world_min = vec3(0.0);
     let world_max = world_min + f32(world_.size);
@@ -240,11 +243,19 @@ fn ray_world(start_ray: Ray) -> HitResult {
                 }
             }
         }
-
+        
         norm = vec3<f32>(f32(step == axis_dist.x), f32(step == axis_dist.y), f32(step == axis_dist.z)) * -sign(dir);
         
-        ray_pos += dir * (step + 0.001) * vec3<f32>(f32(step == axis_dist.x), f32(step == axis_dist.y), f32(step == axis_dist.z)) + 
-            dir * (step) * vec3<f32>(f32(step != axis_dist.x), f32(step != axis_dist.y), f32(step != axis_dist.z));
+        ray_pos += dir * (step + 0.001) * vec3<f32>(
+        	f32(step == axis_dist.x), 
+        	f32(step == axis_dist.y), 
+        	f32(step == axis_dist.z)
+        )
+        + dir * (step) * vec3<f32>(
+        	f32(step != axis_dist.x), 
+        	f32(step != axis_dist.y), 
+        	f32(step != axis_dist.z)
+        );
         
         if any(ray_pos < world_min) | any(ray_pos >= world_max) {
             return result;

@@ -4,7 +4,6 @@ use glam::{ivec3, uvec3, IVec3, UVec3};
 
 #[derive(Clone, Debug)]
 pub struct ChunkPtr {
-    grid_size: u32,
     cycle: u32,
     idx: usize,
     local_pos: UVec3,
@@ -12,7 +11,6 @@ pub struct ChunkPtr {
 impl ChunkPtr {
     fn new(grid_size: u32, cycle: u32, idx: usize) -> Self {
         Self {
-            grid_size,
             cycle,
             idx,
             local_pos: ChunkGrid::idx_to_local_pos(idx, grid_size),
@@ -296,8 +294,6 @@ impl ClientWorld {
 }
 impl ClientWorld {
     pub fn center_chunks(&mut self, anchor: IVec3) {
-        let chunk_size = IVec3::splat(CHUNK_SIZE as i32);
-
         let anchor_chunk = world_to_chunk_pos(anchor);
         let curr_min_chunk = self.min_chunk();
         let new_min_chunk = anchor_chunk - IVec3::splat(self.size as i32 / 2);
@@ -308,7 +304,6 @@ impl ClientWorld {
         self.min_chunk = new_min_chunk;
 
         let chunk_offset = new_min_chunk - curr_min_chunk;
-        println!("shifting chunks by {chunk_offset:?}");
         self.chunks.shift_chunks(chunk_offset)
     }
 

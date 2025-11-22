@@ -13,7 +13,7 @@ use client::common::world::{chunk_to_world_pos, Node};
 use client::player::PlayerInput;
 use client::world::ClientWorld;
 use client::GameState;
-use glam::{ivec3, uvec2, vec3, UVec2, Vec3};
+use glam::{ivec3, uvec2, UVec2, Vec3};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -300,6 +300,7 @@ impl AppState {
             result_tex_size.as_vec2(),
         );
         buffers.cam_data.write(&gpu, &cam_data);
+        gpu_res.buffers.settings.write(&gpu, &self.settings);
         buffers
             .chunk_roots
             .write(gpu, 0, &self.game.world.chunk_roots());
@@ -513,6 +514,9 @@ impl ApplicationHandler for AppState {
 
                 if self.input.key_pressed(&Key::F1) {
                     self.hide_overlay = !self.hide_overlay;
+                }
+                if self.input.key_pressed(&Key::F2) {
+                    self.settings.show_step_count = 1 - self.settings.show_step_count;
                 }
 
                 self.update_world();

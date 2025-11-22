@@ -34,9 +34,12 @@ impl LoaderErr {
         Self::new(ErrType::FeatureNotFound(String::from(name)))
     }
 
-    fn context(mut self, c: &str) -> Self {
+    pub fn context(mut self, c: &str) -> Self {
         self.context = Some(String::from(c));
         self
+    }
+    pub fn ty(&self) -> &ErrType {
+        &self.ty
     }
 }
 impl std::fmt::Display for LoaderErr {
