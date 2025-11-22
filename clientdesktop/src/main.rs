@@ -131,8 +131,9 @@ impl AppState {
         settings.sky_color = [0.81, 0.93, 1.0];
         settings.samples_per_pixel = 1;
 
-        let world = ClientWorld::new(ivec3(0, 0, 0), 300_000_000, 20);
-        let mut game = GameState::new(username, world, vec3(200.0, 200.0, 200.0));
+        let world = ClientWorld::new(ivec3(0, 0, 0), 100_000_000, 20);
+        let player_pos = world.min_voxel().as_vec3() + Vec3::splat(world.size() as f32) * 0.5;
+        let mut game = GameState::new(username, world, player_pos);
 
         if let Err(err) = game.join_server(SocketAddr::new("127.0.0.1".parse().unwrap(), port)) {
             panic!("Failed to connect to server: {err:?}");
@@ -182,11 +183,17 @@ impl AppState {
     }
 
     pub fn update_world(&mut self) {
+        self.game
+            .world
+            .center_chunks(self.game.player.pos.as_ivec3());
+
         let mut chunks = self.game.world.empty_chunks().collect::<Vec<_>>();
         chunks.sort_by(|a, b| {
             let center = self.game.player.pos;
-            let a_dist = center.distance(chunk_to_world_pos(a.pos().as_ivec3()).as_vec3());
-            let b_dist = center.distance(chunk_to_world_pos(b.pos().as_ivec3()).as_vec3());
+            let a_pos = a.local_pos().as_ivec3() + self.game.world.min_chunk();
+            let b_pos = b.local_pos().as_ivec3() + self.game.world.min_chunk();
+            let a_dist = center.distance(chunk_to_world_pos(a_pos).as_vec3());
+            let b_dist = center.distance(chunk_to_world_pos(b_pos).as_vec3());
             a_dist
                 .partial_cmp(&b_dist)
                 .unwrap_or(std::cmp::Ordering::Equal)
@@ -196,9 +203,11 @@ impl AppState {
                 continue;
             }
 
+            let global_chunk_pos = chunk.local_pos().as_ivec3() + self.game.world.min_chunk();
+
             if let Err(err) = self.game.send_cmd(ServerCmd::GetChunkData(
                 chunk.idx() as u32,
-                chunk.pos().as_ivec3(),
+                global_chunk_pos,
             )) {
                 println!("Failed to send cmd to server: {err:?}");
                 continue;
@@ -214,7 +223,7 @@ impl AppState {
                 Ok(Some(ClientCmd::GiveChunkData(idx, pos, nodes))) => {
                     self.chunk_requests_sent.remove(&idx);
 
-                    match self.game.world.create_chunk(pos.as_uvec3(), &nodes) {
+                    match self.game.world.create_chunk(pos, &nodes) {
                         Ok(addr) => {
                             self.gpu_res.as_ref().unwrap().buffers.nodes.write(
                                 &self.gpu.as_ref().unwrap(),
@@ -223,9 +232,7 @@ impl AppState {
                             );
                             update_roots = true;
                         }
-                        Err(err) => {
-                            eprintln!("Error creating chunk at {pos:?}: {err:?}");
-                        }
+                        Err(_err) => {}
                     };
                 }
                 Ok(Some(other)) => {
@@ -296,6 +303,10 @@ impl AppState {
         buffers
             .chunk_roots
             .write(gpu, 0, &self.game.world.chunk_roots());
+        gpu_res
+            .buffers
+            .world_data
+            .write(&gpu, &WorldData::from(&self.game.world));
 
         let workgroups = result_tex_size / 8;
         gpu_res.ray_tracer.encode_pass(&mut encoder, workgroups);
@@ -322,17 +333,27 @@ impl AppState {
                         );
                         ui.add_space(40.0);
                         ui.separator();
-                        ui.heading(format!(
-                            "pos: {:.2} {:.2} {:.2}",
-                            self.game.player.pos.x, self.game.player.pos.y, self.game.player.pos.z
-                        ));
+                        {
+                            ui.heading(format!("FPS: {}", self.timers.fps));
+                            ui.heading(format!(
+                                "pos: {:.2} {:.2} {:.2}",
+                                self.game.player.pos.x,
+                                self.game.player.pos.y,
+                                self.game.player.pos.z
+                            ));
+                        }
                         ui.separator();
-                        ui.heading(format!("world size: {}", self.game.world.chunks.size));
-                        ui.heading(format!(
-                            "chunk count: {} ({})",
-                            self.game.world.chunks.chunk_count,
-                            self.game.world.chunks.populated_count(),
-                        ));
+                        {
+                            let (free, capacity) = self.game.world.chunk_alloc_status();
+                            let used = ((capacity - free) as f32 / capacity as f32) * 100.0;
+                            ui.heading(format!("world size: {}", self.game.world.size_in_chunks()));
+                            ui.heading(format!(
+                                "chunk count: {} ({})",
+                                self.game.world.chunk_count(),
+                                self.game.world.populated_count(),
+                            ));
+                            ui.heading(&format!("memory: %{used:.0}"));
+                        }
                     });
             });
             let screen_desc = egui_wgpu::ScreenDescriptor {
