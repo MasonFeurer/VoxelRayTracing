@@ -3,7 +3,7 @@ WorldPresetSource (
 	name: "Standard World Gen",
 	
 	temp: Noise(Map ( scale: 1.0, freq: 0.0004, offset: 0.0 )),
-	humidity: Noise(Map ( scale: 1.0, freq: 0.0004, offset: 0.0 )),
+	humidity: Noise(Map ( scale: 1.0, freq: 0.001, offset: 0.0 )),
 	weirdness: Noise(Map ( scale: 1.0, freq: 0.001, offset: 0.0 )),
 	
 	height: ComplexNoise (
@@ -12,7 +12,7 @@ WorldPresetSource (
         base: Map ( freq: 0.003, scale: 2.5, offset: 1.0 ),
         layers: [
             // small terrain bumps
-        	Map ( freq: 0.15, scale: 4.0, offset: 0.0 ),
+        	Map ( freq: 0.12, scale: 4.0, offset: 0.0 ),
         	// hills
         	Map ( freq: 0.01, scale: 30.0, offset: 0.0 ),
         	// mountains
@@ -41,7 +41,7 @@ WorldPresetSource (
 		),
 		BiomeSource (
 			name: "Snowy Desert",
-			vegetation: Map ( freq: 0.02, scale: 1.0, offset: 0.0 ),
+			vegetation: Map ( freq: 0.02, scale: 0.1, offset: 0.0 ),
 			layers: [
 				LayerSource ( voxel: "snow", depth: 1 ),
 				LayerSource ( voxel: "dirt", depth: 3 ),
@@ -50,7 +50,7 @@ WorldPresetSource (
 		),
 		BiomeSource (
 			name: "Plains",
-			vegetation: Map ( freq: 0.004, scale: 1.0, offset: 0.0 ),
+			vegetation: Map ( freq: 0.02, scale: 0.04, offset: 0.0 ),
 			layers: [
 				LayerSource ( voxel: "grass", depth: 1 ),
 				LayerSource ( voxel: "dirt", depth: 4 ),
@@ -59,24 +59,24 @@ WorldPresetSource (
 		),
 		BiomeSource (
 			name: "Savannah",
-			vegetation: Map ( freq: 0.004, scale: 1.0, offset: 0.0 ),
+			vegetation: Map ( freq: 0.02, scale: 0.2, offset: 0.0 ),
 			layers: [
-				LayerSource ( voxel: "grass", depth: 1 ),
+				LayerSource ( voxel: "dry_grass", depth: 1 ),
 				LayerSource ( voxel: "dirt", depth: 4 ),
 			],
 			features: ["acacia_tree"],
 		),
 		BiomeSource (
 			name: "Desert",
-			vegetation: Map ( freq: 0.02, scale: 1.0, offset: 0.0 ),
+			vegetation: Map ( freq: 0.02, scale: 0.6, offset: 0.0 ),
 			layers: [
 				LayerSource ( voxel: "sand", depth: 7 ),
-				LayerSource ( voxel: "sandstone", depth: 4),
+				LayerSource ( voxel: "sandstone", depth: 5),
 			],
-			features: ["cactus"],
+			features: ["cactus", "cactus", "cactus", "dead_tree"],
 		),
 		BiomeSource (
-			vegetation: Map ( freq: 0.02, scale: 1.0, offset: 0.0 ),
+			vegetation: Map ( freq: 0.02, scale: 0.4, offset: 0.0 ),
 			name: "Icy Desert",
 			layers: [
 				LayerSource ( voxel: "snow", depth: 2 ),
@@ -86,7 +86,7 @@ WorldPresetSource (
 		),
 		BiomeSource (
 			name: "Forest",
-			vegetation: Map ( freq: 0.04, scale: 1.0, offset: 0.0 ),
+			vegetation: Map ( freq: 0.02, scale: 0.5, offset: 0.0 ),
 			layers: [
 				LayerSource ( voxel: "grass", depth: 1 ),
 				LayerSource ( voxel: "dirt", depth: 5 ),
@@ -95,12 +95,12 @@ WorldPresetSource (
 		),
 		BiomeSource (
 			name: "Rain Forest",
-			vegetation: Map ( freq: 0.04, scale: 1.0, offset: 0.0 ),
+			vegetation: Map ( freq: 0.02, scale: 1.0, offset: 0.0 ),
 			layers: [
-				LayerSource ( voxel: "grass", depth: 2 ),
+				LayerSource ( voxel: "moist_grass", depth: 2 ),
 				LayerSource ( voxel: "dirt", depth: 5 ),
 			],
-			features: ["jungle_tree"],
+			features: ["jungle_tree", "jungle_tree", "mega_jungle_tree", "stub_jungle_tree", "oak_tree"],
 		),
 	]
 ),

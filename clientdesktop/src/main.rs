@@ -195,8 +195,8 @@ impl AppState {
             let b_pos = b.local_pos().as_ivec3() + self.game.world.min_chunk();
             let a_dist = center.distance(chunk_to_world_pos(a_pos).as_vec3());
             let b_dist = center.distance(chunk_to_world_pos(b_pos).as_vec3());
-            a_dist
-                .partial_cmp(&b_dist)
+            b_dist
+                .partial_cmp(&a_dist)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         for chunk in chunks {
@@ -217,7 +217,7 @@ impl AppState {
         }
 
         let mut update_roots = false;
-        let mut max_cmds: i32 = 200;
+        let mut max_cmds: i32 = 1000;
         while max_cmds > 0 {
             max_cmds -= 1;
             match self.game.try_recv_cmd() {

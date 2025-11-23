@@ -2,8 +2,8 @@ use crate::world::ServerChunk;
 use common::math::rand_cardinal_dir;
 use common::resources::{Biome, Feature, Source, WorldFeatures, WorldPreset};
 use common::world::noise::{Map, MappedNoise, RawNoise};
-use common::world::{inchunk_to_world_pos, Voxel, CHUNK_SIZE};
-use glam::{ivec3, uvec3, vec2, IVec3, Vec3};
+use common::world::{inchunk_to_world_pos, Node, NodeAlloc, Svo, Voxel, CHUNK_DEPTH, CHUNK_SIZE};
+use glam::{ivec3, uvec3, vec2, IVec3, UVec3, Vec3};
 use std::collections::HashMap;
 
 fn randf32(range: std::ops::Range<f32>) -> f32 {
@@ -89,6 +89,8 @@ pub struct WorldGen {
     weird_map: ValueGen,
     vegetation: RawNoise,
     feat_map: MappedNoise,
+
+    chunk_nodes: Box<[Node]>,
 }
 impl WorldGen {
     pub fn new(preset: &WorldPreset, features: WorldFeatures, mut seed: i64) -> Self {
@@ -105,7 +107,10 @@ impl WorldGen {
             humidity_map: value_gen_from_src(&preset.humidity, &mut seed),
             weird_map: value_gen_from_src(&preset.weirdness, &mut seed),
             vegetation: RawNoise::new(transmute_seed(&mut seed)),
-            feat_map: MappedNoise::new(transmute_seed(&mut seed), Map::new(0.06, 1.0, 0.0)),
+            feat_map: MappedNoise::new(transmute_seed(&mut seed), Map::new(0.15, 1.0, 0.0)),
+
+            chunk_nodes: vec![Node::ZERO; (CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE) as usize]
+                .into_boxed_slice(),
         }
     }
 
@@ -122,11 +127,38 @@ impl WorldGen {
     }
 
     pub fn generate_chunk(
-        &self,
+        &mut self,
         chunk_pos: IVec3,
-        out_chunk: &mut ServerChunk,
         out_features: &mut Vec<BuiltFeature>,
-    ) {
+    ) -> ServerChunk {
+        let mut node_alloc = NodeAlloc::new(0..1, 1..self.chunk_nodes.len() as u32);
+
+        {
+            let min = inchunk_to_world_pos(chunk_pos, UVec3::ZERO).as_vec3();
+            let max = min + Vec3::splat(CHUNK_SIZE as f32);
+            let surface_samples = [
+                // sample the world surface at the 4 corners and the center of the chunk.
+                self.height_map.eval(min.x, min.z),
+                self.height_map.eval(max.x, min.z),
+                self.height_map.eval(min.x, max.z),
+                self.height_map.eval(max.x, max.z),
+                self.height_map.eval(
+                    min.x + CHUNK_SIZE as f32 * 0.5,
+                    min.z + CHUNK_SIZE as f32 * 0.5,
+                ),
+            ];
+            // get the min
+            let surface_min = surface_samples.into_iter().reduce(f32::min).unwrap();
+            // if the lowest surface value is above this chunk ceiling, we can assume most-if-not-all
+            // of this chunk will be composed of the `earth` voxel (`stone` in the default gen).
+            // Because of this assumption, we can change the chunk to be a single node consisting of the
+            // `earth` voxel. This saves the permormance cost of writing `earth` to most of the chunk
+            // starting from Air.
+            if surface_min > max.y {
+                self.chunk_nodes[0] = Node::new(self.earth);
+            }
+        }
+
         for x in 0..CHUNK_SIZE {
             'a: for z in 0..CHUNK_SIZE {
                 let world_pos = inchunk_to_world_pos(chunk_pos, uvec3(x, 0, z));
@@ -142,7 +174,13 @@ impl WorldGen {
 
                     let vox = *biome.layers.get(layer as usize).unwrap_or(&self.earth);
 
-                    _ = out_chunk.set_voxel(uvec3(x, y_in_chunk, z), vox);
+                    _ = Svo::new(0, CHUNK_SIZE).set_node(
+                        &mut self.chunk_nodes,
+                        uvec3(x, y_in_chunk, z),
+                        vox,
+                        CHUNK_DEPTH,
+                        &mut node_alloc,
+                    );
                 }
                 if (h - world_pos.y < 0) || (h - world_pos.y >= 32) {
                     continue;
@@ -169,7 +207,7 @@ impl WorldGen {
                     }
                 }
                 // Remove an increasing number of features as `self.vegetation` produces lower results.
-                if (fastrand::u32(0..=1000).max(50) as f32)
+                if (fastrand::u32(0..=1000) as f32)
                     >= self
                         .vegetation
                         .map_sample(vec2(x as f32, z as f32), &biome.vegetation)
@@ -187,6 +225,12 @@ impl WorldGen {
                 out_features.push(build_feature(ivec3(world_pos.x, h, world_pos.z), feature));
             }
         }
+        let used_voxels = node_alloc.last_used_addr() + 64;
+        let nodes = self.chunk_nodes[0..=used_voxels as usize].to_vec();
+        self.chunk_nodes.fill(Node::ZERO);
+        node_alloc.move_end(used_voxels);
+
+        ServerChunk { nodes, node_alloc }
     }
 }
 
@@ -250,11 +294,11 @@ impl BuiltFeature {
         }
     }
 
-    pub fn place_disc(&mut self, center: IVec3, r: u32, height: u32, v: Voxel) {
+    pub fn place_disc(&mut self, center: IVec3, r: f32, height: u32, v: Voxel) {
         let pos_center = center.as_vec3() + Vec3::splat(0.5);
         let min = center - ivec3(r as i32, 0, r as i32);
         let max = center + ivec3(r as i32, height as i32 - 1, r as i32);
-        let r_sq = r as f32 * r as f32;
+        let r_sq = r * r;
 
         for x in min.x..=max.x {
             for y in min.y..=max.y {
@@ -303,7 +347,7 @@ pub fn build_feature(surface: IVec3, feature: Feature) -> BuiltFeature {
                 let end = (start.as_vec3() + branch_dir * branch_len as f32).as_ivec3();
 
                 out.place_sphere(end, 3, leaf_voxel);
-                out.place_line(start, end, trunk_voxel);
+                out.place_line(start, end, branch_voxel);
             }
             out.place_line(surface, top, trunk_voxel);
         }
@@ -311,8 +355,30 @@ pub fn build_feature(surface: IVec3, feature: Feature) -> BuiltFeature {
             trunk_voxel,
             leaf_voxel,
             height,
-            slope_offset,
-        } => {}
+            slope_offset: _,
+        } => {
+            // TODO: add slant
+            let r = fastrand::u32(5..11) as f32 - 0.1;
+
+            let height = fastrand::u32(height);
+            let top = surface + ivec3(0, height as i32, 0);
+
+            out.place_line(surface, top, trunk_voxel);
+            out.place_disc(top, r, 1, leaf_voxel);
+
+            let branch_count = fastrand::u32(1..4);
+            for _ in 0..branch_count {
+                let branch_h = fastrand::u32(4..height);
+                let branch_len = fastrand::u32(3..6);
+
+                let branch_dir = common::math::rand_hem_dir(Vec3::Y);
+                let start = ivec3(surface.x, surface.y + branch_h as i32, surface.z);
+                let end = (start.as_vec3() + branch_dir * branch_len as f32).as_ivec3();
+
+                out.place_line(start, end, trunk_voxel);
+                out.place_disc(end, 4.0, 1, leaf_voxel);
+            }
+        }
         Feature::Evergreen {
             trunk_voxel,
             leaf_voxel,
@@ -326,7 +392,7 @@ pub fn build_feature(surface: IVec3, feature: Feature) -> BuiltFeature {
             let mut r: i32 = 1;
             while y > offset {
                 let c = surface + IVec3::Y * y;
-                out.place_disc(c, r as u32, 1, leaf_voxel);
+                out.place_disc(c, r as f32 - 0.1, 1, leaf_voxel);
                 r += 1;
                 y -= 2;
             }
@@ -354,7 +420,15 @@ pub fn build_feature(surface: IVec3, feature: Feature) -> BuiltFeature {
             voxel,
             height,
             width,
-        } => {}
+        } => {
+            let height = fastrand::u32(height) as i32;
+            let width = fastrand::u32(width) as u32;
+            for y in 0..height {
+                let delta = 1.0 - (y as f32 / height as f32);
+                let w = (delta * width as f32).floor() as u32;
+                out.place_disc(surface + IVec3::Y * y, (w as f32 * 0.5) - 0.1, 1, voxel);
+            }
+        }
     }
     out
 }

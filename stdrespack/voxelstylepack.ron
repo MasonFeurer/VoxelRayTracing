@@ -5,8 +5,10 @@
 ("sandstone", VoxelStyle( empty: false, color: (0.7, 0.6, 0.25) )),
 ("dirt", VoxelStyle( empty: false, color: (0.4, 0.2, 0.0) )),
 ("grass", VoxelStyle( empty: false, color: (0.18, 0.45, 0.09) )),
+("dry_grass", VoxelStyle( empty: false, color: (0.26, 0.46, 0.08) )),
+("moist_grass", VoxelStyle( empty: false, color: (0.14, 0.42, 0.04) )),
 ("snow", VoxelStyle( empty: false, color: (1.0, 1.0, 1.0) )),
-("ice", VoxelStyle( empty: false, color: (0.7, 0.94, 0.98) )),
+("ice", VoxelStyle( empty: false, color: (0.47, 1.0, 0.94) )),
 ("sand", VoxelStyle( empty: false, color: (1.0, 0.9, 0.3) )),
 ("mud", VoxelStyle( empty: false, color: (0.22, 0.13, 0.02) )),
 ("clay", VoxelStyle( empty: false, color: (0.35, 0.30, 0.25) )),
@@ -19,8 +21,9 @@
 ("spruce_wood", VoxelStyle( empty: false, color: (0.06, 0.04, 0.00) )),
 ("spruce_leaves", VoxelStyle( empty: false, color: (0.04, 0.22, 0.00) )),
 ("jungle_wood", VoxelStyle( empty: false, color: (0.3, 0.26, 0.00) )),
-("jungle_leaves", VoxelStyle( empty: false, color: (0.12, 0.24, 0.00) )),
-("cactus", VoxelStyle( empty: false, color: (0.52, 0.18, 0.00) )),
+("jungle_leaves", VoxelStyle( empty: false, color: (0.10, 0.32, 0.00) )),
+("acacia_leaves", VoxelStyle( empty: false, color: (0.26, 0.55, 0.07) )),
+("cactus", VoxelStyle( empty: false, color: (0.18, 0.52, 0.00) )),
 
 // Other
 ("water", VoxelStyle( empty: false, color: (0.076, 0.563, 0.563) )),

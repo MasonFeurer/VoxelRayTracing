@@ -3,6 +3,17 @@
 	voxel: "cactus",
 	height: (2, 8),
 ),
+"dead_tree": Tree (
+	trunk_voxel: "oak_wood",
+	branch_voxel: "oak_wood",
+	leaf_voxel: "air",
+
+	height: (6, 19),
+	leaf_decay: 0.1,
+	branch_count: (1, 4),
+	branch_height: (0.5, 0.8),
+	branch_len: (3, 8),
+),
 "oak_tree" : Tree (
 	trunk_voxel: "oak_wood",
 	branch_voxel: "oak_wood",
@@ -27,8 +38,8 @@
 ),
 "acacia_tree" : CanopyTree (
 	trunk_voxel: "oak_wood",
-	leaf_voxel: "oak_leaves",
-	height: (7, 14),
+	leaf_voxel: "acacia_leaves",
+	height: (9, 16),
 	slope_offset: (1, 6),
 ),
 "evergreen" : Evergreen (
@@ -58,6 +69,17 @@
     branch_count: (6, 14),
     branch_height: (0.1, 1.0),
     branch_len: (3, 12),
+),
+"stub_jungle_tree" : Tree (
+	trunk_voxel: "jungle_wood",
+    branch_voxel: "jungle_wood",
+    leaf_voxel: "jungle_leaves",
+    
+	height: (0, 3),
+    leaf_decay: 0.1,
+    branch_count: (0, 0),
+    branch_height: (0.0, 0.0),
+    branch_len: (0, 0),
 ),
 "mega_evergreen" : Evergreen (
 	trunk_voxel: "spruce_wood",

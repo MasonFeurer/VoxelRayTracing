@@ -108,53 +108,61 @@ impl ServerState {
                 pos: client.pos,
             })
             .collect();
-        for (idx, client) in self.clients.iter_mut().enumerate() {
-            let rs = client.conn.try_read();
-            if let Err(err) = rs {
-                println!(
-                    "Error polling commands from client {:?} : {:?}",
-                    client.name, err
-                );
-                continue;
-            }
-            let Ok(Some(cmd)) = rs else {
-                continue;
-            };
-            // println!("Recieved cmd from client {:?} : {:?}", client.name, cmd);
-            match cmd {
-                ServerCmd::Handshake { .. } => {
-                    println!("Unexpectedly received Handshake cmd from {:?}", client.name);
-                }
 
-                ServerCmd::DisconnectNotice => clients_disconnecting.push(idx),
-                ServerCmd::GetPlayersList => {
-                    if let Err(err) = client.conn.write(ClientCmd::PlayersList(list.clone())) {
-                        println!(
-                            "Error sending client list to client {:?} : {:?}",
-                            client.name, err
-                        );
-                    }
+        let mut total_cmds = 0;
+        'f: for (idx, client) in self.clients.iter_mut().enumerate() {
+            while total_cmds < 1000 {
+                let rs = client.conn.try_read();
+                if let Err(err) = rs {
+                    println!(
+                        "Error polling commands from client {:?} : {:?}",
+                        client.name, err
+                    );
+                    continue 'f;
                 }
-                ServerCmd::GetVoxelData(_id, _pos) => {}
-                ServerCmd::GetChunkData(id, pos) => {
-                    if self.world.get_chunk(pos).is_none() {
-                        self.world.create_chunk(pos);
+                let Ok(Some(cmd)) = rs else {
+                    continue 'f;
+                };
+                // println!("Recieved cmd from client {:?} : {:?}", client.name, cmd);
+                match cmd {
+                    ServerCmd::Handshake { .. } => {
+                        println!("Unexpectedly received Handshake cmd from {:?}", client.name);
                     }
-                    let chunk = self.world.get_chunk(pos).unwrap();
-                    let nodes = Vec::from(chunk.used_nodes());
 
-                    if let Err(err) = client.conn.write(ClientCmd::GiveChunkData(id, pos, nodes)) {
-                        println!(
-                            "Error sending chunk data to client {:?} : {:?}",
-                            client.name, err
-                        );
-                        clients_disconnecting.push(idx);
+                    ServerCmd::DisconnectNotice => clients_disconnecting.push(idx),
+                    ServerCmd::GetPlayersList => {
+                        if let Err(err) = client.conn.write(ClientCmd::PlayersList(list.clone())) {
+                            println!(
+                                "Error sending client list to client {:?} : {:?}",
+                                client.name, err
+                            );
+                        }
                     }
+                    ServerCmd::GetVoxelData(_id, _pos) => {}
+                    ServerCmd::GetChunkData(id, pos) => {
+                        if self.world.get_chunk(pos).is_none() {
+                            self.world.create_chunk(pos);
+                        }
+                        let chunk = self.world.get_chunk(pos).unwrap();
+                        let nodes = Vec::from(chunk.used_nodes());
+
+                        if let Err(err) =
+                            client.conn.write(ClientCmd::GiveChunkData(id, pos, nodes))
+                        {
+                            println!(
+                                "Error sending chunk data to client {:?} : {:?}",
+                                client.name, err
+                            );
+                            clients_disconnecting.push(idx);
+                        }
+                        total_cmds += 1;
+                    }
+                    ServerCmd::PlaceVoxelData(_v, _pos) => {}
                 }
-                ServerCmd::PlaceVoxelData(_v, _pos) => {}
             }
         }
         for idx in clients_disconnecting.iter().rev() {
+            println!("Disconnected client {:?}", self.clients[*idx].name);
             self.clients.remove(*idx);
         }
     }

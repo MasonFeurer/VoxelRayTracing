@@ -62,6 +62,23 @@ fn main() -> anyhow::Result<()> {
             Ok(CliCmd::ShowWorldSummary) => {
                 println!("--- World ---");
                 println!("chunk count: {}", server.world.chunks.len());
+                let mut lowest_chunk_space = u32::MAX;
+                let mut used_space = 0;
+                let mut allocated_space = 0;
+                for (_pos, chunk) in &server.world.chunks {
+                    let space = chunk.node_alloc.range.end;
+                    allocated_space += space;
+                    used_space += chunk.node_alloc.total_used_mem();
+                    if space < lowest_chunk_space {
+                        lowest_chunk_space = space;
+                    }
+                }
+                println!("allocated space: {allocated_space}");
+                println!(
+                    "used space: {used_space} (%{})",
+                    (used_space as f32 / allocated_space as f32) * 100.0
+                );
+                println!("least allocated by chunk: {lowest_chunk_space}");
             }
             Ok(CliCmd::Stop) => break,
             Err(_) => {}

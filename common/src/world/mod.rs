@@ -152,6 +152,28 @@ impl NodeAlloc {
         }
     }
 
+    // `new_idx` should greater then `self.last_used_addr()`
+    pub fn move_end(&mut self, new_end: NodeAddr) {
+        let free = self
+            .free_mem
+            .iter_mut()
+            .find(|free| free.end == self.range.end)
+            .unwrap();
+        free.end = new_end;
+        self.range.end = new_end;
+    }
+
+    pub fn total_free_mem(&self) -> u32 {
+        let mut total_free = 0;
+        for free in &self.free_mem {
+            total_free += free.len();
+        }
+        total_free as u32
+    }
+    pub fn total_used_mem(&self) -> u32 {
+        self.range.end - self.total_free_mem()
+    }
+
     pub fn next(&mut self) -> Option<NodeAddr> {
         let mut earliest_free = 0;
         let mut earliest_free_addr = u32::MAX;
@@ -177,6 +199,25 @@ impl NodeAlloc {
         }
         self.last_used_addr = self.last_used_addr.max(result + 7);
         Some(result)
+    }
+
+    pub fn peek(&self) -> Option<NodeAddr> {
+        let mut earliest_free = 0;
+        let mut earliest_free_addr = u32::MAX;
+
+        for (idx, free) in self.free_mem.iter().enumerate() {
+            if free.end.saturating_sub(free.start) < 8 {
+                continue;
+            }
+            if free.start < earliest_free_addr {
+                earliest_free_addr = free.start;
+                earliest_free = idx;
+            }
+        }
+        if earliest_free_addr == u32::MAX {
+            return None;
+        }
+        Some(self.free_mem[earliest_free].start)
     }
 
     pub fn free(&mut self, addr: NodeAddr) {
@@ -293,6 +334,10 @@ impl Svo {
     ) -> Result<(), SetVoxelErr> {
         let mut node = self.find_node(nodes, pos, target_depth);
         let parent_voxel = nodes[node.idx as usize].voxel();
+        // No need to break-down the SVO because the highest node has the same voxel type.
+        if parent_voxel == voxel {
+            return Ok(());
+        }
 
         // If depth is less than target_depth,
         // the SVO doesn't go to desired depth, so we must split until it does

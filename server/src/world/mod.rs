@@ -24,9 +24,9 @@ impl ServerWorld {
     }
 
     pub fn create_chunk(&mut self, chunk_pos: IVec3) {
-        let mut chunk = ServerChunk::with_capacity((CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE) / 2);
-        self.gen
-            .generate_chunk(chunk_pos, &mut chunk, &mut self.unplaced_features);
+        let chunk = self
+            .gen
+            .generate_chunk(chunk_pos, &mut self.unplaced_features);
         self.chunks.insert(chunk_pos, chunk);
     }
 
@@ -115,6 +115,18 @@ impl ServerChunk {
     }
 
     pub fn set_voxel(&mut self, pos: UVec3, voxel: Voxel) -> Result<(), SetVoxelErr> {
+        match self.node_alloc.peek() {
+            None => {
+                self.nodes.extend(&[Node::ZERO; 128]);
+                self.node_alloc.move_end(self.nodes.len() as u32);
+            }
+            Some(addr) => {
+                if (self.nodes.len() as u32 - addr) < 128 {
+                    self.nodes.extend(&[Node::ZERO; 128]);
+                    self.node_alloc.move_end(self.nodes.len() as u32);
+                }
+            }
+        }
         Svo::new(0, CHUNK_SIZE).set_node(
             &mut self.nodes,
             pos,
