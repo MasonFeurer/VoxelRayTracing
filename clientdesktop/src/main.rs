@@ -2,7 +2,9 @@ pub mod gpu;
 pub mod input;
 pub mod world;
 
-use crate::gpu::{egui::Egui, CamData, Gpu, GpuResources, Material, Settings, WorldData};
+use crate::gpu::{
+    egui::Egui, CamData, Crosshair, Gpu, GpuResources, Material, Settings, WorldData,
+};
 use crate::input::{InputState, Key};
 
 use anyhow::Context;
@@ -116,6 +118,7 @@ pub struct AppState {
     pub vertical_samples: u32,
 
     pub game: GameState,
+    pub crosshair: Crosshair,
     hide_overlay: bool,
 
     pub chunk_requests_sent: std::collections::HashSet<u32>,
@@ -156,6 +159,7 @@ impl AppState {
             vertical_samples: 800,
 
             game,
+            crosshair: Default::default(),
             hide_overlay: false,
 
             chunk_requests_sent: Default::default(),
@@ -308,6 +312,11 @@ impl AppState {
             .buffers
             .world_data
             .write(&gpu, &WorldData::from(&self.game.world));
+        gpu_res
+            .buffers
+            .screen_size
+            .write(&gpu, &[result_tex_size.x as f32, result_tex_size.y as f32]);
+        gpu_res.buffers.crosshair.write(&gpu, &self.crosshair);
 
         let workgroups = result_tex_size / 8;
         gpu_res.ray_tracer.encode_pass(&mut encoder, workgroups);
@@ -333,6 +342,28 @@ impl AppState {
                             egui::Color32::from_rgba_unmultiplied(0, 0, 0, 200),
                         );
                         ui.add_space(40.0);
+                        ui.separator();
+                        {
+                            ui.collapsing("Crosshair", |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.heading("style: ");
+                                    if ui.button("off").clicked() {
+                                        self.crosshair.style = 0;
+                                    }
+                                    if ui.button("dot").clicked() {
+                                        self.crosshair.style = 1;
+                                    }
+                                    if ui.button("cross").clicked() {
+                                        self.crosshair.style = 2;
+                                    }
+                                });
+                                ui.add(
+                                    egui::Slider::new(&mut self.crosshair.size, 1.0..=30.0)
+                                        .text("size"),
+                                );
+                                ui.color_edit_button_rgba_unmultiplied(&mut self.crosshair.color);
+                            });
+                        }
                         ui.separator();
                         {
                             ui.heading(format!("FPS: {}", self.timers.fps));

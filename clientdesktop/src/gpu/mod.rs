@@ -23,6 +23,25 @@ pub struct Material {
     pub polish_scatter: f32,
 }
 
+#[derive(Clone)]
+#[repr(C)]
+pub struct Crosshair {
+    pub color: [f32; 4],
+    pub style: u32,
+    pub size: f32,
+    _padding: [u32; 2],
+}
+impl Default for Crosshair {
+    fn default() -> Self {
+        Self {
+            color: [1.0, 1.0, 1.0, 0.33],
+            style: 2,
+            size: 5.0,
+            _padding: [0; 2],
+        }
+    }
+}
+
 static RAY_TRACER_SRC: &str = include_str!("ray_tracer.wgsl");
 static PATH_TRACER_SRC: &str = include_str!("path_tracer.wgsl");
 static SCREEN_SHADER_SRC: &str = include_str!("screen_shader.wgsl");
@@ -125,7 +144,7 @@ pub struct ScreenShader {
     pub bind_group: BindGroup,
 }
 impl ScreenShader {
-    pub fn new(gpu: &Gpu, tex: &Texture, surface_format: TextureFormat) -> Self {
+    pub fn new(gpu: &Gpu, tex: &Texture, surface_format: TextureFormat, buffers: &Buffers) -> Self {
         let device = &gpu.device;
         let shader_module = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("screen-shader.shader-module"),
@@ -141,9 +160,11 @@ impl ScreenShader {
                     multisampled: false,
                 },
                 1 => (FRAGMENT) BindingType::Sampler(SamplerBindingType::Filtering),
+                2 => (FRAGMENT) uniform_binding_type(),
+                3 => (FRAGMENT) uniform_binding_type(),
             ),
         });
-        let bind_group = Self::create_bind_group(gpu, &bind_group_layout, tex);
+        let bind_group = Self::create_bind_group(gpu, &bind_group_layout, tex, buffers);
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("screen-shader.pipeline-layout"),
@@ -183,19 +204,26 @@ impl ScreenShader {
         }
     }
 
-    pub fn create_bind_group(gpu: &Gpu, layout: &BindGroupLayout, tex: &Texture) -> BindGroup {
+    pub fn create_bind_group(
+        gpu: &Gpu,
+        layout: &BindGroupLayout,
+        tex: &Texture,
+        buffers: &Buffers,
+    ) -> BindGroup {
         gpu.device.create_bind_group(&BindGroupDescriptor {
             label: Some("screen-shader.bind_group"),
             layout,
             entries: &bind_group_entries!(
                 0 => BindingResource::TextureView(&tex.view),
                 1 => BindingResource::Sampler(&tex.sampler),
+                2 => buffers.screen_size.0.as_entire_binding(),
+                3 => buffers.crosshair.0.as_entire_binding(),
             ),
         })
     }
 
-    pub fn recreate_bind_group(&mut self, gpu: &Gpu, tex: &Texture) {
-        self.bind_group = Self::create_bind_group(gpu, &self.bind_group_layout, tex);
+    pub fn recreate_bind_group(&mut self, gpu: &Gpu, tex: &Texture, buffers: &Buffers) {
+        self.bind_group = Self::create_bind_group(gpu, &self.bind_group_layout, tex, buffers);
     }
 
     pub fn encode_pass(&self, encoder: &mut CommandEncoder, view: &TextureView) {
@@ -313,6 +341,9 @@ pub struct Buffers {
     pub nodes: ArrayBuffer<Node>,
     pub voxel_materials: SimpleBuffer<[Material; 256]>,
     pub chunk_roots: ArrayBuffer<NodeAddr>,
+
+    pub screen_size: SimpleBuffer<[f32; 2]>,
+    pub crosshair: SimpleBuffer<Crosshair>,
 }
 impl Buffers {
     pub fn new(gpu: &Gpu, max_nodes: u32, world_size: u32) -> Self {
@@ -328,6 +359,9 @@ impl Buffers {
             nodes: ArrayBuffer::new(gpu, "nodes", COPY_DST | STORAGE, max_nodes),
             voxel_materials: SimpleBuffer::new(gpu, "voxel_mats", COPY_DST | STORAGE),
             chunk_roots: ArrayBuffer::new(gpu, "chunk_roots", COPY_DST | STORAGE, chunk_count),
+
+            screen_size: SimpleBuffer::new(gpu, "screen_size", COPY_DST | UNIFORM),
+            crosshair: SimpleBuffer::new(gpu, "crosshair", COPY_DST | UNIFORM),
         }
     }
 }
@@ -426,7 +460,7 @@ impl GpuResources {
             TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING,
         );
 
-        let screen_shader = ScreenShader::new(gpu, &result_texture, surface_format);
+        let screen_shader = ScreenShader::new(gpu, &result_texture, surface_format, &buffers);
         let ray_tracer = PixelShader::new(RAY_TRACER_SRC, gpu, &result_texture, &buffers);
         let path_tracer = PixelShader::new(PATH_TRACER_SRC, gpu, &result_texture, &buffers);
 
@@ -445,7 +479,7 @@ impl GpuResources {
             Texture::new(&gpu.device, new_size, RESULT_TEX_FORMAT, RESULT_TEX_USAGES);
 
         self.screen_shader
-            .recreate_bind_group(gpu, &self.result_texture);
+            .recreate_bind_group(gpu, &self.result_texture, &self.buffers);
 
         self.ray_tracer
             .recreate_bind_group(gpu, &self.result_texture, &self.buffers);
