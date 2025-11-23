@@ -53,27 +53,16 @@ impl Chunk {
         pos: UVec3,
         voxel: Voxel,
     ) -> Result<(), SetVoxelErr> {
+        // TODO: bounds checks
         let nodes = &mut nodes[self.range.start as usize..self.range.end as usize];
-        let mut svo = SvoMut {
-            nodes,
-            root: self.range.start,
-            size: CHUNK_SIZE,
-        };
-
-        set_svo_voxel(&mut svo, pos, voxel, CHUNK_DEPTH, &mut self.alloc)
+        Svo::new(0, CHUNK_SIZE).set_node(nodes, pos, voxel, CHUNK_DEPTH, &mut self.alloc)
     }
 
     pub fn get_voxel(&self, nodes: &[Node], pos: UVec3) -> Result<Voxel, SetVoxelErr> {
         // TODO: bounds checks
         let nodes = &nodes[self.range.start as usize..self.range.end as usize];
-        let svo = SvoRef {
-            nodes,
-            root: 0,
-            size: CHUNK_SIZE,
-        };
-
-        let idx = find_svo_node(&svo, pos, CHUNK_DEPTH).idx;
-        Ok(nodes[idx as usize].voxel())
+        let node = Svo::new(0, CHUNK_SIZE).find_node(nodes, pos, CHUNK_DEPTH);
+        Ok(nodes[node.idx as usize].voxel())
     }
 }
 

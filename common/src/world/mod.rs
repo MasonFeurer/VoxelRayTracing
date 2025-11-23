@@ -76,21 +76,6 @@ pub fn inchunk_to_world_pos(chunk: IVec3, pos: UVec3) -> IVec3 {
 ///
 /// ## 1yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
 /// Node splits into 8 nodes of half size at `y`.
-
-/// Note: By storing the nodes in a specific way, we can remove the need for a Node to point to it's child.
-///
-/// chunk: 16^3 = 4_096
-/// max nodes: 16^3+8^3+4^3+2^3+1^3 = 4_681
-/// bitlen: 13
-///
-/// chunk: 32^3 = 32_768
-/// max nodes: 32^3+16^3+8^3+4^3+2^3+1^3 = 37_449
-/// bitlen: 16
-///
-/// chunk: 64^3 = 262_144
-/// max nodes: 64^3+32^3+16^3+8^3+4^3+2^3+1^3 = 299_593
-/// bitlen: 19
-///
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Node(u32);
@@ -145,11 +130,6 @@ impl std::fmt::Debug for Node {
         };
         f.write_str(&format!("{e:?}"))
     }
-}
-
-pub trait NodeAllocImpl {
-    fn next(&mut self) -> Option<NodeAddr>;
-    fn free(&mut self, addr: NodeAddr);
 }
 
 #[derive(Clone, Debug)]
@@ -221,26 +201,6 @@ impl NodeAlloc {
     }
 }
 
-pub struct SvoRef<'a> {
-    pub nodes: &'a [Node],
-    pub root: NodeAddr,
-    pub size: u32,
-}
-pub struct SvoMut<'a> {
-    pub nodes: &'a mut [Node],
-    pub root: NodeAddr,
-    pub size: u32,
-}
-impl<'a> SvoMut<'a> {
-    pub fn as_ref(&'a self) -> SvoRef<'a> {
-        SvoRef {
-            nodes: &*self.nodes,
-            root: self.root,
-            size: self.size,
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct FoundNode {
     pub idx: NodeAddr,
@@ -249,127 +209,138 @@ pub struct FoundNode {
     pub size: u32,
 }
 
-pub fn node_parent(node_in: &FoundNode, svo: &SvoRef) -> Option<FoundNode> {
-    if node_in.depth == 0 {
-        return None;
-    }
-    let mut size = svo.size;
-    let mut idx = svo.root;
-    let mut center = Vec3::splat(size as f32 * 0.5);
-    let mut depth: u32 = 0;
-
-    loop {
-        let node = svo.nodes[idx as usize];
-        if !node.is_split() || depth == node_in.depth - 1 {
-            return Some(FoundNode {
-                idx,
-                depth,
-                center,
-                size,
-            });
-        }
-        size /= 2;
-
-        let gt = uvec3(
-            (node_in.center.x >= center.x) as u32,
-            (node_in.center.y >= center.y) as u32,
-            (node_in.center.z >= center.z) as u32,
-        );
-        let child_idx = (gt.x << 0) | (gt.y << 1) | (gt.z << 2);
-        idx = node.child_idx() + child_idx;
-        let child_dir = gt.as_ivec3() * 2 - IVec3::ONE;
-        center += Vec3::splat(size as f32) * 0.5 * child_dir.as_vec3();
-        depth += 1;
-    }
+pub struct Svo {
+    pub root: NodeAddr,
+    pub size: u32,
 }
-
-pub fn find_svo_node(svo: &SvoRef, pos: UVec3, max_depth: u32) -> FoundNode {
-    let mut size = svo.size;
-    let mut idx = svo.root;
-    let mut center = Vec3::splat(size as f32 * 0.5);
-    let mut depth: u32 = 0;
-
-    loop {
-        let node = svo.nodes[idx as usize];
-        if !node.is_split() || depth == max_depth {
-            return FoundNode {
-                idx,
-                depth,
-                center,
-                size,
-            };
-        }
-        size /= 2;
-
-        let gt = uvec3(
-            (pos.x as f32 >= center.x) as u32,
-            (pos.y as f32 >= center.y) as u32,
-            (pos.z as f32 >= center.z) as u32,
-        );
-        let child_idx = (gt.x << 0) | (gt.y << 1) | (gt.z << 2);
-        idx = node.child_idx() + child_idx;
-        let child_dir = gt.as_ivec3() * 2 - IVec3::ONE;
-        center += Vec3::splat(size as f32) * 0.5 * child_dir.as_vec3();
-        depth += 1;
+impl Svo {
+    pub fn new(root: NodeAddr, size: u32) -> Self {
+        Self { root, size }
     }
-}
 
-pub fn set_svo_voxel(
-    svo: &mut SvoMut,
-    pos: UVec3,
-    voxel: Voxel,
-    target_depth: u32,
-    alloc: &mut NodeAlloc,
-) -> Result<(), SetVoxelErr> {
-    let mut node = find_svo_node(&svo.as_ref(), pos, target_depth);
-    let parent_voxel = svo.nodes[node.idx as usize].voxel();
-
-    // If depth is less than target_depth,
-    // the SVO doesn't go to desired depth, so we must split until it does
-    while node.depth < target_depth {
-        let first_child = alloc.next().ok_or(SetVoxelErr::OutOfMemory)?;
-        svo.nodes[first_child as usize..(first_child as usize + 8)]
-            .copy_from_slice(&[Node::new(parent_voxel); 8]);
-
-        svo.nodes[node.idx as usize] = Node::new_split(first_child);
-        node.size /= 2;
-
-        let gt = uvec3(
-            (pos.x as f32 >= node.center.x) as u32,
-            (pos.y as f32 >= node.center.y) as u32,
-            (pos.z as f32 >= node.center.z) as u32,
-        );
-        let child_dir = gt.as_ivec3() * 2 - IVec3::ONE;
-        let child_idx = (gt.x << 0) | (gt.y << 1) | (gt.z << 2);
-        node.idx = first_child + child_idx;
-        node.center += Vec3::splat(node.size as f32) * 0.5 * child_dir.as_vec3();
-        node.depth += 1;
-    }
-    // SVO now goes to desired depth, so we can mutate the node now.
-    svo.nodes[node.idx as usize] = Node::new(voxel);
-
-    // if the SVO's depth was already at the target depth,
-    // we should check if this voxel is being set to the same value
-    // as the adjacent nodes, and if so, set the parent and remove
-    // this set of nodes to simplify the SVO.
-    loop {
-        if let Some(parent_node) = node_parent(&node, &svo.as_ref()) {
-            // println!("node {found_node:?} has parent {node:?}");
-            node = parent_node;
-        } else {
-            break;
+    pub fn node_parent(&self, nodes: &[Node], node_in: &FoundNode) -> Option<FoundNode> {
+        if node_in.depth == 0 {
+            return None;
         }
-        let parent_idx = node.idx;
-        let idx = svo.nodes[parent_idx as usize].child_idx();
-        let child_nodes = &svo.nodes[idx as usize..idx as usize + 8];
-        if nodes_are_eq(&child_nodes) {
-            alloc.free(idx);
-            svo.nodes[parent_idx as usize] = Node::new(voxel);
-        } else {
-            break;
+        let mut size = self.size;
+        let mut idx = self.root;
+        let mut center = Vec3::splat(size as f32 * 0.5);
+        let mut depth: u32 = 0;
+
+        loop {
+            let node = nodes[idx as usize];
+            if !node.is_split() || depth == node_in.depth - 1 {
+                return Some(FoundNode {
+                    idx,
+                    depth,
+                    center,
+                    size,
+                });
+            }
+            size /= 2;
+
+            let gt = uvec3(
+                (node_in.center.x >= center.x) as u32,
+                (node_in.center.y >= center.y) as u32,
+                (node_in.center.z >= center.z) as u32,
+            );
+            let child_idx = (gt.x << 0) | (gt.y << 1) | (gt.z << 2);
+            idx = node.child_idx() + child_idx;
+            let child_dir = gt.as_ivec3() * 2 - IVec3::ONE;
+            center += Vec3::splat(size as f32) * 0.5 * child_dir.as_vec3();
+            depth += 1;
         }
     }
-    Ok(())
+
+    pub fn find_node(&self, nodes: &[Node], pos: UVec3, max_depth: u32) -> FoundNode {
+        let mut size = self.size;
+        let mut idx = self.root;
+        let mut center = Vec3::splat(size as f32 * 0.5);
+        let mut depth: u32 = 0;
+
+        loop {
+            let node = nodes[idx as usize];
+            if !node.is_split() || depth == max_depth {
+                return FoundNode {
+                    idx,
+                    depth,
+                    center,
+                    size,
+                };
+            }
+            size /= 2;
+
+            let gt = uvec3(
+                (pos.x as f32 >= center.x) as u32,
+                (pos.y as f32 >= center.y) as u32,
+                (pos.z as f32 >= center.z) as u32,
+            );
+            let child_idx = (gt.x << 0) | (gt.y << 1) | (gt.z << 2);
+            idx = node.child_idx() + child_idx;
+            let child_dir = gt.as_ivec3() * 2 - IVec3::ONE;
+            center += Vec3::splat(size as f32) * 0.5 * child_dir.as_vec3();
+            depth += 1;
+        }
+    }
+
+    pub fn set_node(
+        &self,
+        nodes: &mut [Node],
+        pos: UVec3,
+        voxel: Voxel,
+        target_depth: u32,
+        alloc: &mut NodeAlloc,
+    ) -> Result<(), SetVoxelErr> {
+        let mut node = self.find_node(nodes, pos, target_depth);
+        let parent_voxel = nodes[node.idx as usize].voxel();
+
+        // If depth is less than target_depth,
+        // the SVO doesn't go to desired depth, so we must split until it does
+        while node.depth < target_depth {
+            let first_child = alloc.next().ok_or(SetVoxelErr::OutOfMemory)?;
+            nodes[first_child as usize..(first_child as usize + 8)]
+                .copy_from_slice(&[Node::new(parent_voxel); 8]);
+
+            nodes[node.idx as usize] = Node::new_split(first_child);
+            node.size /= 2;
+
+            let gt = uvec3(
+                (pos.x as f32 >= node.center.x) as u32,
+                (pos.y as f32 >= node.center.y) as u32,
+                (pos.z as f32 >= node.center.z) as u32,
+            );
+            let child_dir = gt.as_ivec3() * 2 - IVec3::ONE;
+            let child_idx = (gt.x << 0) | (gt.y << 1) | (gt.z << 2);
+            node.idx = first_child + child_idx;
+            node.center += Vec3::splat(node.size as f32) * 0.5 * child_dir.as_vec3();
+            node.depth += 1;
+        }
+        // SVO now goes to desired depth, so we can mutate the node now.
+        nodes[node.idx as usize] = Node::new(voxel);
+
+        // if the SVO's depth was already at the target depth,
+        // we should check if this voxel is being set to the same value
+        // as the adjacent nodes, and if so, set the parent and remove
+        // this set of nodes to simplify the SVO.
+        loop {
+            if let Some(parent_node) = self.node_parent(nodes, &node) {
+                // println!("node {found_node:?} has parent {node:?}");
+                node = parent_node;
+            } else {
+                break;
+            }
+            let parent_idx = node.idx;
+            let idx = nodes[parent_idx as usize].child_idx();
+            let child_nodes = &nodes[idx as usize..idx as usize + 8];
+            if nodes_are_eq(&child_nodes) {
+                alloc.free(idx);
+                nodes[parent_idx as usize] = Node::new(voxel);
+            } else {
+                break;
+            }
+        }
+        Ok(())
+    }
 }
 
 #[inline(always)]

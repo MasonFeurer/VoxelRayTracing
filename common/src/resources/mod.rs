@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 pub mod loader;
 
+use crate::world::noise::Map;
 use crate::world::Voxel;
 
 #[derive(Clone, Debug)]
@@ -22,7 +23,7 @@ pub struct WorldPreset {
 #[derive(Clone, Debug)]
 pub struct Biome {
     pub name: String,
-    pub vegetation: Noise,
+    pub vegetation: Map,
     pub layers: Vec<Voxel>,
     pub features: Vec<String>,
 }
@@ -63,22 +64,15 @@ pub enum Feature {
     },
 }
 
-#[derive(Deserialize, Clone, Copy, Debug)]
-pub struct Noise {
-    pub scale: f32,
-    pub freq: f32,
-    pub offset: f32,
-}
-
 #[derive(Deserialize, Clone, Debug)]
 pub enum Source {
     Value(f32),
-    Noise(Noise),
+    Noise(Map),
     ComplexNoise {
-        freq: Noise,
-        scale: Noise,
-        base: Noise,
-        layers: Vec<Noise>,
+        freq: Map,
+        scale: Map,
+        base: Map,
+        layers: Vec<Map>,
     },
 }
 

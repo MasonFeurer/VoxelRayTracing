@@ -56,7 +56,11 @@ impl ServerState {
             address: addr,
             name,
             clients: vec![],
-            world: ServerWorld::new(&res.world_presets[0], res.world_features.clone()),
+            world: ServerWorld::new(
+                &res.world_presets[0],
+                res.world_features.clone(),
+                fastrand::i64(..),
+            ),
             new_clients: None,
             resources: res,
         }

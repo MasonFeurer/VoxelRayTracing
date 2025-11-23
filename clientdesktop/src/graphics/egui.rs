@@ -1,4 +1,4 @@
-use crate::gpu::Gpu;
+use super::Gpu;
 use winit::window::Window;
 
 pub struct Egui {

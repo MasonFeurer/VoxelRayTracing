@@ -1,53 +1,61 @@
-pub mod egui;
-pub mod texture;
-
-use client::common::world::{Node, NodeAddr};
-use client::world::ClientWorld;
-use glam::{uvec2, vec2, Mat4, UVec2, Vec2, Vec3};
-use texture::Texture;
-
-use std::sync::Arc;
-
+use super::texture::Texture;
+use super::{CamData, Crosshair, Gpu, Material, NodeAddr, Settings, WorldData};
+use client::common::world::Node;
+use glam::UVec2;
 use wgpu::*;
 
-#[derive(Clone)]
-#[repr(C)]
-pub struct Material {
-    pub color: [f32; 3],
-    pub empty: u32,
-    pub scatter: f32,
-    pub emission: f32,
-    pub polish_bounce_chance: f32,
-    pub translucency: f32,
-    pub polish_color: [f32; 3],
-    pub polish_scatter: f32,
-}
+pub struct Buffers {
+    pub cam_data: SimpleBuffer<CamData>,
+    pub settings: SimpleBuffer<Settings>,
+    pub world_data: SimpleBuffer<WorldData>,
+    pub nodes: ArrayBuffer<Node>,
+    pub voxel_materials: SimpleBuffer<[Material; 256]>,
+    pub chunk_roots: ArrayBuffer<NodeAddr>,
 
-#[derive(Clone)]
-#[repr(C)]
-pub struct Crosshair {
-    pub color: [f32; 4],
-    pub style: u32,
-    pub size: f32,
-    _padding: [u32; 2],
+    pub screen_size: SimpleBuffer<[f32; 2]>,
+    pub crosshair: SimpleBuffer<Crosshair>,
 }
-impl Default for Crosshair {
-    fn default() -> Self {
+impl Buffers {
+    pub fn new(gpu: &Gpu, max_nodes: u32, world_size: u32) -> Self {
+        const COPY_DST: BufferUsages = BufferUsages::COPY_DST;
+        const UNIFORM: BufferUsages = BufferUsages::UNIFORM;
+        const STORAGE: BufferUsages = BufferUsages::STORAGE;
+        let chunk_count = world_size * world_size * world_size;
+
         Self {
-            color: [1.0, 1.0, 1.0, 0.33],
-            style: 2,
-            size: 5.0,
-            _padding: [0; 2],
+            cam_data: SimpleBuffer::new(gpu, "cam_data", COPY_DST | UNIFORM),
+            settings: SimpleBuffer::new(gpu, "settings", COPY_DST | UNIFORM),
+            world_data: SimpleBuffer::new(gpu, "world_data", COPY_DST | UNIFORM),
+            nodes: ArrayBuffer::new(gpu, "nodes", COPY_DST | STORAGE, max_nodes),
+            voxel_materials: SimpleBuffer::new(gpu, "voxel_mats", COPY_DST | STORAGE),
+            chunk_roots: ArrayBuffer::new(gpu, "chunk_roots", COPY_DST | STORAGE, chunk_count),
+
+            screen_size: SimpleBuffer::new(gpu, "screen_size", COPY_DST | UNIFORM),
+            crosshair: SimpleBuffer::new(gpu, "crosshair", COPY_DST | UNIFORM),
         }
+    }
+
+    pub fn resize_chunk_buffer(&mut self, gpu: &Gpu, world_size: u32) {
+        const COPY_DST: BufferUsages = BufferUsages::COPY_DST;
+        const STORAGE: BufferUsages = BufferUsages::STORAGE;
+
+        let chunk_count = world_size * world_size * world_size;
+        self.chunk_roots = ArrayBuffer::new(gpu, "chunk_roots", COPY_DST | STORAGE, chunk_count);
+    }
+    pub fn resize_node_buffer(&mut self, gpu: &Gpu, max_nodes: u32) {
+        const COPY_DST: BufferUsages = BufferUsages::COPY_DST;
+        const STORAGE: BufferUsages = BufferUsages::STORAGE;
+
+        self.nodes = ArrayBuffer::new(gpu, "nodes", COPY_DST | STORAGE, max_nodes);
+    }
+
+    pub fn update_data(&mut self) {
+        todo!()
     }
 }
 
-static RAY_TRACER_SRC: &str = include_str!("ray_tracer.wgsl");
-static PATH_TRACER_SRC: &str = include_str!("path_tracer.wgsl");
-static SCREEN_SHADER_SRC: &str = include_str!("screen_shader.wgsl");
-
-const RESULT_TEX_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
-const RESULT_TEX_USAGES: TextureUsages = TextureUsages::COPY_DST
+pub const RESULT_TEX_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
+pub const RESULT_TEX_USAGES: TextureUsages = TextureUsages::COPY_DST
     .union(TextureUsages::COPY_SRC)
     .union(TextureUsages::STORAGE_BINDING)
     .union(TextureUsages::TEXTURE_BINDING);
@@ -144,11 +152,17 @@ pub struct ScreenShader {
     pub bind_group: BindGroup,
 }
 impl ScreenShader {
-    pub fn new(gpu: &Gpu, tex: &Texture, surface_format: TextureFormat, buffers: &Buffers) -> Self {
+    pub fn new(
+        src: &str,
+        gpu: &Gpu,
+        tex: &Texture,
+        surface_format: TextureFormat,
+        buffers: &Buffers,
+    ) -> Self {
         let device = &gpu.device;
         let shader_module = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("screen-shader.shader-module"),
-            source: ShaderSource::Wgsl(SCREEN_SHADER_SRC.into()),
+            source: ShaderSource::Wgsl(src.into()),
         });
 
         let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -331,250 +345,5 @@ impl PixelShader {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.bind_group, &[]);
         pass.dispatch_workgroups(workgroups.x, workgroups.y, 1);
-    }
-}
-
-pub struct Buffers {
-    pub cam_data: SimpleBuffer<CamData>,
-    pub settings: SimpleBuffer<Settings>,
-    pub world_data: SimpleBuffer<WorldData>,
-    pub nodes: ArrayBuffer<Node>,
-    pub voxel_materials: SimpleBuffer<[Material; 256]>,
-    pub chunk_roots: ArrayBuffer<NodeAddr>,
-
-    pub screen_size: SimpleBuffer<[f32; 2]>,
-    pub crosshair: SimpleBuffer<Crosshair>,
-}
-impl Buffers {
-    pub fn new(gpu: &Gpu, max_nodes: u32, world_size: u32) -> Self {
-        const COPY_DST: BufferUsages = BufferUsages::COPY_DST;
-        const UNIFORM: BufferUsages = BufferUsages::UNIFORM;
-        const STORAGE: BufferUsages = BufferUsages::STORAGE;
-        let chunk_count = world_size * world_size * world_size;
-
-        Self {
-            cam_data: SimpleBuffer::new(gpu, "cam_data", COPY_DST | UNIFORM),
-            settings: SimpleBuffer::new(gpu, "settings", COPY_DST | UNIFORM),
-            world_data: SimpleBuffer::new(gpu, "world_data", COPY_DST | UNIFORM),
-            nodes: ArrayBuffer::new(gpu, "nodes", COPY_DST | STORAGE, max_nodes),
-            voxel_materials: SimpleBuffer::new(gpu, "voxel_mats", COPY_DST | STORAGE),
-            chunk_roots: ArrayBuffer::new(gpu, "chunk_roots", COPY_DST | STORAGE, chunk_count),
-
-            screen_size: SimpleBuffer::new(gpu, "screen_size", COPY_DST | UNIFORM),
-            crosshair: SimpleBuffer::new(gpu, "crosshair", COPY_DST | UNIFORM),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Default)]
-#[repr(C)]
-pub struct CamData {
-    pub pos: Vec3,
-    pub _padding0: u32,
-    pub inv_view_mat: Mat4,
-    pub inv_proj_mat: Mat4,
-    pub proj_size: Vec2,
-    pub _padding1: [u32; 2],
-}
-impl CamData {
-    pub fn create(cam: Vec3, eye: Vec3, fov: f32, proj_size: Vec2) -> Self {
-        let inv_view_mat = Mat4::from_translation(eye)
-            * Mat4::from_rotation_x(cam.x.to_radians())
-            * Mat4::from_rotation_y(-cam.y.to_radians())
-            * Mat4::from_rotation_z(cam.z.to_radians());
-        let inv_proj_mat =
-            Mat4::perspective_rh(fov.to_radians(), proj_size.x / proj_size.y, 0.001, 1000.0)
-                .inverse();
-
-        CamData {
-            pos: eye,
-            inv_view_mat,
-            inv_proj_mat,
-            proj_size: vec2(proj_size.x, proj_size.y),
-            ..Default::default()
-        }
-    }
-}
-
-#[derive(Clone, Copy, Default)]
-#[repr(C)]
-pub struct WorldData {
-    pub min: [i32; 3],
-    pub size: u32,
-    pub size_in_chunks: u32,
-    _padding: [u32; 3],
-}
-impl WorldData {
-    pub fn from(world: &ClientWorld) -> Self {
-        Self {
-            min: world.min_voxel().into(),
-            size: world.size(),
-            size_in_chunks: world.size_in_chunks(),
-            _padding: Default::default(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Default)]
-#[repr(C)]
-pub struct Settings {
-    pub max_ray_bounces: u32,
-    pub sun_intensity: f32,
-    pub show_step_count: u32,
-    _padding0: u32,
-    pub sky_color: [f32; 3],
-    pub _padding1: u32,
-    pub sun_pos: [f32; 3],
-    pub samples_per_pixel: u32,
-}
-
-pub struct GpuResources {
-    pub result_texture: Texture,
-    pub voxel_texture_atlas: Texture,
-    pub buffers: Buffers,
-
-    pub screen_shader: ScreenShader,
-    pub ray_tracer: PixelShader,
-    pub path_tracer: PixelShader,
-}
-impl GpuResources {
-    pub fn new(
-        gpu: &Gpu,
-        surface_format: TextureFormat,
-        result_size: UVec2,
-        max_nodes: u32,
-        world_size: u32,
-    ) -> Self {
-        let buffers = Buffers::new(gpu, max_nodes, world_size);
-
-        let result_texture = Texture::new(
-            &gpu.device,
-            result_size,
-            RESULT_TEX_FORMAT,
-            RESULT_TEX_USAGES,
-        );
-        let voxel_texture_atlas = Texture::new(
-            &gpu.device,
-            uvec2(5, 5),
-            TextureFormat::Rgba8Unorm,
-            TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING,
-        );
-
-        let screen_shader = ScreenShader::new(gpu, &result_texture, surface_format, &buffers);
-        let ray_tracer = PixelShader::new(RAY_TRACER_SRC, gpu, &result_texture, &buffers);
-        let path_tracer = PixelShader::new(PATH_TRACER_SRC, gpu, &result_texture, &buffers);
-
-        Self {
-            result_texture,
-            voxel_texture_atlas,
-            buffers,
-            screen_shader,
-            ray_tracer,
-            path_tracer,
-        }
-    }
-
-    pub fn resize_result_texture(&mut self, gpu: &Gpu, new_size: UVec2) {
-        self.result_texture =
-            Texture::new(&gpu.device, new_size, RESULT_TEX_FORMAT, RESULT_TEX_USAGES);
-
-        self.screen_shader
-            .recreate_bind_group(gpu, &self.result_texture, &self.buffers);
-
-        self.ray_tracer
-            .recreate_bind_group(gpu, &self.result_texture, &self.buffers);
-        self.path_tracer
-            .recreate_bind_group(gpu, &self.result_texture, &self.buffers);
-    }
-}
-
-pub async fn gpu_limits() -> Limits {
-    let instance = Instance::new(&Default::default());
-    let adapter = instance
-        .request_adapter(&RequestAdapterOptions {
-            power_preference: Default::default(),
-            compatible_surface: None,
-            force_fallback_adapter: false,
-        })
-        .await
-        .unwrap();
-    adapter.limits()
-}
-
-pub struct Gpu {
-    pub device: Device,
-    pub queue: Queue,
-    pub surface: Surface<'static>,
-    pub surface_config: SurfaceConfiguration,
-}
-impl Gpu {
-    pub async fn new(window: Arc<winit::window::Window>) -> Self {
-        let size = window.inner_size();
-        let size = uvec2(size.width, size.height);
-
-        let instance = Instance::new(&Default::default());
-        // Handle to a presentable surface
-        let surface = instance.create_surface(window).unwrap();
-
-        // Handle to the graphics device
-        let adapter = instance
-            .request_adapter(&RequestAdapterOptions {
-                power_preference: PowerPreference::default(),
-                compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
-            })
-            .await
-            .unwrap();
-        let max_storage_buffer_binding_size = adapter.limits().max_storage_buffer_binding_size;
-        let max_buffer_size = adapter.limits().max_buffer_size;
-
-        // device: Open connection to graphics device
-        // queue: Handle to a command queue on the device
-        let (device, queue) = adapter
-            .request_device(&DeviceDescriptor {
-                required_features: Features::default(),
-                required_limits: Limits {
-                    max_storage_buffer_binding_size,
-                    max_buffer_size,
-                    ..Default::default()
-                },
-                label: None,
-                memory_hints: Default::default(),
-                trace: Default::default(),
-            })
-            .await
-            .unwrap();
-
-        let surface_config = surface
-            .get_default_config(&adapter, size.x, size.y)
-            .unwrap();
-        surface.configure(&device, &surface_config);
-
-        Self {
-            surface,
-            device,
-            surface_config,
-            queue,
-        }
-    }
-
-    pub fn resize(&mut self, new_size: UVec2) {
-        self.surface_config.width = new_size.x;
-        self.surface_config.height = new_size.y;
-        self.surface.configure(&self.device, &self.surface_config);
-    }
-
-    pub fn create_command_encoder(&self) -> CommandEncoder {
-        self.device.create_command_encoder(&Default::default())
-    }
-
-    pub fn surface_size(&self) -> UVec2 {
-        uvec2(self.surface_config.width, self.surface_config.height)
-    }
-
-    pub fn get_output(&self) -> Result<(SurfaceTexture, TextureView), SurfaceError> {
-        let output = self.surface.get_current_texture()?;
-        let view = output.texture.create_view(&Default::default());
-        Ok((output, view))
     }
 }

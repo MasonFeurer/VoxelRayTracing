@@ -62,7 +62,6 @@ fn main() -> anyhow::Result<()> {
             Ok(CliCmd::ShowWorldSummary) => {
                 println!("--- World ---");
                 println!("chunk count: {}", server.world.chunks.len());
-                println!("chunks: {:#?}", server.world.chunks);
             }
             Ok(CliCmd::Stop) => break,
             Err(_) => {}

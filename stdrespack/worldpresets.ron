@@ -2,21 +2,21 @@
 WorldPresetSource (
 	name: "Standard World Gen",
 	
-	temp: Noise(Noise ( scale: 1.0, freq: 0.0004, offset: 0.0 )),
-	humidity: Noise(Noise ( scale: 1.0, freq: 0.0004, offset: 0.0 )),
-	weirdness: Noise(Noise ( scale: 1.0, freq: 0.001, offset: 0.0 )),
+	temp: Noise(Map ( scale: 1.0, freq: 0.0004, offset: 0.0 )),
+	humidity: Noise(Map ( scale: 1.0, freq: 0.0004, offset: 0.0 )),
+	weirdness: Noise(Map ( scale: 1.0, freq: 0.001, offset: 0.0 )),
 	
 	height: ComplexNoise (
-		freq: Noise ( freq: 0.0001, scale: 7.0, offset: 0.0 ),
-        scale: Noise ( freq: 0.003, scale: 40.0, offset: 0.0 ),
-        base: Noise ( freq: 0.003, scale: 2.5, offset: 1.0 ),
+		freq: Map ( freq: 0.0001, scale: 7.0, offset: 0.0 ),
+        scale: Map ( freq: 0.003, scale: 40.0, offset: 0.0 ),
+        base: Map ( freq: 0.003, scale: 2.5, offset: 1.0 ),
         layers: [
             // small terrain bumps
-        	Noise ( freq: 0.15, scale: 4.0, offset: 0.0 ),
+        	Map ( freq: 0.15, scale: 4.0, offset: 0.0 ),
         	// hills
-        	Noise ( freq: 0.01, scale: 30.0, offset: 0.0 ),
+        	Map ( freq: 0.01, scale: 30.0, offset: 0.0 ),
         	// mountains
-        	Noise ( freq: 0.001, scale: 70.0, offset: 0.0 ),
+        	Map ( freq: 0.001, scale: 70.0, offset: 0.0 ),
         ]
 	),
 	sea_level: 80,
@@ -32,7 +32,7 @@ WorldPresetSource (
 	biomes: [
 		BiomeSource (
 			name: "Arctic Desert",
-			vegetation: Noise ( freq: 1.0, scale: 0.0, offset: 0.0 ),
+			vegetation: Map ( freq: 1.0, scale: 0.0, offset: 0.0 ),
 			layers: [
 				LayerSource ( voxel: "snow", depth: 5 ),
 				LayerSource ( voxel: "dirt", depth: 3 ),
@@ -41,7 +41,7 @@ WorldPresetSource (
 		),
 		BiomeSource (
 			name: "Snowy Desert",
-			vegetation: Noise ( freq: 0.02, scale: 1.0, offset: 0.0 ),
+			vegetation: Map ( freq: 0.02, scale: 1.0, offset: 0.0 ),
 			layers: [
 				LayerSource ( voxel: "snow", depth: 1 ),
 				LayerSource ( voxel: "dirt", depth: 3 ),
@@ -50,7 +50,7 @@ WorldPresetSource (
 		),
 		BiomeSource (
 			name: "Plains",
-			vegetation: Noise ( freq: 0.004, scale: 1.0, offset: 0.0 ),
+			vegetation: Map ( freq: 0.004, scale: 1.0, offset: 0.0 ),
 			layers: [
 				LayerSource ( voxel: "grass", depth: 1 ),
 				LayerSource ( voxel: "dirt", depth: 4 ),
@@ -59,7 +59,7 @@ WorldPresetSource (
 		),
 		BiomeSource (
 			name: "Savannah",
-			vegetation: Noise ( freq: 0.004, scale: 1.0, offset: 0.0 ),
+			vegetation: Map ( freq: 0.004, scale: 1.0, offset: 0.0 ),
 			layers: [
 				LayerSource ( voxel: "grass", depth: 1 ),
 				LayerSource ( voxel: "dirt", depth: 4 ),
@@ -68,7 +68,7 @@ WorldPresetSource (
 		),
 		BiomeSource (
 			name: "Desert",
-			vegetation: Noise ( freq: 0.02, scale: 1.0, offset: 0.0 ),
+			vegetation: Map ( freq: 0.02, scale: 1.0, offset: 0.0 ),
 			layers: [
 				LayerSource ( voxel: "sand", depth: 7 ),
 				LayerSource ( voxel: "sandstone", depth: 4),
@@ -76,7 +76,7 @@ WorldPresetSource (
 			features: ["cactus"],
 		),
 		BiomeSource (
-			vegetation: Noise ( freq: 0.02, scale: 1.0, offset: 0.0 ),
+			vegetation: Map ( freq: 0.02, scale: 1.0, offset: 0.0 ),
 			name: "Icy Desert",
 			layers: [
 				LayerSource ( voxel: "snow", depth: 2 ),
@@ -86,7 +86,7 @@ WorldPresetSource (
 		),
 		BiomeSource (
 			name: "Forest",
-			vegetation: Noise ( freq: 0.04, scale: 1.0, offset: 0.0 ),
+			vegetation: Map ( freq: 0.04, scale: 1.0, offset: 0.0 ),
 			layers: [
 				LayerSource ( voxel: "grass", depth: 1 ),
 				LayerSource ( voxel: "dirt", depth: 5 ),
@@ -95,7 +95,7 @@ WorldPresetSource (
 		),
 		BiomeSource (
 			name: "Rain Forest",
-			vegetation: Noise ( freq: 0.04, scale: 1.0, offset: 0.0 ),
+			vegetation: Map ( freq: 0.04, scale: 1.0, offset: 0.0 ),
 			layers: [
 				LayerSource ( voxel: "grass", depth: 2 ),
 				LayerSource ( voxel: "dirt", depth: 5 ),
@@ -125,7 +125,7 @@ WorldPresetSource (
 	biomes: [
 		BiomeSource (
 			name: "Default",
-			vegetation: Noise ( freq: 0.004, scale: 1.0, offset: 0.0 ),
+			vegetation: Map ( freq: 0.004, scale: 1.0, offset: 0.0 ),
 			layers: [
 				LayerSource ( voxel: "grass", depth: 1 ),
 				LayerSource ( voxel: "dirt", depth: 3 ),

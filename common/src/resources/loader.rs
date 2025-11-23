@@ -1,10 +1,9 @@
-use serde::Deserialize;
-
 use super::{
-    Biome, Feature, Noise, Source, VoxelData, VoxelPack, VoxelStyle, VoxelStylePack, WorldFeatures,
+    Biome, Feature, Source, VoxelData, VoxelPack, VoxelStyle, VoxelStylePack, WorldFeatures,
     WorldPreset,
 };
-
+use crate::world::noise::Map;
+use serde::Deserialize;
 use std::collections::HashMap;
 
 #[derive(Debug)]
@@ -168,7 +167,7 @@ impl FeatureSource {
 #[derive(Deserialize)]
 pub struct BiomeSource {
     name: String,
-    vegetation: Noise,
+    vegetation: Map,
     layers: Vec<LayerSource>,
     features: Vec<String>,
 }

@@ -1,11 +1,8 @@
-pub mod gpu;
+pub mod graphics;
 pub mod input;
-pub mod world;
 
-use crate::gpu::{
-    egui::Egui, CamData, Crosshair, Gpu, GpuResources, Material, Settings, WorldData,
-};
 use crate::input::{InputState, Key};
+use graphics::{CamData, Crosshair, Egui, Gpu, GpuResources, Material, Settings, WorldData};
 
 use anyhow::Context;
 use client::common::math::HitResult;
