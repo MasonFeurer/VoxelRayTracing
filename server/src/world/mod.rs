@@ -8,27 +8,28 @@ use common::world::{
 use gen::{BuiltFeature, WorldGen};
 use glam::{ivec3, IVec3, UVec3};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 pub struct ServerWorld {
     pub chunks: HashMap<IVec3, ServerChunk>,
-    unplaced_features: Vec<BuiltFeature>,
-    gen: WorldGen,
+    pub unplaced_features: Vec<BuiltFeature>,
+    pub gen: Arc<WorldGen>,
 }
 impl ServerWorld {
     pub fn new(preset: &WorldPreset, features: WorldFeatures, seed: i64) -> Self {
         Self {
             chunks: HashMap::new(),
             unplaced_features: Vec::new(),
-            gen: WorldGen::new(preset, features, seed),
+            gen: Arc::new(WorldGen::new(preset, features, seed)),
         }
     }
 
-    pub fn create_chunk(&mut self, chunk_pos: IVec3) {
-        let chunk = self
-            .gen
-            .generate_chunk(chunk_pos, &mut self.unplaced_features);
-        self.chunks.insert(chunk_pos, chunk);
-    }
+    // pub fn create_chunk(&mut self, chunk_pos: IVec3) {
+    //     let chunk = self
+    //         .gen
+    //         .generate_chunk(chunk_pos, &mut self.unplaced_features);
+    //     self.chunks.insert(chunk_pos, chunk);
+    // }
 
     pub fn place_features(&mut self) -> Vec<IVec3> {
         let mut out = HashSet::new();

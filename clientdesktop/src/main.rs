@@ -6,13 +6,14 @@ use graphics::{CamData, Crosshair, Egui, Gpu, GpuResources, Material, Settings, 
 
 use anyhow::Context;
 use client::common::math::HitResult;
-use client::common::net::{ClientCmd, ServerCmd};
+use client::common::net::{ChunksList, ClientCmd, ServerCmd};
 use client::common::resources::VoxelPack;
 use client::common::world::{chunk_to_world_pos, Node};
 use client::player::PlayerInput;
 use client::world::ClientWorld;
 use client::GameState;
-use glam::{ivec3, uvec2, UVec2, Vec3};
+use glam::{ivec3, uvec2, IVec3, UVec2, Vec3};
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -118,7 +119,7 @@ pub struct AppState {
     pub crosshair: Crosshair,
     hide_overlay: bool,
 
-    pub chunk_requests_sent: std::collections::HashSet<u32>,
+    pub chunk_requests_sent: HashSet<IVec3>,
 }
 impl AppState {
     pub fn new(username: String, res_dir: String, port: u16) -> Self {
@@ -131,7 +132,7 @@ impl AppState {
         settings.sky_color = [0.81, 0.93, 1.0];
         settings.samples_per_pixel = 1;
 
-        let world = ClientWorld::new(ivec3(0, 0, 0), 100_000_000, 20);
+        let world = ClientWorld::new(ivec3(0, 0, 0), 300_000_000, 20);
         let player_pos = world.min_voxel().as_vec3() + Vec3::splat(world.size() as f32) * 0.5;
         let mut game = GameState::new(username, world, player_pos);
 
@@ -188,32 +189,34 @@ impl AppState {
             .world
             .center_chunks(self.game.player.pos.as_ivec3());
 
-        let mut chunks = self.game.world.empty_chunks().collect::<Vec<_>>();
-        chunks.sort_by(|a, b| {
+        let mut empty_chunks = self.game.world.empty_chunks().collect::<Vec<_>>();
+        empty_chunks.sort_by(|a, b| {
             let center = self.game.player.pos;
-            let a_pos = a.local_pos().as_ivec3() + self.game.world.min_chunk();
-            let b_pos = b.local_pos().as_ivec3() + self.game.world.min_chunk();
+            let a_pos = a.global_pos(&self.game.world);
+            let b_pos = b.global_pos(&self.game.world);
             let a_dist = center.distance(chunk_to_world_pos(a_pos).as_vec3());
             let b_dist = center.distance(chunk_to_world_pos(b_pos).as_vec3());
             b_dist
                 .partial_cmp(&a_dist)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-        for chunk in chunks {
-            if self.chunk_requests_sent.contains(&(chunk.idx() as u32)) {
+        let mut chunks_to_load: Vec<IVec3> = vec![];
+        for chunk in empty_chunks {
+            let global_pos = chunk.global_pos(&self.game.world);
+            if self.chunk_requests_sent.contains(&global_pos) {
                 continue;
             }
-
-            let global_chunk_pos = chunk.local_pos().as_ivec3() + self.game.world.min_chunk();
-
-            if let Err(err) = self.game.send_cmd(ServerCmd::GetChunkData(
-                chunk.idx() as u32,
-                global_chunk_pos,
-            )) {
+            chunks_to_load.push(global_pos);
+        }
+        if !chunks_to_load.is_empty() {
+            if let Err(err) = self
+                .game
+                .send_cmd(ServerCmd::LoadChunks(ChunksList(chunks_to_load.clone())))
+            {
                 println!("Failed to send cmd to server: {err:?}");
-                continue;
+            } else {
+                self.chunk_requests_sent.extend(chunks_to_load);
             }
-            self.chunk_requests_sent.insert(chunk.idx() as u32);
         }
 
         let mut update_roots = false;
@@ -221,8 +224,8 @@ impl AppState {
         while max_cmds > 0 {
             max_cmds -= 1;
             match self.game.try_recv_cmd() {
-                Ok(Some(ClientCmd::GiveChunkData(idx, pos, nodes))) => {
-                    self.chunk_requests_sent.remove(&idx);
+                Ok(Some(ClientCmd::GiveChunkData(pos, nodes, _node_alloc))) => {
+                    self.chunk_requests_sent.remove(&pos);
 
                     match self.game.world.create_chunk(pos, &nodes) {
                         Ok(addr) => {

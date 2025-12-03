@@ -59,8 +59,7 @@ impl ClientConn {
     }
 
     pub fn write(&mut self, cmd: ClientCmd) -> anyhow::Result<()> {
-        bincode::serde::encode_into_std_write(cmd, &mut self.stream, bincode::config::standard())
-            .context("Failed to send message to client")?;
+        bincode::serde::encode_into_std_write(cmd, &mut self.stream, bincode::config::standard())?;
         Ok(())
     }
 }

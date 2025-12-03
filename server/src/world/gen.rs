@@ -45,10 +45,11 @@ impl ValueGen {
 }
 
 fn transmute_seed(seed: &mut i64) -> i64 {
-    *seed <<= 4 + *seed;
-    *seed += 890189034;
-    *seed *= 917834;
-    *seed <<= 9;
+    *seed = seed.wrapping_add(890189034);
+    *seed = seed.wrapping_mul(917834);
+    *seed <<= 1;
+    *seed = seed.wrapping_add(6478912);
+    *seed = seed.wrapping_mul(0891247);
     *seed
 }
 fn map_from_src(src: &Map, seed: &mut i64) -> MappedNoise {
@@ -89,8 +90,6 @@ pub struct WorldGen {
     weird_map: ValueGen,
     vegetation: RawNoise,
     feat_map: MappedNoise,
-
-    chunk_nodes: Box<[Node]>,
 }
 impl WorldGen {
     pub fn new(preset: &WorldPreset, features: WorldFeatures, mut seed: i64) -> Self {
@@ -108,9 +107,6 @@ impl WorldGen {
             weird_map: value_gen_from_src(&preset.weirdness, &mut seed),
             vegetation: RawNoise::new(transmute_seed(&mut seed)),
             feat_map: MappedNoise::new(transmute_seed(&mut seed), Map::new(0.15, 1.0, 0.0)),
-
-            chunk_nodes: vec![Node::ZERO; (CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE) as usize]
-                .into_boxed_slice(),
         }
     }
 
@@ -126,12 +122,17 @@ impl WorldGen {
         &self.biomes[biome_idx as usize]
     }
 
+    // SANITIZATION: `buffer` should be `MAX_NODES` in length, and be all zeros.
+    // We use an inputed buffer to avoid allocating a node list on the heap
+    // every time a chunk needs to be generated. Only nodes that are allocated
+    // on the heap are the ones actually needed to represent the final chunk.
     pub fn generate_chunk(
-        &mut self,
+        &self,
+        buffer: &mut [Node],
         chunk_pos: IVec3,
         out_features: &mut Vec<BuiltFeature>,
     ) -> ServerChunk {
-        let mut node_alloc = NodeAlloc::new(0..1, 1..self.chunk_nodes.len() as u32);
+        let mut node_alloc = NodeAlloc::new(0..1, 1..buffer.len() as u32);
 
         {
             let min = inchunk_to_world_pos(chunk_pos, UVec3::ZERO).as_vec3();
@@ -155,7 +156,7 @@ impl WorldGen {
             // `earth` voxel. This saves the permormance cost of writing `earth` to most of the chunk
             // starting from Air.
             if surface_min > max.y {
-                self.chunk_nodes[0] = Node::new(self.earth);
+                buffer[0] = Node::new(self.earth);
             }
         }
 
@@ -175,7 +176,7 @@ impl WorldGen {
                     let vox = *biome.layers.get(layer as usize).unwrap_or(&self.earth);
 
                     _ = Svo::new(0, CHUNK_SIZE).set_node(
-                        &mut self.chunk_nodes,
+                        buffer,
                         uvec3(x, y_in_chunk, z),
                         vox,
                         CHUNK_DEPTH,
@@ -226,8 +227,7 @@ impl WorldGen {
             }
         }
         let used_voxels = node_alloc.last_used_addr() + 64;
-        let nodes = self.chunk_nodes[0..=used_voxels as usize].to_vec();
-        self.chunk_nodes.fill(Node::ZERO);
+        let nodes = buffer[0..=used_voxels as usize].to_vec();
         node_alloc.move_end(used_voxels);
 
         ServerChunk { nodes, node_alloc }

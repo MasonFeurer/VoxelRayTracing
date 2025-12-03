@@ -3,15 +3,12 @@ A native application that uses blockworld-server to create a server and provides
 */
 
 use anyhow::Context;
-use server::{Resources, ServerState};
+use server::{world::ServerWorld, Resources, ServerState};
+use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver};
-use std::{
-    net::SocketAddr,
-    sync::atomic::{AtomicBool, Ordering},
-    time::Duration,
-};
-
-static SHUTDOWN_FLAG: AtomicBool = AtomicBool::new(false);
+use std::sync::Arc;
+use std::time::Duration;
 
 fn main() -> anyhow::Result<()> {
     let usage = "servercli (resource_folder) (port)";
@@ -23,40 +20,46 @@ fn main() -> anyhow::Result<()> {
     ));
     let port = args
         .next()
-        .expect(&format!("Missing cmdline arg \"port\"\nUsage: {usage}"));
+        .with_context(|| format!("Missing cmdline arg \"port\"\nUsage: {usage}"))?;
     let port: u16 = port
         .parse()
-        .with_context(|| "Invalid port address")
-        .expect(&format!("Invalid cmdline arg \"port\"\nUsage: {usage}"));
+        .with_context(|| format!("Invalid cmdline arg \"port\"\nUsage: {usage}"))?;
 
     let address = SocketAddr::new("127.0.0.1".parse().unwrap(), port);
-    let resources = Resources::load(&res_folder)?;
+    let resources = Resources::load(&res_folder).context("Failed to load resources")?;
 
-    println!("Using address {address:?}");
+    println!("Using address {address:?}...");
 
-    let mut server = ServerState::new(address, format!("My Dev Server"), resources);
-    if let Err(err) = server.listen_for_clients(&SHUTDOWN_FLAG) {
-        println!("Failed to listen for clients: {err:?}");
-    }
+    let world = ServerWorld::new(
+        &resources.world_presets[0],
+        resources.world_features,
+        fastrand::i64(..),
+    );
+    let mut server = ServerState::new(address, format!("My Dev Server"), world);
+
+    server.start().context("Failed to start server")?;
 
     println!("Server is running.");
-    let cli_cmds = spawn_cli();
+    let cli_cmds = spawn_cli(Arc::clone(&server.kill));
     loop {
-        server.process_clients();
-        server.respond_to_clients();
-        server.place_world_features();
+        server.handle_clients();
+        server.update();
+        server.update_world();
 
         match cli_cmds.try_recv() {
             Ok(CliCmd::GetPlayers) => {
-                let names: Vec<&str> = server
-                    .clients
-                    .iter()
-                    .map(|client| client.name.as_str())
-                    .collect();
-                if names.len() == 0 {
-                    println!("no players online!");
-                } else {
-                    println!("players: {}", names.join(", "));
+                if server.clients.len() == 0 {
+                    println!("No players online!");
+                }
+                for client in &server.clients {
+                    println!(
+                        "- {:?} | ({:.2}, {:.2}, {:.2}) | {:?}",
+                        client.name,
+                        client.pos.x,
+                        client.pos.y,
+                        client.pos.z,
+                        client.address()
+                    );
                 }
             }
             Ok(CliCmd::ShowWorldSummary) => {
@@ -96,7 +99,7 @@ pub enum CliCmd {
     Stop,
 }
 
-pub fn spawn_cli() -> Receiver<CliCmd> {
+pub fn spawn_cli(shutdown: Arc<AtomicBool>) -> Receiver<CliCmd> {
     let (send, recv) = channel();
 
     std::thread::spawn(move || {
@@ -106,7 +109,7 @@ pub fn spawn_cli() -> Receiver<CliCmd> {
             _ = cmd_buf.pop(); // remove the new-line character
             match cmd_buf.as_str() {
                 "stop" => {
-                    SHUTDOWN_FLAG.store(true, Ordering::Relaxed);
+                    shutdown.store(true, Ordering::Relaxed);
                     _ = send.send(CliCmd::Stop);
                     break;
                 }

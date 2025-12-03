@@ -10,12 +10,44 @@ pub use common;
 use common::net::{ClientCmd, ServerCmd};
 use common::resources::{loader, VoxelPack, WorldFeatures, WorldPreset};
 use common::server::PlayerInfo;
-use glam::Vec3;
+use common::world::{Node, NodeAlloc, Voxel, NODES_PER_CHUNK};
+use glam::{IVec3, Vec3};
 use net::ClientConn;
+use std::collections::HashSet;
 use std::net::{SocketAddr, TcpListener};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{channel, Receiver};
-use world::ServerWorld;
+use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Arc;
+use world::gen::{BuiltFeature, WorldGen};
+use world::{ServerChunk, ServerWorld};
+
+pub struct Client {
+    pub name: String,
+    pub conn: ClientConn,
+    pub pos: Vec3,
+    pub render_distance: u32,
+
+    pub wants_chunks: HashSet<IVec3>,
+}
+impl Client {
+    pub fn new(name: String, conn: ClientConn) -> Self {
+        Self {
+            name,
+            conn,
+            pos: Vec3::ZERO,
+            render_distance: 0,
+            wants_chunks: Default::default(),
+        }
+    }
+
+    pub fn using_chunk(&self, pos: IVec3) -> bool {
+        self.wants_chunks.contains(&pos)
+    }
+
+    pub fn address(&self) -> SocketAddr {
+        self.conn.stream.local_addr().unwrap()
+    }
+}
 
 pub struct Resources {
     pub voxelpack: VoxelPack,
@@ -42,41 +74,164 @@ impl Resources {
     }
 }
 
+pub struct ChunkBuilder {
+    done: Arc<AtomicBool>,
+}
+impl ChunkBuilder {
+    pub fn spawn(
+        gen: Arc<WorldGen>,
+        chunks: Vec<IVec3>,
+        send: Sender<(IVec3, ServerChunk, Vec<BuiltFeature>)>,
+    ) -> Self {
+        let done = Arc::new(AtomicBool::new(false));
+        let done_copy = Arc::clone(&done);
+        std::thread::spawn(move || {
+            let mut built_features = Vec::new();
+            let mut node_buffer = vec![Node::ZERO; NODES_PER_CHUNK as usize];
+            for pos in chunks {
+                let chunk = gen.generate_chunk(&mut node_buffer, pos, &mut built_features);
+                send.send((pos, chunk, built_features.clone())).unwrap();
+                built_features.clear();
+                node_buffer.fill(Node::ZERO);
+            }
+            done_copy.store(true, Ordering::Relaxed);
+        });
+        Self { done }
+    }
+
+    pub fn is_done(&self) -> bool {
+        self.done.load(Ordering::Relaxed)
+    }
+}
+
+pub fn connect_clients_blocking(
+    listener: TcpListener,
+    sender: Sender<Client>,
+    kill: Arc<AtomicBool>,
+) {
+    for stream in listener.incoming() {
+        if kill.load(Ordering::Relaxed) {
+            println!("Stopping client connections; Dropping TCPListener...");
+            break;
+        }
+        match stream {
+            Ok(stream) => {
+                println!(
+                    "Establishing client connection from {:?}",
+                    stream.local_addr()
+                );
+                match ClientConn::establish(stream) {
+                    Ok((conn, name)) => {
+                        println!("Connected client: {name}!");
+                        _ = sender.send(Client::new(name, conn));
+                    }
+                    Err(err) => println!("Failed to establish client connection: {err:?}"),
+                };
+            }
+            Err(err) => println!("Failed to receive client stream from TcpListener : {err:?}"),
+        }
+    }
+}
+
 pub struct ServerState {
     pub address: SocketAddr,
     pub name: String,
     pub clients: Vec<Client>,
+    pub new_clients_recv: Option<Receiver<Client>>,
+
     pub world: ServerWorld,
-    pub new_clients: Option<Receiver<Result<Client, anyhow::Error>>>,
-    pub resources: Resources,
+
+    pub chunk_builder_send: Sender<(IVec3, ServerChunk, Vec<BuiltFeature>)>,
+    pub chunk_builder_recv: Receiver<(IVec3, ServerChunk, Vec<BuiltFeature>)>,
+    pub chunks_to_build: HashSet<IVec3>,
+    pub chunk_builders: Vec<ChunkBuilder>,
+    pub dirty_chunks: HashSet<IVec3>,
+
+    pub kill: Arc<AtomicBool>,
 }
 impl ServerState {
-    pub fn new(addr: SocketAddr, name: String, res: Resources) -> Self {
+    pub fn new(address: SocketAddr, name: String, world: ServerWorld) -> Self {
+        let (chunk_builder_send, chunk_builder_recv) = channel();
         Self {
-            address: addr,
+            address,
             name,
             clients: vec![],
-            world: ServerWorld::new(
-                &res.world_presets[0],
-                res.world_features.clone(),
-                fastrand::i64(..),
-            ),
-            new_clients: None,
-            resources: res,
+            new_clients_recv: None,
+
+            world,
+
+            chunk_builder_send,
+            chunk_builder_recv,
+            chunks_to_build: HashSet::default(),
+            chunk_builders: vec![],
+            dirty_chunks: HashSet::default(),
+
+            kill: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    pub fn place_world_features(&mut self) {
-        for chunk_pos in self.world.place_features() {
-            let chunk = self.world.get_chunk(chunk_pos).unwrap();
+    pub fn player_list(&self) -> Vec<PlayerInfo> {
+        self.clients
+            .iter()
+            .map(|client| PlayerInfo {
+                name: client.name.clone(),
+                pos: client.pos,
+            })
+            .collect()
+    }
+
+    pub fn stop(&mut self) {
+        self.kill.store(true, Ordering::Relaxed);
+    }
+
+    pub fn start(&mut self) -> anyhow::Result<()> {
+        let listener = TcpListener::bind(&self.address)?;
+
+        let (sender, receiver) = channel();
+        self.new_clients_recv = Some(receiver);
+        let kill = Arc::clone(&self.kill);
+
+        std::thread::spawn(|| connect_clients_blocking(listener, sender, kill));
+        Ok(())
+    }
+
+    pub fn update(&mut self) {
+        // --- Add any new clients to the client list ---
+        if let Some(new_clients) = &self.new_clients_recv {
+            while let Ok(client) = new_clients.try_recv() {
+                self.clients.push(client);
+            }
+        }
+
+        // --- Use any generated chunks from the chunk builders ---
+        while let Ok((pos, chunk, built_features)) = self.chunk_builder_recv.try_recv() {
+            self.world.chunks.insert(pos, chunk);
+            self.dirty_chunks.insert(pos);
+            self.world.unplaced_features.extend(built_features);
+        }
+
+        // --- Send any updated chunks to all the clients ---
+        for chunk_pos in &self.dirty_chunks {
+            let chunk = self.world.get_chunk(*chunk_pos).unwrap();
             let nodes = Vec::from(chunk.used_nodes());
 
+            // If the chunk is solid Air, don't bother wasting network calls.
+            // The client will represent the chunk as Air if we don't send the chunk data anyway.
+            if !nodes[0].is_split() && nodes[0].voxel() == Voxel::EMPTY {
+                continue;
+            }
+
             for client in &mut self.clients {
-                if let Err(err) =
-                    client
-                        .conn
-                        .write(ClientCmd::GiveChunkData(0, chunk_pos, nodes.clone()))
-                {
+                // If the chunk is not within render distance of the client,
+                // don't bother sending it.
+                if !client.using_chunk(*chunk_pos) {
+                    continue;
+                }
+                if let Err(err) = client.conn.write(ClientCmd::GiveChunkData(
+                    *chunk_pos,
+                    nodes.clone(),
+                    NodeAlloc::new(0..1, 1..2),
+                )) {
                     println!(
                         "Error sending chunk data to client {:?} : {:?}",
                         client.name, err
@@ -84,137 +239,135 @@ impl ServerState {
                 }
             }
         }
+        self.dirty_chunks.clear();
+
+        // --- Spawn builders for world generation ---
+        for idx in (0..self.chunk_builders.len()).rev() {
+            if self.chunk_builders[idx].is_done() {
+                _ = self.chunk_builders.remove(idx);
+            }
+        }
+        // each chunk builder will get a certain number of chunks to generate.
+        // - For now, the maximum number of chunk loaders is 8.
+        // - For now, each builder build 10 chunks.
+
+        let mut chunks_to_build = self.chunks_to_build.iter().copied();
+        while self.chunk_builders.len() < 8 {
+            let next: Vec<_> = (&mut chunks_to_build).take(10).collect();
+            if next.is_empty() {
+                break;
+            }
+            self.chunk_builders.push(ChunkBuilder::spawn(
+                Arc::clone(&self.world.gen),
+                next,
+                self.chunk_builder_send.clone(),
+            ));
+        }
+        self.chunks_to_build = chunks_to_build.collect();
     }
 
-    pub fn process_clients(&mut self) {
-        let Some(clients) = &self.new_clients else {
-            return;
-        };
-        while let Ok(client) = clients.try_recv() {
-            match client {
-                Ok(client) => self.clients.push(client),
-                Err(_err) => {}
-            }
+    pub fn update_world(&mut self) {
+        for chunk_pos in self.world.place_features() {
+            self.dirty_chunks.insert(chunk_pos);
         }
     }
 
-    pub fn respond_to_clients(&mut self) {
-        let mut clients_disconnecting = vec![];
-        let list: Vec<_> = self
-            .clients
-            .iter()
-            .map(|client| PlayerInfo {
-                name: client.name.clone(),
-                pos: client.pos,
-            })
-            .collect();
+    fn handle_client_cmd(&mut self, client: usize, cmd: ServerCmd, player_list: &[PlayerInfo]) {
+        let client = &mut self.clients[client];
 
-        let mut total_cmds = 0;
-        'f: for (idx, client) in self.clients.iter_mut().enumerate() {
-            while total_cmds < 1000 {
-                let rs = client.conn.try_read();
-                if let Err(err) = rs {
+        match cmd {
+            ServerCmd::Handshake { .. } => {}
+            ServerCmd::DisconnectNotice => {
+                println!("client sent disconnect notice {:?}", client.name)
+            }
+            ServerCmd::GetPlayersList => {
+                if let Err(err) = client
+                    .conn
+                    .write(ClientCmd::PlayersList(player_list.to_vec()))
+                {
+                    println!("Error sending cmd to client {:?} : {:?}", client.name, err);
+                }
+            }
+
+            ServerCmd::UpdateMyPlayerPos(new_pos) => {
+                client.pos = new_pos;
+            }
+            ServerCmd::UpdateMyRenderDistance(new_dist) => {
+                client.render_distance = new_dist;
+            }
+            ServerCmd::LoadChunks(chunks) => {
+                for chunk_pos in chunks.0 {
+                    client.wants_chunks.insert(chunk_pos);
+                    if let Some(data) = self.world.get_chunk(chunk_pos) {
+                        if let Err(err) = client.conn.write(ClientCmd::GiveChunkData(
+                            chunk_pos,
+                            data.used_nodes().to_vec(),
+                            NodeAlloc::new(0..1, 1..2),
+                        )) {
+                            println!("Error sending cmd to client {:?} : {:?}", client.name, err);
+                        }
+                    } else {
+                        self.chunks_to_build.insert(chunk_pos);
+                    }
+                }
+            }
+            ServerCmd::UnloadChunks(chunks) => {
+                for chunk_pos in chunks.0 {
+                    _ = client.wants_chunks.remove(&chunk_pos);
+                }
+            }
+            ServerCmd::GetVoxelData(_id, _pos) => {}
+            ServerCmd::PlaceVoxelData(_v, _pos) => {}
+        }
+    }
+
+    pub fn poll_clients(clients: &mut [Client]) -> PollResults {
+        let mut remove_clients = vec![];
+        let mut commands = vec![];
+
+        for client_idx in 0..clients.len() {
+            let client = &mut clients[client_idx];
+
+            let rs = client.conn.try_read();
+
+            let cmd = match rs {
+                Ok(Some(cmd)) => cmd,
+                Ok(None) => continue,
+                Err(err) => {
                     println!(
-                        "Error polling commands from client {:?} : {:?}",
+                        "Failed to poll commands from client {:?} : {:?}",
                         client.name, err
                     );
-                    continue 'f;
+                    remove_clients.push(client_idx);
+                    continue;
                 }
-                let Ok(Some(cmd)) = rs else {
-                    continue 'f;
-                };
-                // println!("Recieved cmd from client {:?} : {:?}", client.name, cmd);
-                match cmd {
-                    ServerCmd::Handshake { .. } => {
-                        println!("Unexpectedly received Handshake cmd from {:?}", client.name);
-                    }
-
-                    ServerCmd::DisconnectNotice => clients_disconnecting.push(idx),
-                    ServerCmd::GetPlayersList => {
-                        if let Err(err) = client.conn.write(ClientCmd::PlayersList(list.clone())) {
-                            println!(
-                                "Error sending client list to client {:?} : {:?}",
-                                client.name, err
-                            );
-                        }
-                    }
-                    ServerCmd::GetVoxelData(_id, _pos) => {}
-                    ServerCmd::GetChunkData(id, pos) => {
-                        if self.world.get_chunk(pos).is_none() {
-                            self.world.create_chunk(pos);
-                        }
-                        let chunk = self.world.get_chunk(pos).unwrap();
-                        let nodes = Vec::from(chunk.used_nodes());
-
-                        if let Err(err) =
-                            client.conn.write(ClientCmd::GiveChunkData(id, pos, nodes))
-                        {
-                            println!(
-                                "Error sending chunk data to client {:?} : {:?}",
-                                client.name, err
-                            );
-                            clients_disconnecting.push(idx);
-                        }
-                        total_cmds += 1;
-                    }
-                    ServerCmd::PlaceVoxelData(_v, _pos) => {}
-                }
-            }
+            };
+            commands.push((client_idx, cmd));
         }
-        for idx in clients_disconnecting.iter().rev() {
-            println!("Disconnected client {:?}", self.clients[*idx].name);
-            self.clients.remove(*idx);
+        PollResults {
+            remove_clients,
+            commands,
         }
     }
 
-    pub fn listen_for_clients(
-        &mut self,
-        shutdown: &'static AtomicBool,
-    ) -> Result<(), std::io::Error> {
-        let listener = TcpListener::bind(&self.address)?;
+    pub fn handle_clients(&mut self) {
+        let player_list = self.player_list();
+        let poll = Self::poll_clients(&mut self.clients);
+        for (client_idx, cmd) in poll.commands {
+            println!(
+                "handling cmd from client {:?} : {cmd:?}",
+                &self.clients[client_idx].name
+            );
+            self.handle_client_cmd(client_idx, cmd, &player_list);
+        }
 
-        let (sender, receiver) = channel();
-        self.new_clients = Some(receiver);
-        std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                if shutdown.load(Ordering::Relaxed) {
-                    println!("Dropping TCPListener...");
-                    break;
-                }
-                match stream {
-                    Ok(stream) => {
-                        println!("Client connected!");
-                        match ClientConn::establish(stream) {
-                            Ok((conn, name)) => {
-                                let client = Client {
-                                    name,
-                                    pos: Vec3::ZERO,
-                                    address: conn.stream.local_addr().unwrap(),
-                                    conn,
-                                };
-                                _ = sender.send(Ok(client));
-                            }
-                            Err(err) => {
-                                println!("Failed to connect client: {err:?}");
-                                _ = sender.send(Err(err));
-                            }
-                        };
-                    }
-                    Err(err) => {
-                        println!("Failed to connect client : {err:?}");
-                        _ = sender.send(Err(err.into()));
-                    }
-                }
-            }
-            println!("DONE LISTENING FOR CLIENTS");
-        });
-        Ok(())
+        for client_idx in poll.remove_clients.into_iter().rev() {
+            _ = self.clients.remove(client_idx);
+        }
     }
 }
 
-pub struct Client {
-    pub name: String,
-    pub pos: Vec3,
-    pub address: SocketAddr,
-    pub conn: ClientConn,
+pub struct PollResults {
+    pub remove_clients: Vec<usize>,
+    pub commands: Vec<(usize, ServerCmd)>,
 }

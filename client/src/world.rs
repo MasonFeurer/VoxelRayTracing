@@ -24,6 +24,10 @@ impl ChunkPtr {
     pub fn local_pos(&self) -> UVec3 {
         self.local_pos
     }
+
+    pub fn global_pos(&self, world: &ClientWorld) -> IVec3 {
+        self.local_pos.as_ivec3() + world.min_chunk
+    }
 }
 
 #[derive(Clone)]

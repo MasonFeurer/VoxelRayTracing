@@ -132,7 +132,7 @@ impl std::fmt::Debug for Node {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct NodeAlloc {
     // The range in the Node list that this chunk occupies.
     pub range: NodeRange,

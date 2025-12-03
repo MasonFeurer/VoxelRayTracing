@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 server = { package = "blockworld-server", path = "../server" }
 
+fastrand = "2.3.0"
 anyhow = "1.0.93"
 glam = "0.29.2"
 
