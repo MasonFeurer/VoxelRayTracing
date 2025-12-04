@@ -17,7 +17,7 @@ pub struct PlayerInput {
 }
 
 #[derive(Default)]
-pub struct InputResponse {
+pub struct PlayerMovement {
     pub new_cam: Vec3,
     pub cam_moved: bool,
     pub new_vel: Vec3,
@@ -66,11 +66,11 @@ impl Player {
         )
     }
 
-    pub fn process_input(&self, t_delta: f32, input: &PlayerInput) -> InputResponse {
+    pub fn process_input(&self, t_delta: f32, input: &PlayerInput) -> PlayerMovement {
         let dx = self.rot.y.to_radians().sin() * self.speed;
         let dz = self.rot.y.to_radians().cos() * self.speed;
 
-        let mut result = InputResponse::default();
+        let mut result = PlayerMovement::default();
 
         // ------- Camera -------
         {
@@ -140,7 +140,7 @@ impl Player {
         result
     }
 
-    pub fn update(&mut self, input: &InputResponse, world: impl Fn(&Aabb) -> Vec<Aabb>) {
+    pub fn update(&mut self, input: &PlayerMovement, world: impl Fn(&Aabb) -> Vec<Aabb>) {
         self.vel = input.new_vel;
         self.rot = input.new_cam;
         self.flying = input.flying;

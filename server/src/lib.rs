@@ -10,7 +10,7 @@ pub use common;
 use common::net::{ClientCmd, ServerCmd};
 use common::resources::{loader, VoxelPack, WorldFeatures, WorldPreset};
 use common::server::PlayerInfo;
-use common::world::{Node, NodeAlloc, Voxel, NODES_PER_CHUNK};
+use common::world::{Node, NodeAlloc, NODES_PER_CHUNK};
 use glam::{IVec3, Vec3};
 use net::ClientConn;
 use std::collections::HashSet;
@@ -143,7 +143,8 @@ pub struct ServerState {
 
     pub chunk_builder_send: Sender<(IVec3, ServerChunk, Vec<BuiltFeature>)>,
     pub chunk_builder_recv: Receiver<(IVec3, ServerChunk, Vec<BuiltFeature>)>,
-    pub chunks_to_build: HashSet<IVec3>,
+    pub chunks_to_build: Vec<IVec3>,
+    pub chunks_to_build_set: HashSet<IVec3>,
     pub chunk_builders: Vec<ChunkBuilder>,
     pub dirty_chunks: HashSet<IVec3>,
 
@@ -162,7 +163,8 @@ impl ServerState {
 
             chunk_builder_send,
             chunk_builder_recv,
-            chunks_to_build: HashSet::default(),
+            chunks_to_build: Default::default(),
+            chunks_to_build_set: Default::default(),
             chunk_builders: vec![],
             dirty_chunks: HashSet::default(),
 
@@ -215,12 +217,6 @@ impl ServerState {
             let chunk = self.world.get_chunk(*chunk_pos).unwrap();
             let nodes = Vec::from(chunk.used_nodes());
 
-            // If the chunk is solid Air, don't bother wasting network calls.
-            // The client will represent the chunk as Air if we don't send the chunk data anyway.
-            if !nodes[0].is_split() && nodes[0].voxel() == Voxel::EMPTY {
-                continue;
-            }
-
             for client in &mut self.clients {
                 // If the chunk is not within render distance of the client,
                 // don't bother sending it.
@@ -242,20 +238,22 @@ impl ServerState {
         self.dirty_chunks.clear();
 
         // --- Spawn builders for world generation ---
+        // remove finished chunk builders
         for idx in (0..self.chunk_builders.len()).rev() {
             if self.chunk_builders[idx].is_done() {
                 _ = self.chunk_builders.remove(idx);
             }
         }
-        // each chunk builder will get a certain number of chunks to generate.
-        // - For now, the maximum number of chunk loaders is 8.
-        // - For now, each builder build 10 chunks.
-
         let mut chunks_to_build = self.chunks_to_build.iter().copied();
-        while self.chunk_builders.len() < 8 {
-            let next: Vec<_> = (&mut chunks_to_build).take(10).collect();
+
+        let chunks_per_buider = 10;
+        while self.chunk_builders.len() < 16 {
+            let next: Vec<_> = (&mut chunks_to_build).take(chunks_per_buider).collect();
             if next.is_empty() {
                 break;
+            }
+            for chunk in &next {
+                _ = self.chunks_to_build_set.remove(chunk);
             }
             self.chunk_builders.push(ChunkBuilder::spawn(
                 Arc::clone(&self.world.gen),
@@ -307,7 +305,10 @@ impl ServerState {
                             println!("Error sending cmd to client {:?} : {:?}", client.name, err);
                         }
                     } else {
-                        self.chunks_to_build.insert(chunk_pos);
+                        if !self.chunks_to_build_set.contains(&chunk_pos) {
+                            self.chunks_to_build.push(chunk_pos);
+                            self.chunks_to_build_set.insert(chunk_pos);
+                        }
                     }
                 }
             }

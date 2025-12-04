@@ -17,16 +17,28 @@ impl ChunkPtr {
         }
     }
 
+    #[inline(always)]
     pub fn idx(&self) -> usize {
         self.idx
     }
 
+    #[inline(always)]
     pub fn local_pos(&self) -> UVec3 {
         self.local_pos
     }
 
+    #[inline(always)]
     pub fn global_pos(&self, world: &ClientWorld) -> IVec3 {
         self.local_pos.as_ivec3() + world.min_chunk
+    }
+    #[inline(always)]
+    pub fn local_center(&self) -> IVec3 {
+        IVec3::splat(CHUNK_SIZE as i32 / 2)
+    }
+    #[inline(always)]
+    pub fn global_center(&self, world: &ClientWorld) -> IVec3 {
+        chunk_to_world_pos(self.local_pos.as_ivec3() + world.min_chunk)
+            + IVec3::splat(CHUNK_SIZE as i32 / 2)
     }
 }
 

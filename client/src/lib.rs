@@ -11,10 +11,12 @@ pub use common;
 
 use anyhow::Context;
 use common::net::{ClientCmd, ConnError, ServerCmd};
-use glam::Vec3;
+use common::world::NodeAddr;
+use glam::{IVec3, Vec3};
 use net::ServerConn;
 use player::Player;
 use std::net::SocketAddr;
+use std::time::SystemTime;
 use world::ClientWorld;
 
 pub struct GameState {
@@ -33,23 +35,69 @@ impl GameState {
         }
     }
 }
-impl GameState {}
+
+#[derive(Default)]
+pub struct CmdResult {
+    pub kicked: bool,
+    pub updated_chunks: Vec<(IVec3, NodeAddr, usize)>,
+}
+
 /// Server functions
 impl GameState {
-    pub fn send_cmd(&mut self, cmd: ServerCmd) -> anyhow::Result<()> {
+    pub fn _send_cmd(&mut self, cmd: ServerCmd) -> anyhow::Result<()> {
         self.server_conn
             .as_mut()
             .ok_or(ConnError::NoServer)?
             .write(cmd)
     }
-    pub fn recv_cmd(&mut self) -> anyhow::Result<ClientCmd> {
+    pub fn _recv_cmd(&mut self) -> anyhow::Result<ClientCmd> {
         self.server_conn.as_mut().ok_or(ConnError::NoServer)?.read()
     }
-    pub fn try_recv_cmd(&mut self) -> anyhow::Result<Option<ClientCmd>> {
+    pub fn _try_recv_cmd(&mut self) -> anyhow::Result<Option<ClientCmd>> {
         self.server_conn
             .as_mut()
             .ok_or(ConnError::NoServer)?
             .try_read()
+    }
+
+    pub fn process_cmd(&mut self, cmd: ClientCmd, rs: &mut CmdResult) {
+        match cmd {
+            ClientCmd::GiveChunkData(pos, nodes, _node_alloc) => {
+                match self.world.create_chunk(pos, &nodes) {
+                    Ok(addr) => rs.updated_chunks.push((pos, addr, nodes.len())),
+                    Err(err) => println!("Failed to create chunk : {err:?}"),
+                };
+            }
+            ClientCmd::Kick(reason) => {
+                rs.kicked = true;
+                println!("We've been kicked : {reason:?}");
+            }
+            ClientCmd::PlayersList(_list) => {}
+            _ => {}
+        }
+    }
+    // will process commands from the server until the given timeout duration has passed
+    pub fn process_cmds_timeout(
+        &mut self,
+        timeout: std::time::Duration,
+    ) -> anyhow::Result<CmdResult> {
+        let start_time = SystemTime::now();
+
+        let mut rs = CmdResult::default();
+
+        let mut read = self
+            .server_conn
+            .as_mut()
+            .ok_or(ConnError::NoServer)?
+            .try_read();
+        while let Some(cmd) = read? {
+            if SystemTime::now().duration_since(start_time).unwrap() >= timeout {
+                break;
+            }
+            self.process_cmd(cmd, &mut rs);
+            read = self.server_conn.as_mut().unwrap().try_read();
+        }
+        Ok(rs)
     }
 
     pub fn disconnect(&mut self) -> anyhow::Result<()> {
