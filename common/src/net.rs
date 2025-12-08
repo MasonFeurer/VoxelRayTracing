@@ -42,7 +42,7 @@ pub enum ServerCmd {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub enum ClientCmd {
-    HandshakeAccepted,
+    HandshakeAccepted(Vec3),
     HandshakeDenied,
 
     Kick(String),

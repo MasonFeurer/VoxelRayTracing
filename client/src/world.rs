@@ -371,6 +371,15 @@ impl ClientWorld {
         let vox = chunk.get_voxel(&self.nodes, pos_in_chunk);
         vox
     }
+
+    pub fn highest_vox_at(&self, x: i32, z: i32) -> Option<i32> {
+        for y in (self.min_voxel().y..(self.max_voxel().y)).rev() {
+            if self.get_voxel(ivec3(x, y, z)).map(Voxel::is_empty) == Ok(false) {
+                return Some(y);
+            }
+        }
+        None
+    }
 }
 impl ClientWorld {
     pub fn get_collisions_w(&self, aabb: &Aabb) -> Vec<Aabb> {

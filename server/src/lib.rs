@@ -11,7 +11,7 @@ use common::net::{ClientCmd, ServerCmd};
 use common::resources::{loader, VoxelPack, WorldFeatures, WorldPreset};
 use common::server::PlayerInfo;
 use common::world::{Node, NodeAlloc, NODES_PER_CHUNK};
-use glam::{IVec3, Vec3};
+use glam::{vec3, IVec3, Vec3};
 use net::ClientConn;
 use std::collections::HashSet;
 use std::net::{SocketAddr, TcpListener};
@@ -108,6 +108,7 @@ pub fn connect_clients_blocking(
     listener: TcpListener,
     sender: Sender<Client>,
     kill: Arc<AtomicBool>,
+    client_start_pos: Vec3,
 ) {
     for stream in listener.incoming() {
         if kill.load(Ordering::Relaxed) {
@@ -120,7 +121,7 @@ pub fn connect_clients_blocking(
                     "Establishing client connection from {:?}",
                     stream.local_addr()
                 );
-                match ClientConn::establish(stream) {
+                match ClientConn::establish(stream, client_start_pos) {
                     Ok((conn, name)) => {
                         println!("Connected client: {name}!");
                         _ = sender.send(Client::new(name, conn));
@@ -193,7 +194,12 @@ impl ServerState {
         self.new_clients_recv = Some(receiver);
         let kill = Arc::clone(&self.kill);
 
-        std::thread::spawn(|| connect_clients_blocking(listener, sender, kill));
+        let client_start_y = self.world.gen.terrain_h_at(0, 0) as f32 + 10.0;
+        let client_start_pos = vec3(0.0, client_start_y, 0.0);
+
+        std::thread::spawn(move || {
+            connect_clients_blocking(listener, sender, kill, client_start_pos)
+        });
         Ok(())
     }
 
@@ -202,6 +208,16 @@ impl ServerState {
         if let Some(new_clients) = &self.new_clients_recv {
             while let Ok(client) = new_clients.try_recv() {
                 self.clients.push(client);
+            }
+        }
+        // --- Remove any clients that have silently disconnected ---
+        for idx in (0..self.clients.len()).rev() {
+            if self.clients[idx].conn.broken_pipe {
+                let client = self.clients.remove(idx);
+                println!(
+                    "Client {:?} connection interupted, disconnecting...",
+                    client.name
+                );
             }
         }
 
@@ -220,7 +236,7 @@ impl ServerState {
             for client in &mut self.clients {
                 // If the chunk is not within render distance of the client,
                 // don't bother sending it.
-                if !client.using_chunk(*chunk_pos) {
+                if client.conn.broken_pipe || !client.using_chunk(*chunk_pos) {
                     continue;
                 }
                 if let Err(err) = client.conn.write(ClientCmd::GiveChunkData(
@@ -276,6 +292,7 @@ impl ServerState {
         match cmd {
             ServerCmd::Handshake { .. } => {}
             ServerCmd::DisconnectNotice => {
+                client.conn.broken_pipe = true;
                 println!("client sent disconnect notice {:?}", client.name)
             }
             ServerCmd::GetPlayersList => {
@@ -295,6 +312,9 @@ impl ServerState {
             }
             ServerCmd::LoadChunks(chunks) => {
                 for chunk_pos in chunks.0 {
+                    if client.conn.broken_pipe {
+                        break;
+                    }
                     client.wants_chunks.insert(chunk_pos);
                     if let Some(data) = self.world.get_chunk(chunk_pos) {
                         if let Err(err) = client.conn.write(ClientCmd::GiveChunkData(

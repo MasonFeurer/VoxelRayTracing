@@ -5,7 +5,7 @@ use glam::{uvec3, IVec3, UVec3, Vec3};
 pub type NodeAddr = u32;
 pub type NodeRange = std::ops::Range<NodeAddr>;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum SetVoxelErr {
     PosOutOfBounds,
     OutOfMemory,

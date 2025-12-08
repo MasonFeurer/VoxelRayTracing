@@ -12,7 +12,7 @@ use client::common::world::Node;
 use client::player::PlayerInput;
 use client::world::ClientWorld;
 use client::GameState;
-use glam::{ivec3, uvec2, IVec3, UVec2, Vec3};
+use glam::{ivec3, uvec2, IVec3, UVec2};
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -143,8 +143,7 @@ impl AppState {
         settings.samples_per_pixel = 1;
 
         let world = ClientWorld::new(ivec3(0, 0, 0), max_nodes, 40);
-        let player_pos = world.min_voxel().as_vec3() + Vec3::splat(world.size() as f32) * 0.5;
-        let mut game = GameState::new(username, world, player_pos);
+        let mut game = GameState::new(username, world);
 
         if let Err(err) = game.join_server(SocketAddr::new("127.0.0.1".parse().unwrap(), port)) {
             panic!("Failed to connect to server: {err:?}");

@@ -26,10 +26,10 @@ pub struct GameState {
     pub world: ClientWorld,
 }
 impl GameState {
-    pub fn new(user_name: String, world: ClientWorld, player_pos: Vec3) -> Self {
+    pub fn new(user_name: String, world: ClientWorld) -> Self {
         Self {
             user_name,
-            player: Player::new(player_pos, 0.2),
+            player: Player::new(Vec3::ZERO, 0.2),
             server_conn: None,
             world,
         }
@@ -116,6 +116,7 @@ impl GameState {
     pub fn join_server(&mut self, addr: SocketAddr) -> anyhow::Result<()> {
         let conn =
             ServerConn::establish(addr, self.user_name.clone()).context("Failed to join server")?;
+        self.player.pos = conn.player_pos;
         self.server_conn = Some(conn);
         Ok(())
     }

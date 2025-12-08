@@ -1,17 +1,20 @@
 use anyhow::Context;
 use common::net::{ClientCmd, ConnError, ServerCmd};
+use glam::Vec3;
 use std::io::Read;
 use std::net::TcpStream;
 
 pub struct ClientConn {
     pub stream: TcpStream,
     pub received_bytes: Vec<u8>,
+    pub broken_pipe: bool,
 }
 impl ClientConn {
-    pub fn establish(stream: TcpStream) -> anyhow::Result<(Self, String)> {
+    pub fn establish(stream: TcpStream, pos: Vec3) -> anyhow::Result<(Self, String)> {
         let mut conn = Self {
             stream,
             received_bytes: vec![],
+            broken_pipe: false,
         };
 
         let cmd = conn.read()?;
@@ -20,7 +23,7 @@ impl ClientConn {
         } else {
             Err(ConnError::ClientGaveInvalidData)?
         };
-        conn.write(ClientCmd::HandshakeAccepted)?;
+        conn.write(ClientCmd::HandshakeAccepted(pos))?;
 
         Ok((conn, name))
     }
@@ -51,7 +54,7 @@ impl ClientConn {
         if self.received_bytes.len() == 0 {
             let cmd =
                 bincode::serde::decode_from_std_read(&mut self.stream, bincode::config::standard())
-                    .context("Failed to read message from server")?;
+                    .context("Failed to read message from client")?;
             Ok(cmd)
         } else {
             todo!()
@@ -59,7 +62,20 @@ impl ClientConn {
     }
 
     pub fn write(&mut self, cmd: ClientCmd) -> anyhow::Result<()> {
-        bincode::serde::encode_into_std_write(cmd, &mut self.stream, bincode::config::standard())?;
+        let rs = bincode::serde::encode_into_std_write(
+            cmd,
+            &mut self.stream,
+            bincode::config::standard(),
+        );
+        match &rs {
+            Err(bincode::error::EncodeError::Io { inner, index: _ }) => match inner.kind() {
+                std::io::ErrorKind::BrokenPipe => self.broken_pipe = true,
+                std::io::ErrorKind::ConnectionReset => self.broken_pipe = true,
+                _ => {}
+            },
+            _ => {}
+        }
+        rs?;
         Ok(())
     }
 }

@@ -110,6 +110,11 @@ impl WorldGen {
         }
     }
 
+    #[inline(always)]
+    pub fn terrain_h_at(&self, x: i32, z: i32) -> i32 {
+        self.height_map.eval(x as f32, z as f32) as i32
+    }
+
     pub fn biome_at(&self, x: i32, z: i32) -> &Biome {
         // 0.0f..1.0f
         let temp = self.temp_map.eval(x as f32, z as f32);

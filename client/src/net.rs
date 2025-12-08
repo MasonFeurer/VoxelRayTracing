@@ -1,11 +1,13 @@
 use anyhow::Context;
 use common::net::{ClientCmd, ConnError, ServerCmd};
+use glam::Vec3;
 use std::io::Read;
 use std::net::{SocketAddr, TcpStream};
 
 pub struct ServerConn {
     pub stream: TcpStream,
     pub received_bytes: Vec<u8>,
+    pub player_pos: Vec3,
 }
 impl ServerConn {
     pub fn establish(addr: SocketAddr, name: String) -> anyhow::Result<Self> {
@@ -13,12 +15,13 @@ impl ServerConn {
         let mut stream = Self {
             stream,
             received_bytes: vec![],
+            player_pos: Vec3::ZERO,
         };
 
         stream.write(ServerCmd::Handshake { name })?;
         let response = stream.read();
         match response? {
-            ClientCmd::HandshakeAccepted => (),
+            ClientCmd::HandshakeAccepted(player_pos) => stream.player_pos = player_pos,
             ClientCmd::HandshakeDenied => Err(ConnError::ServerDeniedConnection)?,
             _ => Err(ConnError::ServerGaveInvalidData)?,
         };
