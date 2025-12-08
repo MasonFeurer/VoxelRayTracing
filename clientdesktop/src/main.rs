@@ -254,6 +254,9 @@ impl AppState {
                     nodes,
                 );
             }
+            for pos in rs.received_oob_chunks {
+                self.chunk_requests_sent.remove(&pos);
+            }
             if rs.kicked {}
         }
     }
@@ -391,6 +394,16 @@ impl AppState {
                                 self.game.player.pos.y,
                                 self.game.player.pos.z
                             ));
+                            ui.horizontal(|ui| {
+                                ui.heading(format!("speed: {:.2}", self.game.player.speed));
+                                if ui.button("-").clicked() {
+                                    self.game.player.speed -= 0.1;
+                                    self.game.player.speed = self.game.player.speed.max(0.0);
+                                }
+                                if ui.button("+").clicked() {
+                                    self.game.player.speed += 0.1;
+                                }
+                            });
                         }
                         ui.separator();
                         {

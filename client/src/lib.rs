@@ -11,7 +11,7 @@ pub use common;
 
 use anyhow::Context;
 use common::net::{ClientCmd, ConnError, ServerCmd};
-use common::world::NodeAddr;
+use common::world::{NodeAddr, SetVoxelErr};
 use glam::{IVec3, Vec3};
 use net::ServerConn;
 use player::Player;
@@ -40,6 +40,7 @@ impl GameState {
 pub struct CmdResult {
     pub kicked: bool,
     pub updated_chunks: Vec<(IVec3, NodeAddr, usize)>,
+    pub received_oob_chunks: Vec<IVec3>,
 }
 
 /// Server functions
@@ -65,7 +66,8 @@ impl GameState {
             ClientCmd::GiveChunkData(pos, nodes, _node_alloc) => {
                 match self.world.create_chunk(pos, &nodes) {
                     Ok(addr) => rs.updated_chunks.push((pos, addr, nodes.len())),
-                    Err(err) => println!("Failed to create chunk : {err:?}"),
+                    Err(SetVoxelErr::PosOutOfBounds) => rs.received_oob_chunks.push(pos),
+                    Err(err) => println!("Encountered error creating chunk: {err:?}"),
                 };
             }
             ClientCmd::Kick(reason) => {
