@@ -211,8 +211,9 @@ pub struct WorldPresetSource {
     height: Source,
     weirdness: Source,
 
-    sea_level: u32,
+    sea_level: i32,
     earth: String,
+    water: String,
     biome_lookup: [[u32; 20]; 4],
     biomes: Vec<BiomeSource>,
 }
@@ -242,6 +243,11 @@ impl WorldPresetSource {
             earth: voxels.by_name(&self.earth).ok_or(
                 LoaderErr::voxel_nf(&self.earth)
                     .context("`earth` field")
+                    .context(&ctx),
+            )?,
+            water: voxels.by_name(&self.water).ok_or(
+                LoaderErr::voxel_nf(&self.water)
+                    .context("`water` field")
                     .context(&ctx),
             )?,
             biome_lookup: self.biome_lookup.clone(),

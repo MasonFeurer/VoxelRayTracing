@@ -21,12 +21,9 @@ struct World {
 
 struct Material {
     color: vec3<f32>,
-    empty: u32,
+    is_empty: u32,
+    is_liquid: u32,
     scatter: f32,
-    emission: f32,
-    polish_bounce_chance: f32,
-    polish_color: vec3<f32>,
-    polish_scatter: f32,
 }
 
 @group(0) @binding(0) var output_texture_: texture_storage_2d<rgba8unorm, write>;
@@ -61,6 +58,7 @@ struct HitResult {
     material: Material,
     norm: vec3<f32>,
     pos: vec3<f32>,
+    water_dist: f32,
 }
 
 struct FoundNode {
@@ -124,11 +122,21 @@ fn find_node(pos: vec3<f32>, max_depth: u32) -> FoundNode {
     return find_chunk_node(pos, max_depth, min, root);
 }
 
+fn overlay_color(back: vec3<f32>, front: vec3<f32>, factor: f32) -> vec3<f32> {
+    return back * (1.0 - factor) + front * factor;
+}
+
 fn ray_color(ray: Ray) -> vec3<f32> {
     let rs = ray_world(ray);
     let sky_color = ray_sky(ray);
     var vox_color = rs.material.color;
-    return vox_color * f32(rs.hit) + sky_color * f32(!rs.hit);
+    var color = vox_color * f32(rs.hit) + sky_color * f32(!rs.hit);
+    
+    if rs.water_dist != 0.0 {
+        var factor = clamp(rs.water_dist / 14.0, 0.8, 1.0);
+        color = overlay_color(color, vec3(0.2, 0.5, 1.0), factor);
+    }
+    return color;
 }
 
 fn ray_sky(ray: Ray) -> vec3<f32> {
@@ -185,9 +193,7 @@ fn ray_world(start_ray: Ray) -> HitResult {
     var result: HitResult;
     
     if any(ray_pos <= world_min) | any(ray_pos >= world_max) {
-    	// Make screen black if the player is not in world bounds
-    	result.hit = true;
-    	result.material.color = vec3(0.0, 0.0, 0.0);
+    	// If the camera is not in world bounds, don't show anything.
         return result;
     }
     
@@ -204,6 +210,10 @@ fn ray_world(start_ray: Ray) -> HitResult {
     var voxel: u32;
     var norm: vec3<f32>;
     
+    // the distance the ray travled when it entered water
+    var dist_entered_water: f32 = -1.0;
+    var total_len: f32 = 0.0;
+    
     var iter_count: u32 = 0u;
     while iter_count < 500u {
         iter_count += 1u;
@@ -211,15 +221,29 @@ fn ray_world(start_ray: Ray) -> HitResult {
         let found_node = find_node(ray_pos, 5u); // the most child one
         voxel = node_voxel(get_node(found_node.root + found_node.idx)); // just voxel - most time air
         
-        if voxel != 0u { // not air, so return it
+        let is_liquid = voxel_mats[voxel].is_liquid == 1u;
+        
+        // TODO FIXME
+        if voxel != 0u && !is_liquid { // not air, so return it
             break;
+        }
+        if !is_liquid {
+            if dist_entered_water != -1.0 {
+                result.water_dist += total_len - dist_entered_water;
+                dist_entered_water = -1.0;
+            }
+        }
+        if is_liquid {
+            // result.effect *= vec4(0.95, 0.95, 1.5, 1.0);
+            if dist_entered_water == -1.0 {
+                dist_entered_water = total_len;
+            }
         }
         let axis_dist: vec3<f32> = (
             (ray_pos - found_node.min) * imask + (found_node.max - ray_pos) * mask
         ) * unit_step_size;
-
+        
         var step: f32;
-
         if axis_dist.x == 0.0 {
             if axis_dist.y == 0.0 {
                 step = axis_dist.z;
@@ -243,7 +267,7 @@ fn ray_world(start_ray: Ray) -> HitResult {
                 }
             }
         }
-        
+        total_len += step;
         norm = vec3<f32>(f32(step == axis_dist.x), f32(step == axis_dist.y), f32(step == axis_dist.z)) * -sign(dir);
         
         ray_pos += dir * (step + 0.001) * vec3<f32>(
@@ -275,6 +299,9 @@ fn ray_world(start_ray: Ray) -> HitResult {
     }
     if result.norm.y == -1.0 {
         result.material.color *= 0.2;
+    }
+    if dist_entered_water != -1.0 {
+        result.water_dist += total_len - dist_entered_water;
     }
 
     if settings_.show_step_count == 1u {

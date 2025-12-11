@@ -13,8 +13,9 @@ pub struct WorldPreset {
     pub humidity: Source,
     pub weirdness: Source,
     pub height: Source,
-    pub sea_level: u32,
+    pub sea_level: i32,
     pub earth: Voxel,
+    pub water: Voxel,
 
     pub biome_lookup: [[u32; 20]; 4],
     pub biomes: Vec<Biome>,
@@ -109,10 +110,25 @@ impl VoxelPack {
     }
 }
 
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq)]
+pub enum VoxelState {
+    Solid,
+    Liquid,
+    Gas,
+}
+
 #[derive(Deserialize, Debug)]
 pub struct VoxelData {
+    pub state: VoxelState,
     pub name: String,
-    pub empty: bool,
+}
+impl VoxelData {
+    pub fn is_solid(&self) -> bool {
+        self.state == VoxelState::Solid
+    }
+    pub fn is_air(&self) -> bool {
+        self.state == VoxelState::Gas
+    }
 }
 
 #[derive(Debug)]
@@ -122,12 +138,12 @@ pub struct VoxelStylePack {
 
 #[derive(Deserialize, Clone, Copy, Debug)]
 pub struct VoxelStyle {
-    pub empty: bool,
+    pub state: VoxelState,
     pub color: [f32; 3],
 }
 impl VoxelStyle {
     pub const ZERO: Self = Self {
-        empty: false,
+        state: VoxelState::Gas,
         color: [0.0; 3],
     };
 }

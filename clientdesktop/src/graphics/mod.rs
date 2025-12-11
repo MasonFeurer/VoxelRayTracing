@@ -20,13 +20,22 @@ static SCREEN_SHADER_SRC: &str = include_str!("screen_shader.wgsl");
 #[repr(C)]
 pub struct Material {
     pub color: [f32; 3],
-    pub empty: u32,
+    pub is_empty: u32,
+    pub is_liquid: u32,
     pub scatter: f32,
-    pub emission: f32,
-    pub polish_bounce_chance: f32,
-    pub translucency: f32,
-    pub polish_color: [f32; 3],
-    pub polish_scatter: f32,
+    _padding: [u32; 2],
+}
+impl Material {
+    pub fn construct(src: client::common::resources::VoxelStyle) -> Self {
+        use client::common::resources::VoxelState;
+        Self {
+            color: src.color,
+            is_empty: (src.state == VoxelState::Gas) as u32,
+            is_liquid: (src.state == VoxelState::Liquid) as u32,
+            scatter: 0.0,
+            _padding: [0; 2],
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -108,7 +117,7 @@ pub struct Settings {
     pub sky_color: [f32; 3],
     pub _padding1: u32,
     pub sun_pos: [f32; 3],
-    pub samples_per_pixel: u32,
+    pub _padding2: u32,
 }
 
 pub struct GpuResources {

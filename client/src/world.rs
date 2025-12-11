@@ -1,4 +1,5 @@
 use crate::common::math::Aabb;
+use crate::common::resources::VoxelPack;
 use crate::common::world::*;
 use glam::{ivec3, uvec3, IVec3, UVec3};
 
@@ -382,7 +383,7 @@ impl ClientWorld {
     }
 }
 impl ClientWorld {
-    pub fn get_collisions_w(&self, aabb: &Aabb) -> Vec<Aabb> {
+    pub fn get_collisions_w(&self, aabb: &Aabb, voxelpack: &VoxelPack) -> Vec<Aabb> {
         let mut aabbs = Vec::new();
 
         let from = aabb.from.floor().as_ivec3();
@@ -395,7 +396,7 @@ impl ClientWorld {
 
                     let voxel = self.get_voxel(pos).unwrap_or(Voxel::EMPTY);
 
-                    if !voxel.is_empty() {
+                    if voxelpack.get(voxel).unwrap().is_solid() {
                         let min = pos.as_vec3();
                         let max = min + 1.0;
                         aabbs.push(Aabb::new(min, max));

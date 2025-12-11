@@ -92,20 +92,7 @@ pub fn load_voxel_mats(res_folder: &str, voxels: &VoxelPack) -> anyhow::Result<V
     let src = std::fs::read_to_string(format!("{res_folder}/voxelstylepack.ron"))?;
     let styles = client::common::resources::loader::parse_voxel_stylepack(&src, voxels)?;
 
-    let mut materials = Vec::with_capacity(styles.styles.len());
-    for style in styles.styles {
-        materials.push(Material {
-            color: style.color,
-            empty: style.empty as u32,
-            scatter: 0.0,
-            emission: 0.0,
-            polish_bounce_chance: 0.0,
-            translucency: 0.0,
-            polish_color: [0.0; 3],
-            polish_scatter: 0.0,
-        });
-    }
-    Ok(materials)
+    Ok(styles.styles.into_iter().map(Material::construct).collect())
 }
 
 pub struct AppState {
@@ -140,7 +127,6 @@ impl AppState {
         settings.max_ray_bounces = 3;
         settings.sun_intensity = 4.0;
         settings.sky_color = [0.81, 0.93, 1.0];
-        settings.samples_per_pixel = 1;
 
         let world = ClientWorld::new(ivec3(0, 0, 0), max_nodes, 40);
         let mut game = GameState::new(username, world);
@@ -277,9 +263,9 @@ impl AppState {
                 toggle_fly: input.key_pressed(&Key::KeyZ),
             };
             let player_updates = self.game.player.process_input(delta, &in_);
-            self.game
-                .player
-                .update(&player_updates, |bb| self.game.world.get_collisions_w(bb));
+            self.game.player.update(&player_updates, |bb| {
+                self.game.world.get_collisions_w(bb, &self.voxelpack)
+            });
         }
 
         // --- Misc. key binds ---

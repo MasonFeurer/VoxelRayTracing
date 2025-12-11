@@ -29,6 +29,7 @@ WorldPresetSource (
 	),
 	
 	earth: "stone",
+	water: "water",
 	biomes: [
 		BiomeSource (
 			name: "Arctic Desert",
@@ -122,6 +123,7 @@ WorldPresetSource (
 	),
 	
 	earth: "stone",
+	water: "water",
 	biomes: [
 		BiomeSource (
 			name: "Default",

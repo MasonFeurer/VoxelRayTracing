@@ -84,6 +84,8 @@ pub struct WorldGen {
     pub biomes: Vec<Biome>,
     pub biome_lookup: [[u32; 20]; 4],
     pub earth: Voxel,
+    pub water: Voxel,
+    pub sea_level: i32,
     height_map: ValueGen,
     temp_map: ValueGen,
     humidity_map: ValueGen,
@@ -101,6 +103,8 @@ impl WorldGen {
             biomes: preset.biomes.clone(),
             biome_lookup: preset.biome_lookup.clone(),
             earth: preset.earth,
+            water: preset.water,
+            sea_level: preset.sea_level,
             height_map: value_gen_from_src(&preset.height, &mut seed),
             temp_map: value_gen_from_src(&preset.temp, &mut seed),
             humidity_map: value_gen_from_src(&preset.humidity, &mut seed),
@@ -188,7 +192,18 @@ impl WorldGen {
                         &mut node_alloc,
                     );
                 }
-                if (h - world_pos.y < 0) || (h - world_pos.y >= 32) {
+                for world_y in end_y..self.sea_level.min(world_pos.y + CHUNK_SIZE as i32) {
+                    let y_in_chunk = (world_y - world_pos.y) as u32;
+                    _ = Svo::new(0, CHUNK_SIZE).set_node(
+                        buffer,
+                        uvec3(x, y_in_chunk, z),
+                        self.water,
+                        CHUNK_DEPTH,
+                        &mut node_alloc,
+                    );
+                }
+
+                if (h - world_pos.y < 0) || (h - world_pos.y >= 32) || h < self.sea_level {
                     continue;
                 }
 
