@@ -182,9 +182,19 @@ impl AppState {
 
     pub fn update_game(&mut self) {
         if !self.freeze_world_anchor {
-            self.game
+            let removed_chunks = self
+                .game
                 .world
                 .center_chunks(self.game.player.pos.as_ivec3());
+            let (posis, chunks): (Vec<_>, Vec<_>) = removed_chunks.into_iter().unzip();
+            for chunk in chunks {
+                _ = self.game.world.free_chunk(chunk);
+            }
+            if posis.len() > 0 {
+                _ = self
+                    .game
+                    ._send_cmd(ServerCmd::UnloadChunks(ChunksList(posis)));
+            }
         }
 
         let mut empty_chunks = self.game.world.empty_chunks().collect::<Vec<_>>();

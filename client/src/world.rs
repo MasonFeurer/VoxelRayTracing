@@ -119,8 +119,9 @@ impl ChunkGrid {
         self.chunk_count
     }
 
-    pub fn shift_chunks(&mut self, offset: IVec3) {
+    pub fn shift_chunks(&mut self, offset: IVec3) -> Vec<(UVec3, Chunk)> {
         let mut new_chunks = vec![None; self.chunks.len()].into_boxed_slice();
+        let mut removed_chunks = Vec::new();
 
         let min = IVec3::ZERO;
         let max = IVec3::splat(self.size as i32);
@@ -134,6 +135,9 @@ impl ChunkGrid {
 
                     let dst_pos = pos.as_ivec3() - offset;
                     if dst_pos.cmplt(min).any() || dst_pos.cmpge(max).any() {
+                        if let Some(chunk) = self.chunks[idx].clone() {
+                            removed_chunks.push((pos, chunk));
+                        }
                         continue;
                     }
                     let dst_idx = Self::local_pos_to_idx(dst_pos.as_uvec3(), self.size);
@@ -142,6 +146,7 @@ impl ChunkGrid {
             }
         }
         self.chunks = new_chunks;
+        removed_chunks
     }
 
     pub fn chunk_roots(&self) -> Vec<NodeAddr> {
@@ -221,6 +226,22 @@ impl ChunkAlloc {
         (total_free as u32, self.max_nodes)
     }
 
+    pub fn free_chunk(&mut self, root: u32, size: u32) {
+        let range = root..root + size;
+        // check if this span can be extended from an existing free memory span
+        for free in &mut self.free_mem {
+            if free.start == range.end {
+                free.start -= size;
+                return;
+            }
+            if free.end == root {
+                free.end += size;
+                return;
+            }
+        }
+        self.free_mem.push(range);
+    }
+
     pub fn alloc_chunk(&mut self, size: u32) -> Chunk {
         let req_space = size + CHUNK_INIT_FREE_MEM;
 
@@ -269,6 +290,12 @@ impl ClientWorld {
         }
     }
 
+    pub fn free_chunk(&mut self, chunk: Chunk) -> Option<()> {
+        self.chunk_alloc
+            .free_chunk(chunk.range.start, chunk.range.len() as u32);
+        Some(())
+    }
+
     pub fn chunk_alloc_status(&self) -> (u32, u32) {
         self.chunk_alloc.status()
     }
@@ -299,18 +326,22 @@ impl ClientWorld {
     }
 }
 impl ClientWorld {
-    pub fn center_chunks(&mut self, anchor: IVec3) {
+    pub fn center_chunks(&mut self, anchor: IVec3) -> Vec<(IVec3, Chunk)> {
         let anchor_chunk = world_to_chunk_pos(anchor);
         let curr_min_chunk = self.min_chunk();
         let new_min_chunk = anchor_chunk - IVec3::splat(self.size as i32 / 2);
 
         if curr_min_chunk == new_min_chunk {
-            return;
+            return vec![];
         }
         self.min_chunk = new_min_chunk;
 
         let chunk_offset = new_min_chunk - curr_min_chunk;
-        self.chunks.shift_chunks(chunk_offset)
+        let removed_chunks = self.chunks.shift_chunks(chunk_offset);
+        removed_chunks
+            .into_iter()
+            .map(|(local_pos, chunk)| (local_pos.as_ivec3() + self.min_chunk, chunk))
+            .collect()
     }
 
     pub fn create_chunk(&mut self, pos: IVec3, nodes: &[Node]) -> Result<NodeAddr, SetVoxelErr> {
