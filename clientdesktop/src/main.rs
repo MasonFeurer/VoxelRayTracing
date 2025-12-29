@@ -1,22 +1,22 @@
 pub mod graphics;
 pub mod input;
+pub mod ui;
 
 use crate::input::{InputState, Key};
 use graphics::{CamData, Crosshair, Egui, Gpu, GpuResources, Material, Settings, WorldData};
 
 use anyhow::Context;
 use client::common::math::HitResult;
-use client::common::net::{ChunksList, ServerCmd};
 use client::common::resources::VoxelPack;
 use client::common::world::Node;
+use client::net::ServerConn;
 use client::player::PlayerInput;
 use client::world::ClientWorld;
 use client::GameState;
-use glam::{ivec3, uvec2, IVec3, UVec2};
-use std::collections::HashSet;
+use glam::{ivec3, uvec2, UVec2};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 use winit::application::ApplicationHandler;
 use winit::event::*;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
@@ -111,12 +111,10 @@ pub struct AppState {
     pub settings: Settings,
     pub vertical_samples: u32,
 
-    pub game: GameState,
+    pub game: Option<GameState>,
     pub crosshair: Crosshair,
     pub freeze_world_anchor: bool,
     hide_overlay: bool,
-
-    pub chunk_requests_sent: HashSet<IVec3>,
 }
 impl AppState {
     pub fn new(username: String, res_dir: String, port: u16, max_nodes: u32) -> Self {
@@ -129,11 +127,12 @@ impl AppState {
         settings.sky_color = [0.81, 0.93, 1.0];
 
         let world = ClientWorld::new(ivec3(0, 0, 0), max_nodes, 40);
-        let mut game = GameState::new(username, world);
-
-        if let Err(err) = game.join_server(SocketAddr::new("127.0.0.1".parse().unwrap(), port)) {
-            panic!("Failed to connect to server: {err:?}");
-        }
+        let server = ServerConn::establish(
+            SocketAddr::new("127.0.0.1".parse().unwrap(), port),
+            &username,
+        )
+        .unwrap();
+        let game = GameState::new(username, world, server);
 
         Self {
             window: None,
@@ -151,12 +150,10 @@ impl AppState {
             settings,
             vertical_samples: 800,
 
-            game,
+            game: Some(game),
             crosshair: Default::default(),
             freeze_world_anchor: false,
             hide_overlay: false,
-
-            chunk_requests_sent: Default::default(),
         }
     }
 
@@ -181,58 +178,19 @@ impl AppState {
     }
 
     pub fn update_game(&mut self) {
+        let Some(game) = &mut self.game else {
+            return;
+        };
         if !self.freeze_world_anchor {
-            let removed_chunks = self
-                .game
-                .world
-                .center_chunks(self.game.player.pos.as_ivec3());
-            let (posis, chunks): (Vec<_>, Vec<_>) = removed_chunks.into_iter().unzip();
-            for chunk in chunks {
-                _ = self.game.world.free_chunk(chunk);
-            }
-            if posis.len() > 0 {
-                _ = self
-                    .game
-                    ._send_cmd(ServerCmd::UnloadChunks(ChunksList(posis)));
-            }
+            game.center_chunks(game.player.pos.as_ivec3());
         }
-
-        let mut empty_chunks = self.game.world.empty_chunks().collect::<Vec<_>>();
-        empty_chunks.sort_by(|a, b| {
-            let center = self.game.player.pos;
-            let a_dist = center.distance(a.global_center(&self.game.world).as_vec3());
-            let b_dist = center.distance(b.global_center(&self.game.world).as_vec3());
-            a_dist
-                .partial_cmp(&b_dist)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        let mut chunks_to_load: Vec<IVec3> = vec![];
-        for chunk in empty_chunks {
-            let global_pos = chunk.global_pos(&self.game.world);
-            if self.chunk_requests_sent.contains(&global_pos) {
-                continue;
-            }
-            chunks_to_load.push(global_pos);
-        }
-        if !chunks_to_load.is_empty() {
-            if let Err(err) = self
-                .game
-                ._send_cmd(ServerCmd::LoadChunks(ChunksList(chunks_to_load.clone())))
-            {
-                println!("Failed to send cmd to server: {err:?}");
-            } else {
-                self.chunk_requests_sent.extend(chunks_to_load);
-            }
-        }
+        game.request_missing_chunks();
     }
 
     pub fn update(&mut self) {
         // -------- Handle Server Commands -------
-        {
-            let rs = self
-                .game
-                .process_cmds_timeout(std::time::Duration::from_millis(500));
+        if let Some(game) = &mut self.game {
+            let rs = game.process_cmds_timeout(Duration::from_millis(200));
             let rs = match rs {
                 Ok(rs) => rs,
                 Err(err) => {
@@ -240,19 +198,14 @@ impl AppState {
                     return;
                 }
             };
-            for (pos, root, node_count) in rs.updated_chunks {
-                self.chunk_requests_sent.remove(&pos);
-                let nodes = &self.game.world.nodes()[root as usize..root as usize + node_count];
+            for (_pos, root, node_count) in rs.updated_chunks {
+                let nodes = &game.world.nodes()[root as usize..root as usize + node_count];
                 self.gpu_res.as_ref().unwrap().buffers.nodes.write(
                     &self.gpu.as_ref().unwrap(),
                     root as u64,
                     nodes,
                 );
             }
-            for pos in rs.received_oob_chunks {
-                self.chunk_requests_sent.remove(&pos);
-            }
-            if rs.kicked {}
         }
     }
 
@@ -261,7 +214,7 @@ impl AppState {
 
         // -------- Player Updates --------
         // Update player pos with input
-        if self.cursor_hidden {
+        if let (Some(game), true) = (&mut self.game, self.cursor_hidden) {
             let in_ = PlayerInput {
                 cursor_movement: input.cursor_delta,
                 left: input.key_down(&Key::KeyA),
@@ -272,9 +225,9 @@ impl AppState {
                 crouch: input.key_down(&Key::ShiftLeft),
                 toggle_fly: input.key_pressed(&Key::KeyZ),
             };
-            let player_updates = self.game.player.process_input(delta, &in_);
-            self.game.player.update(&player_updates, |bb| {
-                self.game.world.get_collisions_w(bb, &self.voxelpack)
+            let player_updates = game.player.process_input(delta, &in_);
+            game.player.update(&player_updates, |bb| {
+                game.world.get_collisions_w(bb, &self.voxelpack)
             });
         }
 
@@ -299,6 +252,9 @@ impl AppState {
         if input.key_pressed(&Key::KeyQ) {
             self.freeze_world_anchor = !self.freeze_world_anchor;
         }
+        if input.key_pressed(&Key::KeyL) {
+            self.game = None;
+        }
     }
 
     pub fn draw_frame(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -310,29 +266,29 @@ impl AppState {
         let mut encoder = gpu.create_command_encoder();
         let result_tex_size = gpu_res.result_texture.size();
 
-        // Upload camera data to GPU
-        {
-            let buffers = &gpu_res.buffers;
+        // --- Update buffers ---
+        let buffers = &gpu_res.buffers;
+        buffers.settings.write(&gpu, &self.settings);
+        buffers
+            .screen_size
+            .write(&gpu, &[result_tex_size.x as f32, result_tex_size.y as f32]);
+        buffers.crosshair.write(&gpu, &self.crosshair);
 
+        // Upload game state to GPU
+        if let Some(game) = &self.game {
             let cam_data = CamData::create(
-                self.game.player.rot,
-                self.game.player.eye_pos(),
-                self.game.player.fov,
+                game.player.rot,
+                game.player.eye_pos(),
+                game.player.fov,
                 result_tex_size.as_vec2(),
             );
             buffers.cam_data.write(&gpu, &cam_data);
-            buffers.settings.write(&gpu, &self.settings);
-            buffers
-                .chunk_roots
-                .write(gpu, 0, &self.game.world.chunk_roots());
+            buffers.chunk_roots.write(gpu, 0, &game.world.chunk_roots());
             buffers
                 .world_data
-                .write(&gpu, &WorldData::from(&self.game.world));
-            buffers
-                .screen_size
-                .write(&gpu, &[result_tex_size.x as f32, result_tex_size.y as f32]);
-            buffers.crosshair.write(&gpu, &self.crosshair);
+                .write(&gpu, &WorldData::from(&game.world));
         }
+        // ----------------------
 
         let workgroups = result_tex_size / 8;
         gpu_res.ray_tracer.encode_pass(&mut encoder, workgroups);
@@ -350,67 +306,10 @@ impl AppState {
                     .default_pos(egui::pos2(0.0, 0.0))
                     .movable(true)
                     .show(ctx, |ui| {
-                        ui.visuals_mut().override_text_color = Some(egui::Color32::WHITE);
-
-                        ui.painter().rect_filled(
-                            ui.max_rect(),
-                            egui::CornerRadius::same(5),
-                            egui::Color32::from_rgba_unmultiplied(0, 0, 0, 200),
-                        );
-                        ui.add_space(40.0);
-                        ui.separator();
-                        {
-                            ui.collapsing("Crosshair", |ui| {
-                                ui.horizontal(|ui| {
-                                    ui.heading("style: ");
-                                    if ui.button("off").clicked() {
-                                        self.crosshair.style = 0;
-                                    }
-                                    if ui.button("dot").clicked() {
-                                        self.crosshair.style = 1;
-                                    }
-                                    if ui.button("cross").clicked() {
-                                        self.crosshair.style = 2;
-                                    }
-                                });
-                                ui.add(
-                                    egui::Slider::new(&mut self.crosshair.size, 1.0..=30.0)
-                                        .text("size"),
-                                );
-                                ui.color_edit_button_rgba_unmultiplied(&mut self.crosshair.color);
-                            });
-                        }
-                        ui.separator();
-                        {
-                            ui.heading(format!("FPS: {}", self.timers.fps));
-                            ui.heading(format!(
-                                "pos: {:.2} {:.2} {:.2}",
-                                self.game.player.pos.x,
-                                self.game.player.pos.y,
-                                self.game.player.pos.z
-                            ));
-                            ui.horizontal(|ui| {
-                                ui.heading(format!("speed: {:.2}", self.game.player.speed));
-                                if ui.button("-").clicked() {
-                                    self.game.player.speed -= 0.1;
-                                    self.game.player.speed = self.game.player.speed.max(0.0);
-                                }
-                                if ui.button("+").clicked() {
-                                    self.game.player.speed += 0.1;
-                                }
-                            });
-                        }
-                        ui.separator();
-                        {
-                            let (free, capacity) = self.game.world.chunk_alloc_status();
-                            let used = ((capacity - free) as f32 / capacity as f32) * 100.0;
-                            ui.heading(format!("world size: {}", self.game.world.size_in_chunks()));
-                            ui.heading(format!(
-                                "chunk count: {} ({})",
-                                self.game.world.chunk_count(),
-                                self.game.world.populated_count(),
-                            ));
-                            ui.heading(&format!("memory: %{used:.0}"));
+                        if let Some(game) = &mut self.game {
+                            ui::draw_game_overlay(ui, game, &mut self.crosshair, &self.timers);
+                        } else {
+                            ui.heading("NO GAME STATE!");
                         }
                     });
             });
@@ -491,21 +390,21 @@ impl ApplicationHandler for AppState {
             self.vertical_samples,
         );
 
-        let gpu_res = GpuResources::new(
-            &gpu,
-            gpu.surface_config.format,
-            result_tex_size,
-            max_nodes,
-            self.game.world.size_in_chunks(),
-        );
-        gpu_res
-            .buffers
-            .nodes
-            .write(&gpu, 0, self.game.world.nodes());
-        gpu_res
-            .buffers
-            .voxel_materials
-            .write_slice(&gpu, 0, &self.voxel_mats);
+        if let Some(game) = &self.game {
+            let gpu_res = GpuResources::new(
+                &gpu,
+                gpu.surface_config.format,
+                result_tex_size,
+                max_nodes,
+                game.world.size_in_chunks(),
+            );
+            gpu_res.buffers.nodes.write(&gpu, 0, game.world.nodes());
+            gpu_res
+                .buffers
+                .voxel_materials
+                .write_slice(&gpu, 0, &self.voxel_mats);
+            self.gpu_res = Some(gpu_res);
+        }
 
         hide_cursor(&window, true);
         self.cursor_hidden = true;
@@ -515,7 +414,6 @@ impl ApplicationHandler for AppState {
         self.egui = Some(Egui::new(&window, &gpu));
         self.window = Some(window);
         self.gpu = Some(gpu);
-        self.gpu_res = Some(gpu_res);
     }
     fn device_event(
         &mut self,
@@ -541,7 +439,7 @@ impl ApplicationHandler for AppState {
             e if !self.cursor_hidden && egui.winit.on_window_event(&window, &e).consumed => {}
             WindowEvent::CloseRequested => {
                 event_loop.exit();
-                _ = self.game.disconnect();
+                _ = self.game.as_mut().map(GameState::disconnect);
             }
             WindowEvent::RedrawRequested => {
                 let last_frame_age = SystemTime::now()

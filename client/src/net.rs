@@ -10,7 +10,7 @@ pub struct ServerConn {
     pub player_pos: Vec3,
 }
 impl ServerConn {
-    pub fn establish(addr: SocketAddr, name: String) -> anyhow::Result<Self> {
+    pub fn establish(addr: SocketAddr, name: impl Into<String>) -> anyhow::Result<Self> {
         let stream = TcpStream::connect(addr).context("Failed to establish TCP connection")?;
         let mut stream = Self {
             stream,
@@ -18,7 +18,7 @@ impl ServerConn {
             player_pos: Vec3::ZERO,
         };
 
-        stream.write(ServerCmd::Handshake { name })?;
+        stream.write(ServerCmd::Handshake { name: name.into() })?;
         let response = stream.read();
         match response? {
             ClientCmd::HandshakeAccepted(player_pos) => stream.player_pos = player_pos,
