@@ -1,5 +1,5 @@
 use super::{
-    Biome, Feature, Source, VoxelData, VoxelPack, VoxelStyle, VoxelStylePack, WorldFeatures,
+    Biome, Feature, Meta, Source, VoxelData, VoxelPack, VoxelStyle, VoxelStylePack, WorldFeatures,
     WorldPreset,
 };
 use crate::world::noise::Map;
@@ -284,6 +284,13 @@ pub fn parse_world_features(src: &str, voxels: &VoxelPack) -> Result<WorldFeatur
         );
     }
     Ok(WorldFeatures(compiled))
+}
+
+pub fn parse_meta(src: &str) -> Result<Meta, LoaderErr> {
+    let parsed: Meta = ron::de::from_str(src)
+        .map_err(LoaderErr::ron)
+        .map_err(|e| e.context("voxelpack file"))?;
+    Ok(parsed)
 }
 
 pub fn parse_voxelpack(src: &str) -> Result<VoxelPack, LoaderErr> {

@@ -3,7 +3,8 @@ A native application that uses blockworld-server to create a server and provides
 */
 
 use anyhow::Context;
-use server::{world::ServerWorld, Resources, ServerState};
+use server::common::resources::Datapack;
+use server::{world::ServerWorld, ServerState};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver};
@@ -26,13 +27,13 @@ fn main() -> anyhow::Result<()> {
         .with_context(|| format!("Invalid cmdline arg \"port\"\nUsage: {usage}"))?;
 
     let address = SocketAddr::new("127.0.0.1".parse().unwrap(), port);
-    let resources = Resources::load(&res_folder).context("Failed to load resources")?;
+    let datapack = Datapack::load_from(&res_folder).context("Failed to load resources")?;
 
     println!("Using address {address:?}...");
 
     let world = ServerWorld::new(
-        &resources.world_presets[0],
-        resources.world_features,
+        &datapack.world_presets[0],
+        datapack.world_features,
         fastrand::i64(..),
     );
     let mut server = ServerState::new(address, format!("My Dev Server"), world);

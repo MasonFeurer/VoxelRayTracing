@@ -8,7 +8,6 @@ pub mod world;
 pub use common;
 
 use common::net::{ClientCmd, ServerCmd};
-use common::resources::{loader, VoxelPack, WorldFeatures, WorldPreset};
 use common::server::PlayerInfo;
 use common::world::{Node, NodeAlloc, NODES_PER_CHUNK};
 use glam::{vec3, IVec3, Vec3};
@@ -46,31 +45,6 @@ impl Client {
 
     pub fn address(&self) -> SocketAddr {
         self.conn.stream.local_addr().unwrap()
-    }
-}
-
-pub struct Resources {
-    pub voxelpack: VoxelPack,
-    pub world_features: WorldFeatures,
-    pub world_presets: Vec<WorldPreset>,
-}
-impl Resources {
-    pub fn load(dir: &String) -> anyhow::Result<Self> {
-        let voxelpack = std::fs::read_to_string(format!("{dir}/voxelpack.ron"))?;
-        let voxelpack = loader::parse_voxelpack(&voxelpack)?;
-
-        let world_features = std::fs::read_to_string(format!("{dir}/features.ron"))?;
-        let world_features = loader::parse_world_features(&world_features, &voxelpack)?;
-
-        let world_presets = std::fs::read_to_string(format!("{dir}/worldpresets.ron"))?;
-        let world_presets =
-            loader::parse_world_presets(&world_presets, &voxelpack, &world_features)?;
-
-        Ok(Self {
-            voxelpack,
-            world_features,
-            world_presets,
-        })
     }
 }
 

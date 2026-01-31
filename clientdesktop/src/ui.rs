@@ -1,5 +1,85 @@
 use crate::{Crosshair, GameState, Timers};
 use egui::Ui;
+use std::net::SocketAddr;
+
+#[derive(Default)]
+pub struct UiResponse {
+    pub new_ui_state: Option<UiState>,
+    pub host_game: bool,
+    pub join_game: Option<SocketAddr>,
+}
+
+// Underneath every menu, a render-pass will happen for rendering the game (if there is a GameState).
+// So the UI doesn't need to concern itself with rendering the game.
+#[derive(Default)]
+pub enum UiState {
+    GamePlay, // Only render game overlay (HUD)
+    #[default]
+    TitleScreen, // Render the title screen
+    PauseMenu, // Render the pause UI
+    Settings,
+    CreateWorld {
+        name: String,
+        seed: String,
+        asset_folder: String,
+    },
+    JoinWorld {
+        address: String,
+    },
+}
+
+pub fn draw_create_screen(ui: &mut Ui) -> UiResponse {
+    let mut rs = UiResponse::default();
+
+    ui.label("Title screen!");
+    if ui.button("Create World").clicked() {
+        rs.new_ui_state = Some(UiState::CreateWorld {
+            name: Default::default(),
+            seed: Default::default(),
+            asset_folder: Default::default(),
+        });
+    }
+    if ui.button("Join World").clicked() {
+        rs.new_ui_state = Some(UiState::JoinWorld {
+            address: Default::default(),
+        });
+    }
+    if ui.button("Settings").clicked() {
+        rs.new_ui_state = Some(UiState::Settings);
+    }
+    if ui.button("Exit").clicked() {
+        // TODO
+    }
+    rs
+}
+
+pub fn draw_title_screen(ui: &mut Ui) -> UiResponse {
+    let mut rs = UiResponse::default();
+
+    ui.label("Title screen!");
+    if ui.button("Create World").clicked() {
+        rs.new_ui_state = Some(UiState::GamePlay);
+        rs.join_game = Some(crate::local_server_addr());
+        rs.host_game = true;
+        // rs.new_ui_state = Some(UiState::CreateWorld {
+        //     name: Default::default(),
+        //     seed: Default::default(),
+        //     asset_folder: Default::default(),
+        // });
+    }
+    if ui.button("Join World").clicked() {
+        rs.new_ui_state = Some(UiState::JoinWorld {
+            address: Default::default(),
+        });
+    }
+    if ui.button("Settings").clicked() {
+        rs.new_ui_state = Some(UiState::Settings);
+    }
+    if ui.button("Exit").clicked() {
+        // TODO
+    }
+    rs
+}
 
 pub fn draw_game_overlay(
     ui: &mut Ui,

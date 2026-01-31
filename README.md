@@ -17,21 +17,13 @@ algorithm for stepping through an SVO world efficiently.
 This rendering technique also makes it trivial to implement real-time light path-tracing to greatly improve the
 visuals.
 
-# How to Run the Engine
-You will need to download from github and have `cargo` (the rust build tool).
+# How to Play
+Download the git project using this bash command:
 ```sh
 git clone "https://github.com/MasonFeurer/VoxelRayTracing.git"
 ```
-
-This engine will have 2 seperate programs you need to run: the server, and the client.
-So in one terminal, run the server with:
-```sh
-cd VoxelRayTracing/servercli
-cargo r -r ../stdrespack 60000
-```
-
-Then run the client in another terminal:
+Then, use `cargo` to build and run the app from source:
 ```sh
 cd VoxelRayTracing/clientdesktop
-cargo r -r ../stdrespack username 60000
+cargo r -r
 ```

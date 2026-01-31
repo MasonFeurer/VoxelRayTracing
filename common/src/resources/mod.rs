@@ -1,10 +1,66 @@
 use serde::Deserialize;
 use std::collections::HashMap;
-
-pub mod loader;
+use std::path::Path;
 
 use crate::world::noise::Map;
 use crate::world::Voxel;
+
+pub mod loader;
+
+#[derive(Deserialize, Debug)]
+pub struct Meta {
+    pub name: String,
+    pub version: (u8, u8),
+}
+
+#[derive(Debug)]
+pub struct Datapack {
+    pub meta: Meta,
+    pub voxels: VoxelPack,
+    pub world_features: WorldFeatures,
+    pub world_presets: Vec<WorldPreset>,
+}
+impl Datapack {
+    pub fn load_from(dir: impl AsRef<Path>) -> anyhow::Result<Self> {
+        let meta = std::fs::read_to_string(dir.as_ref().join("meta.ron"))?;
+        let meta = loader::parse_meta(&meta)?;
+
+        let voxels = std::fs::read_to_string(dir.as_ref().join("voxels.ron"))?;
+        let voxels = loader::parse_voxelpack(&voxels)?;
+
+        let world_features = std::fs::read_to_string(dir.as_ref().join("world_features.ron"))?;
+        let world_features = loader::parse_world_features(&world_features, &voxels)?;
+
+        let world_presets = std::fs::read_to_string(dir.as_ref().join("world_gen.ron"))?;
+        let world_presets = loader::parse_world_presets(&world_presets, &voxels, &world_features)?;
+
+        Ok(Self {
+            meta,
+            voxels,
+            world_features,
+            world_presets,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct Stylepack {
+    pub meta: Meta,
+    pub voxel_styles: VoxelStylePack,
+}
+impl Stylepack {
+    pub fn load_from(datapack: &Datapack, dir: impl AsRef<Path>) -> anyhow::Result<Self> {
+        let meta = std::fs::read_to_string(dir.as_ref().join("meta.ron"))?;
+        let meta = loader::parse_meta(&meta)?;
+
+        let stylepack = std::fs::read_to_string(dir.as_ref().join("voxel_styles.ron"))?;
+        let stylepack = loader::parse_voxel_stylepack(&stylepack, &datapack.voxels)?;
+        Ok(Self {
+            meta,
+            voxel_styles: stylepack,
+        })
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct WorldPreset {
