@@ -38,7 +38,7 @@ impl RawNoise {
     }
 
     pub fn map_sample(&self, pos: Vec2, map: &Map) -> f32 {
-        (self.sample(pos * map.freq) * map.scale + map.offset) as f32
+        self.sample(pos * map.freq) * map.scale + map.offset
     }
 }
 
@@ -57,6 +57,6 @@ impl MappedNoise {
 
     // Will return a value from 0.0 to 1.0, multiplied by `self.scale`, added to `self.offset`
     pub fn sample(&self, pos: Vec2) -> f32 {
-        (self.raw.sample(pos * self.map.freq) * self.map.scale + self.map.offset) as f32
+        self.raw.sample(pos * self.map.freq) * self.map.scale + self.map.offset
     }
 }

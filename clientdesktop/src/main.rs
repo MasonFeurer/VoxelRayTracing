@@ -9,7 +9,6 @@ use graphics::{CamData, Crosshair, Egui, Gpu, GpuResources, Material, Settings, 
 
 use std::os::unix::fs::PermissionsExt;
 
-use anyhow::Context;
 use client::common::resources::{Datapack, Stylepack};
 use client::common::world::Node;
 use client::net::ServerConn;
@@ -18,7 +17,7 @@ use client::world::ClientWorld;
 use client::GameState;
 use glam::{ivec3, uvec2, UVec2};
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use winit::application::ApplicationHandler;
@@ -41,7 +40,7 @@ pub fn local_server_addr() -> SocketAddr {
 }
 
 pub fn app_save_dir() -> PathBuf {
-    PathBuf::from("/home/mason/.config/blockworld")
+    dirs::config_dir().unwrap().join("blockworld")
 }
 
 pub fn setup_config_folder() -> anyhow::Result<()> {
@@ -112,7 +111,7 @@ pub fn main() {
     if let Err(err) = EventLoop::new().unwrap().run_app(&mut app_state) {
         eprintln!("Failed to run app: {err:?}");
     }
-    server_thread.kill();
+    _ = server_thread.kill();
 }
 
 #[derive(Default, Clone)]
@@ -448,6 +447,7 @@ impl AppState {
                     label: Some("#egui_render_pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &view,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
@@ -477,129 +477,9 @@ impl AppState {
         }
         Ok(())
     }
-
-    pub fn _draw_frame_old(&mut self) -> Result<(), wgpu::SurfaceError> {
-        let (gpu, gpu_res) = (self.gpu.as_ref().unwrap(), self.gpu_res.as_ref().unwrap());
-        let egui = self.egui.as_mut().unwrap();
-        let window = Arc::clone(self.window.as_ref().unwrap());
-
-        let (output, view) = gpu.get_output()?;
-        let mut encoder = gpu.create_command_encoder();
-        let result_tex_size = gpu_res.result_texture.size();
-
-        // --- Update buffers ---
-        let buffers = &gpu_res.buffers;
-        buffers.settings.write(&gpu, &self.settings);
-        buffers
-            .screen_size
-            .write(&gpu, &[result_tex_size.x as f32, result_tex_size.y as f32]);
-        buffers.crosshair.write(&gpu, &self.crosshair);
-
-        // Upload game state to GPU
-        if let Some(game) = &self.game {
-            let cam_data = CamData::create(
-                game.player.rot,
-                game.player.eye_pos(),
-                game.player.fov,
-                result_tex_size.as_vec2(),
-            );
-            buffers.cam_data.write(&gpu, &cam_data);
-            buffers.chunk_roots.write(gpu, 0, &game.world.chunk_roots());
-            buffers
-                .world_data
-                .write(&gpu, &WorldData::from(&game.world));
-        }
-        // ----------------------
-
-        let workgroups = result_tex_size / 8;
-        gpu_res.ray_tracer.encode_pass(&mut encoder, workgroups);
-
-        gpu_res.screen_shader.encode_pass(&mut encoder, &view);
-
-        // --- egui ---
-        let surface_size = gpu.surface_size();
-        // --- create scene ---
-        let egui_input = egui.winit.take_egui_input(&window);
-
-        let egui_output = egui.ctx().run(egui_input, |ctx| match self.ui_state {
-            UiState::GamePlay => {
-                _ = egui::Area::new(egui::Id::new("area1"))
-                    .default_pos(egui::pos2(0.0, 0.0))
-                    .movable(true)
-                    .show(ctx, |ui| {
-                        if let Some(game) = &mut self.game {
-                            ui::draw_game_overlay(ui, game, &mut self.crosshair, &self.timers);
-                        } else {
-                            ui.heading("NO GAME STATE!");
-                        }
-                    })
-            }
-            UiState::TitleScreen => {
-                _ = egui::CentralPanel::default().show(ctx, |ui| {
-                    let rs = ui::draw_title_screen(ui);
-                    if let Some(state) = rs.new_ui_state {
-                        self.ui_state = state;
-                    }
-                })
-            }
-            _ => {}
-        });
-        let screen_desc = egui_wgpu::ScreenDescriptor {
-            size_in_pixels: surface_size.into(),
-            pixels_per_point: egui_winit::pixels_per_point(egui.ctx(), &window),
-        };
-        let egui_prims = egui
-            .ctx()
-            .tessellate(egui_output.shapes, screen_desc.pixels_per_point);
-
-        // --- update buffers ---
-        for (id, image) in egui_output.textures_delta.set {
-            egui.wgpu
-                .update_texture(&gpu.device, &gpu.queue, id, &image);
-        }
-        egui.wgpu.update_buffers(
-            &gpu.device,
-            &gpu.queue,
-            &mut encoder,
-            &egui_prims,
-            &screen_desc,
-        );
-
-        // --- render pass ---
-        let mut pass = encoder
-            .begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("#egui_render_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                depth_stencil_attachment: None,
-            })
-            .forget_lifetime();
-        egui.wgpu.render(&mut pass, &egui_prims, &screen_desc);
-
-        for id in egui_output.textures_delta.free {
-            egui.wgpu.free_texture(&id);
-        }
-
-        // --- submit passes ---
-        gpu.queue.submit(std::iter::once(encoder.finish()));
-        output.present();
-
-        Ok(())
-    }
 }
 
 impl ApplicationHandler for AppState {
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
-        self.window.as_ref().map(|win| win.request_redraw());
-    }
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
             return;
@@ -611,8 +491,11 @@ impl ApplicationHandler for AppState {
         let gpu = pollster::block_on(Gpu::new(Arc::clone(&window)));
         let win_size: UVec2 = <[u32; 2]>::from(window.inner_size()).into();
 
+        println!("{}", gpu.device.limits().max_storage_buffer_binding_size);
+
         self.max_nodes = gpu.device.limits().max_storage_buffer_binding_size
-            / std::mem::size_of::<Node>() as u32;
+            / size_of::<Node>() as u32;
+        println!("{}", self.max_nodes);
 
         let win_aspect = win_size.x as f32 / win_size.y as f32;
         let result_tex_size = uvec2(
@@ -647,14 +530,6 @@ impl ApplicationHandler for AppState {
         self.egui = Some(Egui::new(&window, &gpu));
         self.window = Some(window);
         self.gpu = Some(gpu);
-    }
-    fn device_event(
-        &mut self,
-        _event_loop: &ActiveEventLoop,
-        _device_id: DeviceId,
-        event: DeviceEvent,
-    ) {
-        self.input.on_device_event(&event);
     }
     fn window_event(
         &mut self,
@@ -721,6 +596,17 @@ impl ApplicationHandler for AppState {
         if let Some(size) = resize {
             self.on_resize(size);
         }
+    }
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device_id: DeviceId,
+        event: DeviceEvent,
+    ) {
+        self.input.on_device_event(&event);
+    }
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        self.window.as_ref().map(|win| win.request_redraw());
     }
 }
 

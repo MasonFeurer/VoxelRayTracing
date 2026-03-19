@@ -129,7 +129,7 @@ impl ChunkGrid {
         for x in 0..self.size {
             for y in 0..self.size {
                 for z in 0..self.size {
-                    let pos = uvec3(x as u32, y as u32, z as u32);
+                    let pos = uvec3(x, y, z);
 
                     let idx = Self::local_pos_to_idx(pos, self.size);
 
@@ -256,10 +256,10 @@ impl ChunkAlloc {
         let Some(space) = space else {
             panic!("No available memory for allocating chunk");
         };
-        let chunk_space = space.start..(space.start + req_space as u32);
+        let chunk_space = space.start..(space.start + req_space);
         space.start = chunk_space.end;
-        let used_mem = chunk_space.start..(chunk_space.start + size as u32);
-        let free_mem = (chunk_space.start + size as u32)..chunk_space.end;
+        let used_mem = chunk_space.start..(chunk_space.start + size);
+        let free_mem = (chunk_space.start + size)..chunk_space.end;
         Chunk::new(used_mem, free_mem)
     }
 }
@@ -405,7 +405,7 @@ impl ClientWorld {
     }
 
     pub fn highest_vox_at(&self, x: i32, z: i32) -> Option<i32> {
-        for y in (self.min_voxel().y..(self.max_voxel().y)).rev() {
+        for y in (self.min_voxel().y..self.max_voxel().y).rev() {
             if self.get_voxel(ivec3(x, y, z)).map(Voxel::is_empty) == Ok(false) {
                 return Some(y);
             }

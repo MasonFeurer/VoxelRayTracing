@@ -48,10 +48,6 @@ impl Buffers {
 
         self.nodes = ArrayBuffer::new(gpu, "nodes", COPY_DST | STORAGE, max_nodes);
     }
-
-    pub fn update_data(&mut self) {
-        todo!()
-    }
 }
 
 pub const RESULT_TEX_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
@@ -65,7 +61,7 @@ impl<T> SimpleBuffer<T> {
     pub fn new(gpu: &Gpu, label: &str, usage: BufferUsages) -> Self {
         let buffer = gpu.device.create_buffer(&BufferDescriptor {
             label: Some(label),
-            size: std::mem::size_of::<T>() as u64,
+            size: size_of::<T>() as u64,
             usage,
             mapped_at_creation: false,
         });
@@ -74,7 +70,7 @@ impl<T> SimpleBuffer<T> {
 
     pub fn write(&self, gpu: &Gpu, value: &T) {
         let ptr = value as *const T as *const u8;
-        let size = std::mem::size_of::<T>();
+        let size = size_of::<T>();
         let slice = unsafe { std::slice::from_raw_parts(ptr, size) };
         gpu.queue.write_buffer(&self.0, 0, slice);
     }
@@ -82,7 +78,7 @@ impl<T> SimpleBuffer<T> {
 impl<T, const N: usize> SimpleBuffer<[T; N]> {
     pub fn write_slice(&self, gpu: &Gpu, idx: u64, slice: &[T]) {
         let ptr = slice.as_ptr() as *const u8;
-        let size = std::mem::size_of::<T>() * slice.len();
+        let size = size_of::<T>() * slice.len();
         let slice = unsafe { std::slice::from_raw_parts(ptr, size) };
         gpu.queue.write_buffer(&self.0, idx, slice);
     }
@@ -93,7 +89,7 @@ impl<T> ArrayBuffer<T> {
     pub fn new(gpu: &Gpu, label: &str, usage: BufferUsages, size: u32) -> Self {
         let handle = gpu.device.create_buffer(&BufferDescriptor {
             label: Some(label),
-            size: size as u64 * std::mem::size_of::<T>() as u64,
+            size: size as u64 * size_of::<T>() as u64,
             usage,
             mapped_at_creation: false,
         });
@@ -105,9 +101,9 @@ impl<T> ArrayBuffer<T> {
         let items: &[T] = &items[0..items_cut as usize];
 
         let ptr = items.as_ptr() as *const u8;
-        let size = items.len() * std::mem::size_of::<T>();
+        let size = items.len() * size_of::<T>();
         let slice = unsafe { std::slice::from_raw_parts(ptr, size) };
-        let offset = offset * std::mem::size_of::<T>() as u64;
+        let offset = offset * size_of::<T>() as u64;
         gpu.queue.write_buffer(&self.0, offset, slice);
     }
 }
@@ -245,6 +241,7 @@ impl ScreenShader {
             label: Some("#screen-shader-pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
                 view,
+                depth_slice: None,
                 resolve_target: None,
                 ops: Operations {
                     load: LoadOp::Load,

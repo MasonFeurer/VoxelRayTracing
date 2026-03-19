@@ -144,7 +144,7 @@ pub struct NodeAlloc {
 }
 impl NodeAlloc {
     pub fn new(used: NodeRange, free: NodeRange) -> Self {
-        assert!(used.end == free.start);
+        assert_eq!(used.end, free.start);
         Self {
             range: used.start..free.end,
             free_mem: vec![free],
@@ -174,7 +174,7 @@ impl NodeAlloc {
         self.range.end - self.total_free_mem()
     }
 
-    pub fn next(&mut self) -> Option<NodeAddr> {
+    fn find_next(&self) -> Option<usize> {
         let mut earliest_free = 0;
         let mut earliest_free_addr = u32::MAX;
 
@@ -188,8 +188,14 @@ impl NodeAlloc {
             }
         }
         if earliest_free_addr == u32::MAX {
-            return None;
+            None
+        } else {
+            Some(earliest_free)
         }
+    }
+
+    pub fn next(&mut self) -> Option<NodeAddr> {
+        let earliest_free = self.find_next()?;
 
         let free = &mut self.free_mem[earliest_free];
         let result = free.start.clone();
@@ -202,21 +208,7 @@ impl NodeAlloc {
     }
 
     pub fn peek(&self) -> Option<NodeAddr> {
-        let mut earliest_free = 0;
-        let mut earliest_free_addr = u32::MAX;
-
-        for (idx, free) in self.free_mem.iter().enumerate() {
-            if free.end.saturating_sub(free.start) < 8 {
-                continue;
-            }
-            if free.start < earliest_free_addr {
-                earliest_free_addr = free.start;
-                earliest_free = idx;
-            }
-        }
-        if earliest_free_addr == u32::MAX {
-            return None;
-        }
+        let earliest_free = self.find_next()?;
         Some(self.free_mem[earliest_free].start)
     }
 

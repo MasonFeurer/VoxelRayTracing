@@ -121,7 +121,7 @@ impl GameState {
 
         let mut read = self.host.try_read();
         while let Some(cmd) = read? {
-            if SystemTime::now().duration_since(start_time).unwrap() >= timeout {
+            if SystemTime::now().duration_since(start_time)? >= timeout {
                 break;
             }
             self.process_cmd(cmd, &mut rs);

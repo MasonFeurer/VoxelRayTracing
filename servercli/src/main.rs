@@ -26,7 +26,7 @@ fn main() -> anyhow::Result<()> {
         .parse()
         .with_context(|| format!("Invalid cmdline arg \"port\"\nUsage: {usage}"))?;
 
-    let address = SocketAddr::new("127.0.0.1".parse().unwrap(), port);
+    let address = SocketAddr::new("127.0.0.1".parse()?, port);
     let datapack = Datapack::load_from(&res_folder).context("Failed to load resources")?;
 
     println!("Using address {address:?}...");
@@ -36,62 +36,62 @@ fn main() -> anyhow::Result<()> {
         datapack.world_features,
         fastrand::i64(..),
     );
-    let mut server = ServerState::new(address, format!("My Dev Server"), world);
+    let mut server = ServerState::new(address, "My Dev Server".to_string(), world);
 
     server.start().context("Failed to start server")?;
 
     println!("Server is running.");
-    let cli_cmds = spawn_cli(Arc::clone(&server.kill));
+    // let cli_cmds = spawn_cli(Arc::clone(&server.kill));
     loop {
         server.handle_clients();
         server.update();
         server.update_world();
 
-        match cli_cmds.try_recv() {
-            Ok(CliCmd::GetPlayers) => {
-                if server.clients.len() == 0 {
-                    println!("No players online!");
-                }
-                for client in &server.clients {
-                    println!(
-                        "- {:?} | ({:.2}, {:.2}, {:.2}) | {:?}",
-                        client.name,
-                        client.pos.x,
-                        client.pos.y,
-                        client.pos.z,
-                        client.address()
-                    );
-                }
-            }
-            Ok(CliCmd::ShowWorldSummary) => {
-                println!("--- World ---");
-                println!("chunk count: {}", server.world.chunks.len());
-                let mut lowest_chunk_space = u32::MAX;
-                let mut used_space = 0;
-                let mut allocated_space = 0;
-                for (_pos, chunk) in &server.world.chunks {
-                    let space = chunk.node_alloc.range.end;
-                    allocated_space += space;
-                    used_space += chunk.node_alloc.total_used_mem();
-                    if space < lowest_chunk_space {
-                        lowest_chunk_space = space;
-                    }
-                }
-                println!("allocated space: {allocated_space}");
-                println!(
-                    "used space: {used_space} (%{})",
-                    (used_space as f32 / allocated_space as f32) * 100.0
-                );
-                println!("least allocated by chunk: {lowest_chunk_space}");
-            }
-            Ok(CliCmd::Stop) => break,
-            Err(_) => {}
-        }
+        // match cli_cmds.try_recv() {
+        //     Ok(CliCmd::GetPlayers) => {
+        //         if server.clients.len() == 0 {
+        //             println!("No players online!");
+        //         }
+        //         for client in &server.clients {
+        //             println!(
+        //                 "- {:?} | ({:.2}, {:.2}, {:.2}) | {:?}",
+        //                 client.name,
+        //                 client.pos.x,
+        //                 client.pos.y,
+        //                 client.pos.z,
+        //                 client.address()
+        //             );
+        //         }
+        //     }
+        //     Ok(CliCmd::ShowWorldSummary) => {
+        //         println!("--- World ---");
+        //         println!("chunk count: {}", server.world.chunks.len());
+        //         let mut lowest_chunk_space = u32::MAX;
+        //         let mut used_space = 0;
+        //         let mut allocated_space = 0;
+        //         for (_pos, chunk) in &server.world.chunks {
+        //             let space = chunk.node_alloc.range.end;
+        //             allocated_space += space;
+        //             used_space += chunk.node_alloc.total_used_mem();
+        //             if space < lowest_chunk_space {
+        //                 lowest_chunk_space = space;
+        //             }
+        //         }
+        //         println!("allocated space: {allocated_space}");
+        //         println!(
+        //             "used space: {used_space} (%{})",
+        //             (used_space as f32 / allocated_space as f32) * 100.0
+        //         );
+        //         println!("least allocated by chunk: {lowest_chunk_space}");
+        //     }
+        //     Ok(CliCmd::Stop) => break,
+        //     Err(_) => {}
+        // }
 
         std::thread::sleep(Duration::from_millis(1));
     }
-    println!("SERVER CLI PROGRAM IS DONE");
-    Ok(())
+    // println!("SERVER CLI PROGRAM IS DONE");
+    // Ok(())
 }
 
 pub enum CliCmd {

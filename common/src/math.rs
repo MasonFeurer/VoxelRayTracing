@@ -335,9 +335,9 @@ pub fn rand_cardinal_dir() -> IVec3 {
 
 pub fn rand_dir() -> Vec3 {
     fn rand_norm() -> f32 {
-        let theta: f32 = 2.0 * 3.14159265 * fastrand::f32();
+        let theta: f32 = 2.0 * std::f32::consts::PI * fastrand::f32();
         let rho = (-2.0f32 * fastrand::f32().ln()).sqrt();
-        return rho * theta.cos();
+        rho * theta.cos()
     }
 
     let x = rand_norm();

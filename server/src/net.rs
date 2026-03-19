@@ -1,7 +1,6 @@
-use anyhow::Context;
 use common::net::{ClientCmd, ConnError, ServerCmd};
 use glam::Vec3;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::net::TcpStream;
 
 pub struct ClientConn {
@@ -37,27 +36,22 @@ impl ClientConn {
             Err(err) => Err(err)?,
         }
         self.stream.set_nonblocking(false)?;
-        let cmd =
-            bincode::serde::decode_from_slice(&self.received_bytes, bincode::config::standard());
-        match cmd {
-            Ok((cmd, n)) => {
-                self.received_bytes = self.received_bytes[n..].to_vec();
+        match bincode::serde::decode_from_slice(&self.received_bytes, bincode::config::standard()) {
+            Ok((cmd, remainder)) => {
+                self.received_bytes = self.received_bytes[remainder..].to_vec();
                 Ok(Some(cmd))
             }
-            Err(bincode::error::DecodeError::UnexpectedEnd { .. }) => Ok(None),
+            Err(bincode::error::DecodeError::UnexpectedEnd { ..}) => Ok(None),
             Err(err) => Err(err)?,
         }
     }
 
     /// Blocking
     pub fn read(&mut self) -> anyhow::Result<ServerCmd> {
-        if self.received_bytes.len() == 0 {
-            let cmd =
-                bincode::serde::decode_from_std_read(&mut self.stream, bincode::config::standard())
-                    .context("Failed to read message from client")?;
-            Ok(cmd)
-        } else {
-            todo!()
+        loop {
+            if let Some(cmd) = self.try_read()? {
+                return Ok(cmd)
+            }
         }
     }
 

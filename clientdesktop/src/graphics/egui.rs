@@ -15,7 +15,7 @@ impl Egui {
 
         Self {
             winit,
-            wgpu: egui_wgpu::Renderer::new(&gpu.device, gpu.surface_config.format, None, 1, false),
+            wgpu: egui_wgpu::Renderer::new(&gpu.device, gpu.surface_config.format, Default::default()),
         }
     }
 

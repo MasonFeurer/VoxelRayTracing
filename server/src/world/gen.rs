@@ -99,7 +99,7 @@ impl WorldGen {
         Self {
             seed: seed_copy,
 
-            features: features,
+            features,
             biomes: preset.biomes.clone(),
             biome_lookup: preset.biome_lookup.clone(),
             earth: preset.earth,
@@ -344,7 +344,7 @@ pub fn build_feature(surface: IVec3, feature: Feature) -> BuiltFeature {
             branch_voxel,
             leaf_voxel,
             height,
-            leaf_decay,
+            leaf_decay: _,
             branch_count,
             branch_height,
             branch_len,
@@ -442,7 +442,7 @@ pub fn build_feature(surface: IVec3, feature: Feature) -> BuiltFeature {
             width,
         } => {
             let height = fastrand::u32(height) as i32;
-            let width = fastrand::u32(width) as u32;
+            let width = fastrand::u32(width);
             for y in 0..height {
                 let delta = 1.0 - (y as f32 / height as f32);
                 let w = (delta * width as f32).floor() as u32;
