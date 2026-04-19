@@ -36,26 +36,6 @@ pub fn app_save_dir() -> PathBuf {
 pub fn main() {
     env_logger::init();
 
-    println!("\
-blockworld
-    datapacks
-        vanilla
-            meta.ron
-            voxels.ron
-            world_features.ron
-            world_gen.ron
-    stylepacks
-        vanilla
-            meta.ron
-            voxel_styles.ron
-    worlds
-        a_cool_world
-            meta.ron
-            data
-                chunks.data
-    blockworld-server-cli (bin)\
-    ");
-
     let username = match std::env::home_dir() {
         Some(path) if path.file_name().is_some() => {
             path.file_name().unwrap().to_string_lossy().into_owned()
@@ -198,7 +178,8 @@ impl AppState {
         let voxels = if let Some(voxels) = voxels {
             voxels
         } else {
-            unimplemented!()
+            self.resources.datapacks.get("blockworld.vanilla").unwrap().voxels.clone()
+            // unimplemented!()
             // TODO: request voxel pack from server
         };
 
@@ -220,7 +201,6 @@ impl AppState {
             game.world.size_in_chunks(),
         );
         gpu_res.buffers.nodes.write(&gpu, 0, game.world.nodes());
-        println!("active_stylepack: {:?}", self.active_stylepack());
         if let Some(pack) = self.active_stylepack() {
             let mats = Material::construct_arr(&voxels, pack);
 
@@ -235,8 +215,6 @@ impl AppState {
     }
 
     pub fn host_game(&mut self, addr: SocketAddr, data_path: impl AsRef<Path>, voxels: VoxelPack) {
-        println!("Starting server with data path: {:?} ", data_path.as_ref());
-
         let server = self.resources.path.join("blockworld-server-cli");
         let server_thread = std::process::Command::new(&format!("{}", server.display()))
             .stdout(std::io::stdout())
@@ -258,9 +236,6 @@ impl AppState {
     }
 
     fn on_resize(&mut self, new_size: UVec2) -> Option<()> {
-        println!("Resizing to {new_size:?}");
-        println!("AppState.gpu: {:?}, gpu_res: {:?}", self.gpu.is_some(), self.gpu_res.is_some());
-
         let gpu = self.gpu.as_mut()?;
         gpu.resize(new_size);
 
@@ -434,12 +409,12 @@ impl AppState {
                         })
                     }).inner.inner.unwrap();
                     if let Some(world) = rs.host_new_world {
-                        println!("TODO: host new world {:?}", world);
                         host_game = Some(world);
                     }
                     if let Some(world_name) = rs.host_world {
-                        println!("TODO: host world {:?}", world_name);
-                        host_game = todo!();
+                        if let Some(info) = self.resources.worlds.iter().find(|w| w.name == world_name) {
+                            host_game = Some(info.clone());
+                        }
                     }
                     join_game = rs.join_game;
                 }
@@ -522,11 +497,9 @@ impl ApplicationHandler for AppState {
         let gpu = pollster::block_on(Gpu::new(Arc::clone(&window)));
         let win_size: UVec2 = <[u32; 2]>::from(window.inner_size()).into();
 
-        println!("{}", gpu.device.limits().max_storage_buffer_binding_size);
-
         self.max_nodes = gpu.device.limits().max_storage_buffer_binding_size
             / size_of::<Node>() as u32;
-        println!("{}", self.max_nodes);
+        println!("max nodes: {}", self.max_nodes);
 
         let win_aspect = win_size.x as f32 / win_size.y as f32;
         let result_tex_size = uvec2(
@@ -560,8 +533,6 @@ impl ApplicationHandler for AppState {
         self.egui = Some(Egui::new(&window, &gpu));
         self.window = Some(window);
         self.gpu = Some(gpu);
-
-        println!("gpu_res: {:?} ", self.gpu_res.is_some());
     }
     fn window_event(
         &mut self,

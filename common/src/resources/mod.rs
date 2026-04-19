@@ -42,7 +42,7 @@ impl<'a> Resources {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct WorldInfo {
     pub name: String,
     pub version: Version,

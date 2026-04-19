@@ -1,7 +1,7 @@
 use crate::{Crosshair, GameState, Timers};
 use egui::{Align, Layout, Ui};
 use std::net::SocketAddr;
-use std::time::SystemTime;
+use std::str::FromStr;
 use client::common::resources::{Resources, WorldInfo, CURRENT_VERSION};
 
 macro_rules! true_horizontal_centered {
@@ -25,14 +25,22 @@ pub struct UiResponse {
 
 // Underneath every menu, a render-pass will happen for rendering the game (if there is a GameState).
 // So the UI doesn't need to concern itself with rendering the game.
-#[derive(Default, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct UiState {
     pages: Vec<Page>,
-    last_click: Option<SystemTime>,
     create_world_name: String,
     create_world_seed: String,
-    create_world_asset_folder: String,
     join_world_address: String,
+}
+impl Default for UiState {
+    fn default() -> Self {
+        Self {
+            pages: vec![],
+            create_world_name: String::from("New World"),
+            create_world_seed: String::new(),
+            join_world_address: String::from("127.0.0.1:60000"),
+        }
+    }
 }
 impl UiState {
     pub fn page_is_open(&self) -> bool {
@@ -40,19 +48,13 @@ impl UiState {
     }
     pub fn open_page(&mut self, page: Page) {
         self.pages.push(page);
-        self.last_click = Some(SystemTime::now());
     }
     pub fn close_page(&mut self) {
         _ = self.pages.pop();
-        self.last_click = Some(SystemTime::now());
-    }
-    
-    pub fn clear_pages(&mut self) {
-        self.pages.clear();
     }
 
-    fn is_click_recent(&self) -> bool {
-        self.last_click.map(|t| SystemTime::now().duration_since(t).unwrap() < std::time::Duration::from_millis(20)).unwrap_or(false)
+    pub fn clear_pages(&mut self) {
+        self.pages.clear();
     }
 }
 #[derive(Clone, Copy, Debug)]
@@ -65,7 +67,7 @@ pub enum Page {
 }
 
 pub fn show_title_screen(ui: &mut Ui, state: &mut UiState) -> UiResponse {
-    let mut rs = UiResponse::default();
+    let rs = UiResponse::default();
 
     ui.heading("Block World");
     ui.add_space(10.0);
@@ -159,12 +161,12 @@ pub fn show_ui_state(ui: &mut Ui, state: &mut UiState, resources: &Resources) ->
     })
 }
 
-fn show_pause_menu(ui: &mut Ui, state: &mut UiState) -> UiResponse {
+fn show_pause_menu(ui: &mut Ui, _state: &mut UiState) -> UiResponse {
     if ui.button("Resume").clicked() {}
     UiResponse::default()
 }
 
-fn show_options(ui: &mut Ui, state: &mut UiState, resources: &Resources) -> UiResponse {
+fn show_options(ui: &mut Ui, state: &mut UiState, _resources: &Resources) -> UiResponse {
     if ui.button("Back").clicked() {
         state.close_page();
     }
@@ -235,8 +237,24 @@ fn show_create_world(ui: &mut Ui, state: &mut UiState, resources: &Resources) ->
 }
 
 fn show_join_world(ui: &mut Ui, state: &mut UiState) -> UiResponse {
+    let mut rs = UiResponse::default();
+
+    ui.text_edit_singleline(&mut state.join_world_address);
+
+    let addr = SocketAddr::from_str(&state.join_world_address);
+    if addr.is_err() {
+        ui.visuals_mut().override_text_color = Some(egui::Color32::RED);
+        ui.label("Invalid address - should be in the format: 127.0.0.1:60000");
+    }
+
+    if ui.button("Join").clicked() {
+        if let Ok(addr) = addr {
+            rs.join_game = Some(addr);
+        }
+    }
+    ui.separator();
     if ui.button("Back").clicked() {
         state.close_page()
     }
-    UiResponse::default()
+    rs
 }
