@@ -11,6 +11,7 @@ use shader::*;
 use std::sync::Arc;
 use texture::Texture;
 use wgpu::*;
+use client::common::resources::{Stylepack, VoxelPack};
 
 static RAY_TRACER_SRC: &str = include_str!("ray_tracer.wgsl");
 static PATH_TRACER_SRC: &str = include_str!("path_tracer.wgsl");
@@ -26,7 +27,15 @@ pub struct Material {
     _padding: [u32; 2],
 }
 impl Material {
-    pub fn construct(src: client::common::resources::VoxelStyle) -> Self {
+    pub const ZERO: Self = Self {
+        color: [0.0, 0.0, 0.0],
+        is_empty: 0,
+        is_liquid: 0,
+        scatter: 0.0,
+        _padding: [0; 2],
+    };
+    
+    pub fn construct(src: &client::common::resources::VoxelStyle) -> Self {
         use client::common::resources::VoxelState;
         Self {
             color: src.color,
@@ -35,6 +44,19 @@ impl Material {
             scatter: 0.0,
             _padding: [0; 2],
         }
+    }
+    
+    pub fn construct_arr(voxelpack: &VoxelPack, stylepack: &Stylepack) -> Vec<Self> {
+        let styles = &stylepack.voxel_styles;
+        let mut out = vec![Self::ZERO; styles.len()];
+        
+        for (name, style) in styles.iter() {
+            let Some(idx) = voxelpack.voxel_idx_by_name(name) else {
+                continue
+            };
+            out[idx] = Self::construct(style);
+        }
+        out
     }
 }
 

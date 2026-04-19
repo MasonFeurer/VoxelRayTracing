@@ -349,10 +349,6 @@ impl ServerState {
         let player_list = self.player_list();
         let poll = Self::poll_clients(&mut self.clients);
         for (client_idx, cmd) in poll.commands {
-            println!(
-                "handling cmd from client {:?} : {cmd:?}",
-                &self.clients[client_idx].name
-            );
             self.handle_client_cmd(client_idx, cmd, &player_list);
         }
 

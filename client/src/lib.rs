@@ -17,6 +17,7 @@ use net::ServerConn;
 use player::Player;
 use std::collections::HashSet;
 use std::time::SystemTime;
+use common::resources::VoxelPack;
 use world::ClientWorld;
 
 #[derive(Default)]
@@ -30,16 +31,18 @@ pub struct GameState {
     pub user_name: String,
     pub player: Player,
     pub world: ClientWorld,
+    pub voxels: VoxelPack,
 
     host: ServerConn,
     chunk_requests_sent: HashSet<IVec3>,
 }
 impl GameState {
-    pub fn new(user_name: String, world: ClientWorld, server_conn: ServerConn) -> Self {
+    pub fn new(user_name: String, world: ClientWorld, server_conn: ServerConn, voxels: VoxelPack) -> Self {
         Self {
             user_name,
             player: Player::new(server_conn.player_pos, 0.2),
             world,
+            voxels,
 
             host: server_conn,
             chunk_requests_sent: Default::default(),

@@ -2,14 +2,10 @@ pub mod graphics;
 pub mod input;
 pub mod ui;
 
-use ui::UiState;
-
 use crate::input::{InputState, Key};
-use graphics::{CamData, Crosshair, Egui, Gpu, GpuResources, Material, Settings, WorldData};
+use graphics::{CamData, Crosshair, Egui, Gpu, GpuResources, Settings, WorldData};
 
-use std::os::unix::fs::PermissionsExt;
-
-use client::common::resources::{Datapack, Stylepack};
+use client::common::resources::{Resources, Stylepack, VoxelPack};
 use client::common::world::Node;
 use client::net::ServerConn;
 use client::player::PlayerInput;
@@ -17,23 +13,17 @@ use client::world::ClientWorld;
 use client::GameState;
 use glam::{ivec3, uvec2, UVec2};
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::Child;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
+use egui::{Align, Layout};
 use winit::application::ApplicationHandler;
 use winit::event::*;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{CursorGrabMode, Fullscreen, Window, WindowAttributes, WindowId};
-
-pub static DEFAULT_META: &str = include_str!("../../stdrespack/meta.ron");
-pub static DEFAULT_FEATURES: &str = include_str!("../../stdrespack/features.ron");
-pub static DEFAULT_PRESETS: &str = include_str!("../../stdrespack/worldpresets.ron");
-pub static DEFAULT_VOXELS: &str = include_str!("../../stdrespack/voxelpack.ron");
-
-pub static DEFAULT_STYLES: &str = include_str!("../../stdrespack/voxelstylepack.ron");
-
-pub static DEFAULT_SERVER_BIN: &'static [u8] =
-    include_bytes!("../../stdrespack/blockworld-server-cli");
+use crate::graphics::Material;
+use crate::ui::UiState;
 
 pub fn local_server_addr() -> SocketAddr {
     SocketAddr::new("127.0.0.1".parse().unwrap(), 60_000)
@@ -43,38 +33,28 @@ pub fn app_save_dir() -> PathBuf {
     dirs::config_dir().unwrap().join("blockworld")
 }
 
-pub fn setup_config_folder() -> anyhow::Result<()> {
-    let root = app_save_dir();
-    let datapack_dir = root.join("datapack");
-    let stylepack_dir = root.join("stylepack");
-    let server_path = root.join("blockworld-server-cli");
-
-    if !root.exists() {
-        std::fs::create_dir_all(&root)?;
-    }
-    if !datapack_dir.exists() {
-        std::fs::create_dir(&datapack_dir)?;
-        std::fs::write(datapack_dir.join("meta.ron"), DEFAULT_META)?;
-        std::fs::write(datapack_dir.join("voxels.ron"), DEFAULT_VOXELS)?;
-        std::fs::write(datapack_dir.join("world_features.ron"), DEFAULT_FEATURES)?;
-        std::fs::write(datapack_dir.join("world_gen.ron"), DEFAULT_PRESETS)?;
-    }
-    if !stylepack_dir.exists() {
-        std::fs::create_dir(&stylepack_dir)?;
-        std::fs::write(stylepack_dir.join("voxel_styles.ron"), DEFAULT_STYLES)?;
-        std::fs::write(stylepack_dir.join("meta.ron"), DEFAULT_META)?;
-    }
-    if !server_path.exists() {
-        std::fs::write(&server_path, DEFAULT_SERVER_BIN)?;
-        let mut perms = server_path.metadata()?.permissions();
-        perms.set_mode(0o700);
-        std::fs::set_permissions(server_path, perms)?;
-    }
-    Ok(())
-}
-
 pub fn main() {
     env_logger::init();
+
+    println!("\
+blockworld
+    datapacks
+        vanilla
+            meta.ron
+            voxels.ron
+            world_features.ron
+            world_gen.ron
+    stylepacks
+        vanilla
+            meta.ron
+            voxel_styles.ron
+    worlds
+        a_cool_world
+            meta.ron
+            data
+                chunks.data
+    blockworld-server-cli (bin)\
+    ");
 
     let username = match std::env::home_dir() {
         Some(path) if path.file_name().is_some() => {
@@ -83,35 +63,28 @@ pub fn main() {
         _ => String::from("player"),
     };
 
-    if let Err(err) = setup_config_folder() {
-        eprintln!("Failed to setup config folder: {err:?}");
-        return;
-    }
-
-    let datapack = Datapack::load_from(app_save_dir().join("datapack")).unwrap();
-    let stylepack = Stylepack::load_from(&datapack, app_save_dir().join("stylepack")).unwrap();
-
-    let server = app_save_dir().join("blockworld-server-cli");
-    let mut server_thread = std::process::Command::new(&format!("{}", server.display()))
-        .stdout(std::io::stdout())
-        .stderr(std::io::stderr())
-        .arg(format!("{}", app_save_dir().join("datapack").display()))
-        .arg("60000")
-        .spawn()
-        .unwrap();
-
-    let mut app_state = AppState::new(username, datapack, stylepack);
+    let resources = match Resources::load_from(app_save_dir()) {
+        Ok(v) => v,
+        Err(e) => {
+            let dir = app_save_dir();
+            println!("Failed to load resources from {dir:?}: {e}. Hint: you may need to run blockworld-installer to setup the game config directory.");
+            return;
+        }
+    };
+    let mut app_state = AppState::new(username, resources);
 
     println!("AWSD - Move player");
     println!("F1 - Toggle overlay");
+    println!("F11 - Toggle fullscreen");
     println!("Z - Toggle flying");
-    println!("F - Toggle fullscreen");
     println!("T - Toggle cursor");
 
     if let Err(err) = EventLoop::new().unwrap().run_app(&mut app_state) {
         eprintln!("Failed to run app: {err:?}");
     }
-    _ = server_thread.kill();
+    if let Some(thread) = &mut app_state.server_thread {
+        _ = thread.kill();
+    }
 }
 
 #[derive(Default, Clone)]
@@ -155,8 +128,9 @@ pub struct AppState {
     pub prev_win_size: UVec2,
     pub cursor: Cursor,
 
-    pub datapack: Datapack,
-    pub stylepack: Stylepack,
+    pub server_thread: Option<Child>,
+    pub resources: Resources,
+    pub active_stylepack: Option<String>,
 
     pub settings: Settings,
     pub vertical_samples: u32,
@@ -171,11 +145,17 @@ pub struct AppState {
     hide_overlay: bool,
 }
 impl AppState {
-    pub fn new(username: String, datapack: Datapack, stylepack: Stylepack) -> Self {
+    pub fn active_stylepack(&self) -> Option<&Stylepack> {
+        self.active_stylepack.as_ref().map(|name| self.resources.stylepacks.get(name)).flatten()
+    }
+
+    pub fn new(username: String, resources: Resources) -> Self {
         let mut settings = Settings::default();
         settings.max_ray_bounces = 3;
         settings.sun_intensity = 4.0;
         settings.sky_color = [0.81, 0.93, 1.0];
+
+        let active_stylepack = "blockworld.vanilla";
 
         Self {
             window: None,
@@ -187,11 +167,12 @@ impl AppState {
             prev_win_size: UVec2::ZERO,
             cursor: Cursor::default(),
 
-            datapack,
-            stylepack,
+            resources,
+            active_stylepack: Some(String::from(active_stylepack)),
 
             settings,
             vertical_samples: 800,
+            server_thread: None,
 
             username,
             max_nodes: 0,
@@ -204,7 +185,7 @@ impl AppState {
         }
     }
 
-    pub fn join_game(&mut self, addr: SocketAddr) {
+    pub fn join_game(&mut self, addr: SocketAddr, voxels: Option<VoxelPack>) {
         let world = ClientWorld::new(ivec3(0, 0, 0), self.max_nodes, 40);
         let server = match ServerConn::establish(addr, &self.username) {
             Ok(v) => v,
@@ -213,7 +194,15 @@ impl AppState {
                 return;
             }
         };
-        let game = GameState::new(self.username.clone(), world, server);
+
+        let voxels = if let Some(voxels) = voxels {
+            voxels
+        } else {
+            unimplemented!()
+            // TODO: request voxel pack from server
+        };
+
+        let game = GameState::new(self.username.clone(), world, server, voxels.clone());
 
         let gpu = self.gpu.as_ref().unwrap();
         let win_size: UVec2 = <[u32; 2]>::from(self.window.as_ref().unwrap().inner_size()).into();
@@ -231,40 +220,65 @@ impl AppState {
             game.world.size_in_chunks(),
         );
         gpu_res.buffers.nodes.write(&gpu, 0, game.world.nodes());
-        let mats: Vec<_> = self
-            .stylepack
-            .voxel_styles
-            .styles
-            .iter()
-            .cloned()
-            .map(Material::construct)
-            .collect();
-        gpu_res.buffers.voxel_materials.write_slice(&gpu, 0, &mats);
+        println!("active_stylepack: {:?}", self.active_stylepack());
+        if let Some(pack) = self.active_stylepack() {
+            let mats = Material::construct_arr(&voxels, pack);
+
+            gpu_res.buffers.voxel_materials.write_slice(&gpu, 0, &mats);
+        }
 
         self.gpu_res = Some(gpu_res);
         self.game = Some(game);
         self.cursor.hide(self.window.as_ref().unwrap());
         self.join_game_err = None;
+        self.ui_state.clear_pages();
     }
 
-    fn on_resize(&mut self, new_size: UVec2) {
-        let gpu = self.gpu.as_mut().unwrap();
-        let gpu_res = self.gpu_res.as_mut().unwrap();
+    pub fn host_game(&mut self, addr: SocketAddr, data_path: impl AsRef<Path>, voxels: VoxelPack) {
+        println!("Starting server with data path: {:?} ", data_path.as_ref());
 
-        let prev_result_size = gpu_res.result_texture.size();
-        let new_aspect = new_size.x as f32 / new_size.y as f32;
-        let prev_aspect = prev_result_size.x as f32 / prev_result_size.y as f32;
+        let server = self.resources.path.join("blockworld-server-cli");
+        let server_thread = std::process::Command::new(&format!("{}", server.display()))
+            .stdout(std::io::stdout())
+            .stderr(std::io::stderr())
+            .arg(format!("{}", data_path.as_ref().display()))
+            .arg("60000")
+            .spawn();
+        let server_thread = match server_thread {
+            Ok(v) => v,
+            Err(e) => {
+                self.join_game_err = Some(format!("{e:?}"));
+                println!("Failed to spawn server thread: {e:?}");
+                return;
+            }
+        };
 
+        self.join_game(addr, Some(voxels));
+        self.server_thread = Some(server_thread);
+    }
+
+    fn on_resize(&mut self, new_size: UVec2) -> Option<()> {
+        println!("Resizing to {new_size:?}");
+        println!("AppState.gpu: {:?}, gpu_res: {:?}", self.gpu.is_some(), self.gpu_res.is_some());
+
+        let gpu = self.gpu.as_mut()?;
         gpu.resize(new_size);
 
-        if prev_aspect != new_aspect {
-            let result_size = uvec2(
-                (self.vertical_samples as f32 * new_aspect) as u32,
-                self.vertical_samples,
-            );
+        if let Some(gpu_res) = self.gpu_res.as_mut() {
+            let prev_result_size = gpu_res.result_texture.size();
+            let new_aspect = new_size.x as f32 / new_size.y as f32;
+            let prev_aspect = prev_result_size.x as f32 / prev_result_size.y as f32;
 
-            gpu_res.resize_result_texture(gpu, result_size);
+            if prev_aspect != new_aspect {
+                let result_size = uvec2(
+                    (self.vertical_samples as f32 * new_aspect) as u32,
+                    self.vertical_samples,
+                );
+
+                gpu_res.resize_result_texture(gpu, result_size);
+            }
         }
+        Some(())
     }
 
     pub fn update_game(&mut self) {
@@ -317,7 +331,7 @@ impl AppState {
             };
             let player_updates = game.player.process_input(delta, &in_);
             game.player.update(&player_updates, |bb| {
-                game.world.get_collisions_w(bb, &self.datapack.voxels)
+                game.world.get_collisions_w(bb, &game.voxels)
             });
         }
 
@@ -332,7 +346,7 @@ impl AppState {
         if input.key_pressed(&Key::KeyT) {
             self.cursor.toggle(&window);
         }
-        if input.key_pressed(&Key::KeyF) {
+        if input.key_pressed(&Key::F11) {
             window.set_fullscreen(match window.fullscreen() {
                 Some(_) => None,
                 None => Some(Fullscreen::Borderless(None)),
@@ -354,6 +368,7 @@ impl AppState {
         let mut encoder = gpu.create_command_encoder();
 
         let mut join_game = None;
+        let mut host_game = None;
 
         // ----- RENDER GAME -----
         if let Some(game) = self.game.as_ref() {
@@ -390,14 +405,14 @@ impl AppState {
             let surface_size = gpu.surface_size();
             let egui_input = egui.winit.take_egui_input(&window);
 
-            let egui_output = egui.ctx().run(egui_input, |ctx| match self.ui_state {
-                UiState::GamePlay => {
+            let egui_output = egui.ctx().run(egui_input, |ctx| {
+                if let Some(_game) = &self.game {
                     _ = egui::Area::new(egui::Id::new("area1"))
                         .default_pos(egui::pos2(0.0, 0.0))
                         .movable(true)
                         .show(ctx, |ui| {
                             if let Some(game) = &mut self.game {
-                                ui::draw_game_overlay(ui, game, &mut self.crosshair, &self.timers);
+                                ui::show_game_overlay(ui, game, &mut self.crosshair, &self.timers);
                             } else {
                                 ui.heading("NO GAME STATE!");
                                 if let Some(err) = &self.join_game_err {
@@ -405,21 +420,31 @@ impl AppState {
                                 }
                             }
                         })
-                }
-                UiState::TitleScreen => {
+                } else if !self.ui_state.page_is_open() {
                     _ = egui::CentralPanel::default().show(ctx, |ui| {
-                        let rs = ui::draw_title_screen(ui);
-                        if let Some(state) = rs.new_ui_state {
-                            self.ui_state = state;
-                        }
-                        if rs.host_game {
-                            println!("TOOD: host server");
-                        }
-                        join_game = rs.join_game;
+                        _ = ui.with_layout(Layout::top_down(Align::Center), |ui| {
+                            ui::show_title_screen(ui, &mut self.ui_state)
+                        }).inner;
                     })
                 }
-                _ => {}
+                if self.ui_state.page_is_open() {
+                    let rs = egui::CentralPanel::default().show(ctx, |ui| {
+                        ui.with_layout(Layout::top_down(Align::Center), |ui| {
+                            ui::show_ui_state(ui, &mut self.ui_state, &self.resources)
+                        })
+                    }).inner.inner.unwrap();
+                    if let Some(world) = rs.host_new_world {
+                        println!("TODO: host new world {:?}", world);
+                        host_game = Some(world);
+                    }
+                    if let Some(world_name) = rs.host_world {
+                        println!("TODO: host world {:?}", world_name);
+                        host_game = todo!();
+                    }
+                    join_game = rs.join_game;
+                }
             });
+
             let screen_desc = egui_wgpu::ScreenDescriptor {
                 size_in_pixels: surface_size.into(),
                 pixels_per_point: egui_winit::pixels_per_point(egui.ctx(), &window),
@@ -473,7 +498,13 @@ impl AppState {
         output.present();
 
         if let Some(addr) = join_game {
-            self.join_game(addr);
+            self.join_game(addr, None);
+        }
+        if let Some(info) = host_game {
+            let datapack = self.resources.datapacks.get(&info.datapack).unwrap();
+            let path = datapack.path.clone();
+            let addr = local_server_addr();
+            self.host_game(addr, &path, datapack.voxels.clone());
         }
         Ok(())
     }
@@ -512,15 +543,14 @@ impl ApplicationHandler for AppState {
                 game.world.size_in_chunks(),
             );
             gpu_res.buffers.nodes.write(&gpu, 0, game.world.nodes());
-            let mats: Vec<_> = self
-                .stylepack
-                .voxel_styles
-                .styles
-                .iter()
-                .cloned()
-                .map(Material::construct)
-                .collect();
-            gpu_res.buffers.voxel_materials.write_slice(&gpu, 0, &mats);
+            // let mats: Vec<_> = self
+            //     .stylepack
+            //     .voxel_styles
+            //     .iter()
+            //     .cloned()
+            //     .map(Material::construct)
+            //     .collect();
+            // gpu_res.buffers.voxel_materials.write_slice(&gpu, 0, &mats);
             self.gpu_res = Some(gpu_res);
             self.cursor.hide(&window);
         }
@@ -530,6 +560,8 @@ impl ApplicationHandler for AppState {
         self.egui = Some(Egui::new(&window, &gpu));
         self.window = Some(window);
         self.gpu = Some(gpu);
+
+        println!("gpu_res: {:?} ", self.gpu_res.is_some());
     }
     fn window_event(
         &mut self,
@@ -594,7 +626,8 @@ impl ApplicationHandler for AppState {
             _ => {}
         }
         if let Some(size) = resize {
-            self.on_resize(size);
+
+            println!("{:?}", self.on_resize(size));
         }
     }
     fn device_event(

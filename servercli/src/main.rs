@@ -27,6 +27,9 @@ fn main() -> anyhow::Result<()> {
         .with_context(|| format!("Invalid cmdline arg \"port\"\nUsage: {usage}"))?;
 
     let address = SocketAddr::new("127.0.0.1".parse()?, port);
+
+    println!("Loading resources from {res_folder:?}...");
+
     let datapack = Datapack::load_from(&res_folder).context("Failed to load resources")?;
 
     println!("Using address {address:?}...");

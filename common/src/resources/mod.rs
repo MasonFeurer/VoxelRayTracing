@@ -1,21 +1,72 @@
-use serde::Deserialize;
 use std::collections::HashMap;
-use std::path::Path;
-
+use std::path::{Path, PathBuf};
+use serde::Deserialize;
 use crate::world::noise::Map;
 use crate::world::Voxel;
 
 pub mod loader;
 
-#[derive(Deserialize, Debug)]
-pub struct Meta {
+pub type Version = (u8, u8);
+pub const CURRENT_VERSION: Version = (0, 1);
+
+#[derive(Debug)]
+pub struct Resources {
+    pub path: PathBuf,
+    pub datapacks: HashMap<String, Datapack>,
+    pub stylepacks: HashMap<String, Stylepack>,
+    pub worlds: Vec<WorldInfo>,
+}
+impl<'a> Resources {
+    pub fn load_from(data_folder: impl AsRef<Path>) -> anyhow::Result<Self> {
+        let mut datapacks = HashMap::new();
+        let mut stylepacks = HashMap::new();
+        let mut worlds = Vec::new();
+
+        for pack_folder in std::fs::read_dir(&data_folder.as_ref().join("datapacks"))? {
+            let pack_folder = pack_folder?.path();
+            let datapack = Datapack::load_from(pack_folder)?;
+            datapacks.insert(datapack.name.clone(), datapack);
+        }
+        for pack_folder in std::fs::read_dir(&data_folder.as_ref().join("stylepacks"))? {
+            let pack_folder = pack_folder?.path();
+            let stylepack = Stylepack::load_from(pack_folder)?;
+            stylepacks.insert(stylepack.name.clone(), stylepack);
+        }
+        for world_folder in std::fs::read_dir(&data_folder.as_ref().join("worlds"))? {
+            let world_folder = world_folder?.path();
+            let world = WorldInfo::load_from(world_folder)?;
+            worlds.push(world);
+        }
+
+        Ok(Self { path: data_folder.as_ref().to_owned(), datapacks, stylepacks, worlds })
+    }
+}
+
+#[derive(Debug)]
+pub struct WorldInfo {
     pub name: String,
-    pub version: (u8, u8),
+    pub version: Version,
+    pub datapack: String,
+    pub stylepack: String,
+}
+impl WorldInfo {
+    pub fn load_from(dir: impl AsRef<Path>) -> anyhow::Result<Self> {
+        let meta = std::fs::read_to_string(dir.as_ref().join("meta.ron"))?;
+        let meta = loader::parse_world_meta(&meta)?;
+        Ok(Self {
+            name: meta.name,
+            version: meta.version,
+            datapack: meta.datapack,
+            stylepack: meta.stylepack,
+        })
+    }
 }
 
 #[derive(Debug)]
 pub struct Datapack {
-    pub meta: Meta,
+    pub path: PathBuf,
+    pub name: String,
+    pub version: Version,
     pub voxels: VoxelPack,
     pub world_features: WorldFeatures,
     pub world_presets: Vec<WorldPreset>,
@@ -35,7 +86,9 @@ impl Datapack {
         let world_presets = loader::parse_world_presets(&world_presets, &voxels, &world_features)?;
 
         Ok(Self {
-            meta,
+            path: dir.as_ref().to_owned(),
+            name: meta.name,
+            version: meta.version,
             voxels,
             world_features,
             world_presets,
@@ -45,19 +98,21 @@ impl Datapack {
 
 #[derive(Debug)]
 pub struct Stylepack {
-    pub meta: Meta,
-    pub voxel_styles: VoxelStylePack,
+    pub name: String,
+    pub version: Version,
+    pub voxel_styles: HashMap<String, VoxelStyle>,
 }
 impl Stylepack {
-    pub fn load_from(datapack: &Datapack, dir: impl AsRef<Path>) -> anyhow::Result<Self> {
+    pub fn load_from(dir: impl AsRef<Path>) -> anyhow::Result<Self> {
         let meta = std::fs::read_to_string(dir.as_ref().join("meta.ron"))?;
         let meta = loader::parse_meta(&meta)?;
 
         let stylepack = std::fs::read_to_string(dir.as_ref().join("voxel_styles.ron"))?;
-        let stylepack = loader::parse_voxel_stylepack(&stylepack, &datapack.voxels)?;
+        let stylepack = loader::parse_voxel_stylepack(&stylepack)?;
         Ok(Self {
-            meta,
-            voxel_styles: stylepack,
+            name: meta.name,
+            version: meta.version,
+            voxel_styles: stylepack.styles,
         })
     }
 }
@@ -121,7 +176,7 @@ pub enum Feature {
     },
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub enum Source {
     Value(f32),
     Noise(Map),
@@ -143,7 +198,7 @@ impl WorldFeatures {
 
 /// Lists all voxels that can exist in the world,
 /// and gives them properties
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VoxelPack {
     voxels: Vec<VoxelData>,
 }
@@ -160,20 +215,28 @@ impl VoxelPack {
             .find(|(_, d)| d.name.as_str() == name)
             .map(|(idx, _)| Voxel::from_data(idx as u16))
     }
+    
+    pub fn voxel_idx_by_name(&self, name: &str) -> Option<usize> {
+        self.voxels
+            .iter()
+            .enumerate()
+            .find(|(_, d)| d.name.as_str() == name)
+            .map(|(idx, _)| idx)
+    }
 
     pub fn get(&self, v: Voxel) -> Option<&VoxelData> {
         self.voxels.get(v.as_data() as usize)
     }
 }
 
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
 pub enum VoxelState {
     Solid,
     Liquid,
     Gas,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct VoxelData {
     pub state: VoxelState,
     pub name: String,
@@ -188,11 +251,11 @@ impl VoxelData {
 }
 
 #[derive(Debug)]
-pub struct VoxelStylePack {
-    pub styles: Vec<VoxelStyle>,
+pub struct VoxelStylepack {
+    pub styles: HashMap<String, VoxelStyle>,
 }
 
-#[derive(Deserialize, Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 pub struct VoxelStyle {
     pub state: VoxelState,
     pub color: [f32; 3],

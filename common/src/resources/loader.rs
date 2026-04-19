@@ -1,7 +1,4 @@
-use super::{
-    Biome, Feature, Meta, Source, VoxelData, VoxelPack, VoxelStyle, VoxelStylePack, WorldFeatures,
-    WorldPreset,
-};
+use super::{Biome, Feature, Source, Version, VoxelData, VoxelPack, VoxelStyle, VoxelStylepack, WorldFeatures, WorldPreset};
 use crate::world::noise::Map;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -48,14 +45,28 @@ impl std::fmt::Display for LoaderErr {
 }
 impl std::error::Error for LoaderErr {}
 
+#[derive(Deserialize, Debug)]
+pub struct RawMeta {
+    pub name: String,
+    pub version: Version,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct RawWorldMeta {
+    pub name: String,
+    pub version: Version,
+    pub datapack: String,
+    pub stylepack: String,
+}
+
 #[derive(Deserialize)]
-pub struct LayerSource {
+struct RawLayer {
     voxel: String,
     depth: u32,
 }
 
 #[derive(Deserialize)]
-pub enum FeatureSource {
+enum RawFeature {
     Tree {
         trunk_voxel: String,
         branch_voxel: String,
@@ -89,7 +100,7 @@ pub enum FeatureSource {
         width: (u32, u32),
     },
 }
-impl FeatureSource {
+impl RawFeature {
     pub fn construct(&self, voxels: &VoxelPack) -> Result<Feature, LoaderErr> {
         Ok(match self {
             Self::Tree {
@@ -165,13 +176,13 @@ impl FeatureSource {
 }
 
 #[derive(Deserialize)]
-pub struct BiomeSource {
+pub struct RawBiome {
     name: String,
     vegetation: Map,
-    layers: Vec<LayerSource>,
+    layers: Vec<RawLayer>,
     features: Vec<String>,
 }
-impl BiomeSource {
+impl RawBiome {
     pub fn construct(
         &self,
         voxels: &VoxelPack,
@@ -203,7 +214,7 @@ impl BiomeSource {
 }
 
 #[derive(Deserialize)]
-pub struct WorldPresetSource {
+struct RawWorldPreset {
     name: String,
 
     temp: Source,
@@ -215,10 +226,10 @@ pub struct WorldPresetSource {
     earth: String,
     water: String,
     biome_lookup: [[u32; 20]; 4],
-    biomes: Vec<BiomeSource>,
+    biomes: Vec<RawBiome>,
 }
-impl WorldPresetSource {
-    pub fn construct(
+impl RawWorldPreset {
+    fn construct(
         &self,
         voxels: &VoxelPack,
         features: &WorldFeatures,
@@ -261,7 +272,7 @@ pub fn parse_world_presets(
     voxels: &VoxelPack,
     features: &WorldFeatures,
 ) -> Result<Vec<WorldPreset>, LoaderErr> {
-    let parsed: Vec<WorldPresetSource> = ron::de::from_str(src)
+    let parsed: Vec<RawWorldPreset> = ron::de::from_str(src)
         .map_err(LoaderErr::ron)
         .map_err(|e| e.context("world_presets file"))?;
     let mut constructs = Vec::with_capacity(parsed.len());
@@ -271,7 +282,7 @@ pub fn parse_world_presets(
     Ok(constructs)
 }
 pub fn parse_world_features(src: &str, voxels: &VoxelPack) -> Result<WorldFeatures, LoaderErr> {
-    let parsed: HashMap<String, FeatureSource> = ron::de::from_str(src)
+    let parsed: HashMap<String, RawFeature> = ron::de::from_str(src)
         .map_err(LoaderErr::ron)
         .map_err(|e| e.context("world_features file"))?;
     let mut compiled = HashMap::with_capacity(parsed.len());
@@ -286,10 +297,16 @@ pub fn parse_world_features(src: &str, voxels: &VoxelPack) -> Result<WorldFeatur
     Ok(WorldFeatures(compiled))
 }
 
-pub fn parse_meta(src: &str) -> Result<Meta, LoaderErr> {
-    let parsed: Meta = ron::de::from_str(src)
+pub fn parse_meta(src: &str) -> Result<RawMeta, LoaderErr> {
+    let parsed: RawMeta = ron::de::from_str(src)
         .map_err(LoaderErr::ron)
-        .map_err(|e| e.context("voxelpack file"))?;
+        .map_err(|e| e.context("(voxel/style)pack neta file"))?;
+    Ok(parsed)
+}
+pub fn parse_world_meta(src: &str) -> Result<RawWorldMeta, LoaderErr> {
+    let parsed: RawWorldMeta = ron::de::from_str(src)
+        .map_err(LoaderErr::ron)
+        .map_err(|e| e.context("world meta file"))?;
     Ok(parsed)
 }
 
@@ -300,19 +317,15 @@ pub fn parse_voxelpack(src: &str) -> Result<VoxelPack, LoaderErr> {
     Ok(VoxelPack::new(parsed))
 }
 
-pub fn parse_voxel_stylepack(src: &str, voxels: &VoxelPack) -> Result<VoxelStylePack, LoaderErr> {
+pub fn parse_voxel_stylepack(src: &str) -> Result<VoxelStylepack, LoaderErr> {
     let parsed: Vec<(String, VoxelStyle)> = ron::de::from_str(src)
         .map_err(LoaderErr::ron)
         .map_err(|e| e.context("stylepack file"))?;
-    let mut styles = vec![VoxelStyle::ZERO; parsed.len()];
+    let mut styles = HashMap::with_capacity(parsed.len());
 
     for (vox_name, style) in parsed {
-        let vox_id = voxels
-            .by_name(&vox_name)
-            .ok_or(LoaderErr::voxel_nf(&vox_name))?
-            .as_data();
-        styles[vox_id as usize] = style;
+        styles.insert(vox_name, style);
     }
 
-    Ok(VoxelStylePack { styles })
+    Ok(VoxelStylepack { styles })
 }
