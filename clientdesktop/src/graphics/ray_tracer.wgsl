@@ -77,8 +77,8 @@ fn find_chunk_node(
     min: vec3<f32>,
     root: u32,
 ) -> FoundNode {
-    var center = min + vec3(16.0);
-    var size = 32.0;
+    var center = min + vec3(32.0);
+    var size = 64.0;
     var idx: u32 = 0;
     var depth: u32 = 0u;
 
@@ -113,8 +113,8 @@ fn find_chunk_node(
 
 fn find_node(pos: vec3<f32>, max_depth: u32) -> FoundNode {
     let world_chunk_w = world_.size_in_chunks;
-    let chunk_coords = vec3<i32>(floor(pos / 32.0));
-    let min = vec3<f32>(chunk_coords * 32);
+    let chunk_coords = vec3<i32>(floor(pos / 64.0));
+    let min = vec3<f32>(chunk_coords * 64);
     let chunk_idx = u32(chunk_coords.x)
         + u32(chunk_coords.y) * world_chunk_w
         + u32(chunk_coords.z) * world_chunk_w * world_chunk_w;

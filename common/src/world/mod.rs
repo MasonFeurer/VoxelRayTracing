@@ -33,15 +33,15 @@ impl Voxel {
 }
 
 /// The voxel-width of a chunk.
-pub const CHUNK_SIZE: u32 = 32;
+pub const CHUNK_SIZE: u32 = 64;
 
 /// The depth in a Chunk's SVO where nodes are the same size as voxels.
 /// Derived from "2^(CHUNK_DEPTH) = CHUNK_SIZE"
-pub const CHUNK_DEPTH: u32 = 5;
+pub const CHUNK_DEPTH: u32 = 6;
 
 /// The maximum number of nodes a chunk could need to represent it's state.
-/// Derived from "1 + 2^3 + 4^3 + 8^3 + 16^3 + 32^3"
-pub const NODES_PER_CHUNK: u32 = 37_449;
+/// Derived from "1 + 2^3 + 4^3 + 8^3 + 16^3 + 32^3 + 64^3"
+pub const NODES_PER_CHUNK: u32 = 299_593;
 
 /// When adding a chunk to the world, this is the number of extra nodes the chunk makes room for.
 /// When a chunk needs to use more than this amount more of extra memory for storing nodes,
@@ -152,7 +152,7 @@ impl NodeAlloc {
         }
     }
 
-    // `new_idx` should greater then `self.last_used_addr()`
+    // `new_idx` should greater than `self.last_used_addr()`
     pub fn move_end(&mut self, new_end: NodeAddr) {
         let free = self
             .free_mem
