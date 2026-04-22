@@ -7,10 +7,10 @@ This project has the goal of creating an easy-to-use, "realistic" looking, small
 
 # World
 The world is organized into a grid of chunks 32x32x32 voxels in volume.
-Each chunk stores it's voxels as an SVO (Sparse Voxel Octree) to optimize storage and rendering.
+Each chunk stores its voxels as an SVO (Sparse Voxel Octree) to optimize storage and rendering.
 
 # Rendering
-The rendering does not use any triangle mesh's. Intead, the raw SVO data is uploaded to the gpu, 
+The rendering does not use any triangle mesh's. Instead, the raw SVO data is uploaded to the gpu, 
 then the gpu casts a bunch of Ray's from the camera position into the world, using a partly-hand-crafted
 algorithm for stepping through an SVO world efficiently. 
 
@@ -18,12 +18,18 @@ This rendering technique also makes it trivial to implement real-time light path
 visuals.
 
 # How to Play
-Download the git project using this bash command:
-```sh
-git clone "https://github.com/MasonFeurer/VoxelRayTracing.git"
-```
-Then, use `cargo` to build and run the app from source:
-```sh
-cd VoxelRayTracing/clientdesktop
-cargo r -r
-```
+Play the game with 3 simple steps.
+
+1. Download the git project using this bash command:
+    ```sh
+    git clone "https://github.com/MasonFeurer/VoxelRayTracing.git"
+    cd VoxelRayTracing
+    ```
+2. Run the installer to setup up the game folder:
+    ```sh
+    cargo run --bin blockworld-installer
+    ```
+3. Build and run the game from source:
+    ```sh
+    cargo run --release --bin blockworld-client-desktop
+    ```
