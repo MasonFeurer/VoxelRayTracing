@@ -356,7 +356,7 @@ impl Svo {
             node.center += Vec3::splat(node.size as f32) * 0.5 * child_dir.as_vec3();
             node.depth += 1;
         }
-        // SVO now goes to desired depth, so we can mutate the node now.
+        // SVO now goes to the desired depth, so we can mutate the node now.
         nodes[node.idx as usize] = Node::new(voxel);
 
         // if the SVO's depth was already at the target depth,

@@ -2,16 +2,17 @@
 Another Voxel Ray Tracing Engine, one with a creative name.
 This project has the goal of creating an easy-to-use, "realistic" looking, smaller voxel engine.
 
-![Screenshot](./pictures/ss-2025-11-17_17-56-06.png)
-![Screenshot](./pictures/ss-2025-11-21_16-02-29.png)
+![Screenshot](./pictures/ss-2026-04-23_3.png)
+![Screenshot](./pictures/ss-2026-04-23_1.png)
+![Screenshot](./pictures/ss-2026-04-23_2.png)
 
 # World
-The world is organized into a grid of chunks 32x32x32 voxels in volume.
+The world is organized into a grid of chunks 64x64x64 voxels in volume.
 Each chunk stores its voxels as an SVO (Sparse Voxel Octree) to optimize storage and rendering.
 
 # Rendering
-The rendering does not use any triangle mesh's. Instead, the raw SVO data is uploaded to the gpu, 
-then the gpu casts a bunch of Ray's from the camera position into the world, using a partly-hand-crafted
+The rendering does not use any triangle-meshes. Instead, the raw SVO data is uploaded to the gpu; 
+then the gpu casts a bunch of rays from the camera position into the world, using a partly-hand-crafted
 algorithm for stepping through an SVO world efficiently. 
 
 This rendering technique also makes it trivial to implement real-time light path-tracing to greatly improve the
@@ -25,7 +26,7 @@ Play the game with 3 simple steps.
     git clone "https://github.com/MasonFeurer/VoxelRayTracing.git"
     cd VoxelRayTracing
     ```
-2. Run the installer to setup up the game folder:
+2. Run the installer to set up the game folder:
     ```sh
     cargo run --bin blockworld-installer
     ```
