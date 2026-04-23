@@ -203,7 +203,7 @@ impl WorldGen {
                     );
                 }
 
-                if (h - world_pos.y < 0) || (h - world_pos.y >= 32) || h < self.sea_level {
+                if (h - world_pos.y < 0) || (h - world_pos.y >= CHUNK_SIZE as i32) || h < self.sea_level {
                     continue;
                 }
 

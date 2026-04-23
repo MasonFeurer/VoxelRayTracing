@@ -168,7 +168,7 @@ impl ServerState {
         self.new_clients_recv = Some(receiver);
         let kill = Arc::clone(&self.kill);
 
-        let client_start_y = self.world.gen.terrain_h_at(0, 0) as f32 + 10.0;
+        let client_start_y = self.world.gen.terrain_h_at(0, 0) as f32 + 250.0;
         let client_start_pos = vec3(0.0, client_start_y, 0.0);
 
         std::thread::spawn(move || {

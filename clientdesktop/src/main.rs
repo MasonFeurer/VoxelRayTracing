@@ -6,7 +6,7 @@ use crate::input::{InputState, Key};
 use graphics::{CamData, Crosshair, Egui, Gpu, GpuResources, Settings, WorldData};
 
 use client::common::resources::{Resources, Stylepack, VoxelPack};
-use client::common::world::Node;
+use client::common::world::{Node, Voxel};
 use client::net::ServerConn;
 use client::player::PlayerInput;
 use client::world::ClientWorld;
@@ -22,6 +22,7 @@ use winit::application::ApplicationHandler;
 use winit::event::*;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{CursorGrabMode, Fullscreen, Window, WindowAttributes, WindowId};
+use client::common::math::cast_ray;
 use crate::graphics::Material;
 use crate::ui::UiState;
 
@@ -151,7 +152,7 @@ impl AppState {
             active_stylepack: Some(String::from(active_stylepack)),
 
             settings,
-            vertical_samples: 800,
+            vertical_samples: 1080,
             server_thread: None,
 
             username,
@@ -166,7 +167,7 @@ impl AppState {
     }
 
     pub fn join_game(&mut self, addr: SocketAddr, voxels: Option<VoxelPack>) {
-        let world = ClientWorld::new(ivec3(0, 0, 0), self.max_nodes, 40);
+        let world = ClientWorld::new(ivec3(0, 0, 0), self.max_nodes, 15);
         let server = match ServerConn::establish(addr, &self.username) {
             Ok(v) => v,
             Err(e) => {
@@ -308,7 +309,36 @@ impl AppState {
             game.player.update(&player_updates, |bb| {
                 game.world.get_collisions_w(bb, &game.voxels)
             });
+            let looking_at = cast_ray(
+                game.player.eye_pos(),
+                game.player.facing(),
+                10.0,
+                |pos| game.world.get_voxel(pos).map(|v| !v.is_empty()) == Ok(true)
+            );
+
+            let mut updated_chunks = vec![];
+            if let (Some(hit), true) = (looking_at, input.left_button_pressed()) {
+                if let Ok(chunk) = game.world.set_voxel(hit.pos, Voxel::EMPTY) {
+                    updated_chunks.push((chunk.range.start, chunk.range.len()));
+                }
+            }
+            if let (Some(hit), true) = (looking_at, input.right_button_pressed()) {
+                let vox = Voxel::from_data(0);
+                if let Ok(chunk) = game.world.set_voxel(hit.pos + hit.face, vox) {
+                    updated_chunks.push((chunk.range.start, chunk.range.len()));
+                }
+            }
+
+            for (root, node_count) in updated_chunks {
+                let nodes = &game.world.nodes()[root as usize..root as usize + node_count];
+                self.gpu_res.as_ref().unwrap().buffers.nodes.write(
+                    &self.gpu.as_ref().unwrap(),
+                    root as u64,
+                    nodes,
+                );
+            }
         }
+
 
         // --- Misc. key binds ---
         if input.key_pressed(&Key::F1) {
@@ -329,9 +359,6 @@ impl AppState {
         }
         if input.key_pressed(&Key::KeyQ) {
             self.freeze_world_anchor = !self.freeze_world_anchor;
-        }
-        if input.key_pressed(&Key::KeyL) {
-            self.game = None;
         }
     }
 
@@ -387,7 +414,9 @@ impl AppState {
                         .movable(true)
                         .show(ctx, |ui| {
                             if let Some(game) = &mut self.game {
-                                ui::show_game_overlay(ui, game, &mut self.crosshair, &self.timers);
+                                if !self.hide_overlay {
+                                    ui::show_game_overlay(ui, game, &mut self.crosshair, &self.timers);
+                                }
                             } else {
                                 ui.heading("NO GAME STATE!");
                                 if let Some(err) = &self.join_game_err {

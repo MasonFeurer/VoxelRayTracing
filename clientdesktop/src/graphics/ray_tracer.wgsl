@@ -77,7 +77,7 @@ fn find_chunk_node(
     min: vec3<f32>,
     root: u32,
 ) -> FoundNode {
-    var center = min + vec3(32.0);
+    var center = min + vec3(64.0 / 2.0);
     var size = 64.0;
     var idx: u32 = 0;
     var depth: u32 = 0u;
@@ -218,7 +218,7 @@ fn ray_world(start_ray: Ray) -> HitResult {
     while iter_count < 500u {
         iter_count += 1u;
         
-        let found_node = find_node(ray_pos, 5u); // the most child one
+        let found_node = find_node(ray_pos, 6u); // the most child one
         voxel = node_voxel(get_node(found_node.root + found_node.idx)); // just voxel - most time air
         
         let is_liquid = voxel_mats[voxel].is_liquid == 1u;

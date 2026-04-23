@@ -332,7 +332,7 @@ impl Svo {
         }
 
         // If depth is less than target_depth,
-        // the SVO doesn't go to desired depth, so we must split until it does
+        // the SVO doesn't go to the desired depth, so we must split until it does
         while node.depth < target_depth {
             let first_child = alloc.next().ok_or(SetVoxelErr::OutOfMemory)?;
             nodes[first_child as usize..(first_child as usize + 8)]

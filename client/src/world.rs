@@ -371,7 +371,7 @@ impl ClientWorld {
         Ok(range.start)
     }
 
-    pub fn set_voxel(&mut self, pos: IVec3, voxel: Voxel) -> Result<(), SetVoxelErr> {
+    pub fn set_voxel(&mut self, pos: IVec3, voxel: Voxel) -> Result<&Chunk, SetVoxelErr> {
         if pos.cmplt(self.min_voxel()).any() || pos.cmpge(self.max_voxel()).any() {
             return Err(SetVoxelErr::PosOutOfBounds);
         }
@@ -384,7 +384,8 @@ impl ClientWorld {
         let chunk = self.chunks.chunks[chunk.idx()]
             .as_mut()
             .ok_or(SetVoxelErr::NoChunk)?;
-        chunk.set_voxel(&mut self.nodes, pos_in_chunk, voxel)
+        chunk.set_voxel(&mut self.nodes, pos_in_chunk, voxel)?;
+        Ok(chunk)
     }
 
     pub fn get_voxel(&self, pos: IVec3) -> Result<Voxel, SetVoxelErr> {
