@@ -23,6 +23,7 @@ pub struct PlayerMovement {
     pub new_vel: Vec3,
     pub frame_vel: Vec3,
     pub flying: bool,
+    pub jumped: bool,
 }
 
 #[derive(Clone)]
@@ -31,8 +32,11 @@ pub struct Player {
 
     pub flying: bool,
     pub on_ground: bool,
+    // Is true from the moment the player jumps until they are on the ground again.
+    pub jumped: bool,
 
     pub pos: Vec3,
+    pub cam_pos: Vec3,
     // (in degrees)
     pub rot: Vec3,
     pub vel: Vec3,
@@ -47,14 +51,29 @@ impl Player {
 
             flying: false,
             on_ground: false,
+            jumped: false,
 
             pos,
+            cam_pos: pos + vec3(0.0, 4.0, 0.0),
             rot: Vec3::ZERO,
             vel: Vec3::ZERO,
             speed,
 
             height: 4.0,
         }
+    }
+
+    pub fn cam_pos(&self) -> Vec3 {
+        self.cam_pos
+    }
+    pub fn desired_cam_pos(&self) -> Vec3 { self.pos + vec3(0.0, self.height, 0.0) }
+
+    pub fn facing(&self) -> Vec3 {
+        axis_rot_to_ray(vec3(
+            self.rot.x.to_radians(),
+            self.rot.y.to_radians(),
+            self.rot.z.to_radians(),
+        ))
     }
 
     pub fn create_aabb(&self) -> Aabb {
@@ -134,6 +153,7 @@ impl Player {
             if input.jump && self.on_ground {
                 result.new_vel.y = 0.6;
                 frame_vel.y = 0.6;
+                result.jumped = true;
             }
         }
         result.frame_vel = frame_vel * t_delta;
@@ -145,25 +165,33 @@ impl Player {
         self.rot = input.new_cam;
         self.flying = input.flying;
 
+        self.jumped = self.jumped || input.jumped;
+
         if self.flying {
             self.pos += input.frame_vel;
         } else {
             let vel_clipped = clip_aabb_movement(self.create_aabb(), input.frame_vel, world, true);
             self.pos += vel_clipped;
             self.on_ground = vel_clipped.y.abs() < 0.001 && input.frame_vel.y < 0.001;
+            if self.on_ground {
+                self.jumped = false;
+            }
         }
-    }
 
-    pub fn eye_pos(&self) -> Vec3 {
-        self.pos + vec3(0.0, self.height, 0.0)
-    }
-
-    pub fn facing(&self) -> Vec3 {
-        axis_rot_to_ray(vec3(
-            self.rot.x.to_radians(),
-            self.rot.y.to_radians(),
-            self.rot.z.to_radians(),
-        ))
+        // Translate camera
+        if self.flying || self.jumped {
+            self.cam_pos = self.desired_cam_pos();
+        }
+        else {
+            let distance = self.desired_cam_pos().distance(self.cam_pos).abs();
+            if distance > 0.01 {
+                let translate_speed = (distance * 0.1).max(0.1).min(distance);
+                self.cam_pos += (self.desired_cam_pos() - self.cam_pos).normalize() * translate_speed;
+                // snap the camera to the players X and Y, only allowing it to float along the Y axis.
+                self.cam_pos.x = self.pos.x;
+                self.cam_pos.z = self.pos.z;
+            }
+        }
     }
 }
 

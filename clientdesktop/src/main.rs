@@ -25,7 +25,7 @@ use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{CursorGrabMode, Fullscreen, Window, WindowAttributes, WindowId};
 use client::common::math::cast_ray;
 use crate::graphics::Material;
-use crate::ui::UiState;
+use crate::ui::{Page, UiState};
 
 pub fn local_server_addr() -> SocketAddr {
     SocketAddr::new("127.0.0.1".parse().unwrap(), 60_000)
@@ -56,48 +56,11 @@ pub fn main() {
     };
     let mut app_state = AppState::new(username, resources);
 
-    println!("AWSD - Move player");
-    println!("F1 - Toggle overlay");
-    println!("F11 - Toggle fullscreen");
-    println!("Z - Toggle flying");
-    println!("T - Toggle cursor");
-
     if let Err(err) = EventLoop::new().unwrap().run_app(&mut app_state) {
         eprintln!("Failed to run app: {err:?}");
     }
     if let Some(thread) = &mut app_state.server_thread {
         _ = thread.kill();
-    }
-}
-
-#[derive(Default, Clone)]
-pub struct Cursor {
-    hidden: bool,
-}
-impl Cursor {
-    pub fn update_win(&self, window: &Window) {
-        window.set_cursor_visible(!self.hidden);
-
-        let grab_mode = match (self.hidden, cfg!(target_os = "macos")) {
-            (false, _) => CursorGrabMode::None,
-            (_, true) => CursorGrabMode::Locked,
-            (_, false) => CursorGrabMode::Confined,
-        };
-        _ = window.set_cursor_grab(grab_mode);
-    }
-
-    pub fn hide(&mut self, window: &Window) {
-        self.hidden = true;
-        self.update_win(window);
-    }
-    pub fn show(&mut self, window: &Window) {
-        self.hidden = false;
-        self.update_win(window);
-    }
-
-    pub fn toggle(&mut self, window: &Window) {
-        self.hidden = !self.hidden;
-        self.update_win(window);
     }
 }
 
@@ -109,7 +72,7 @@ pub struct AppState {
     pub input: InputState,
     timers: Timers,
     pub prev_win_size: UVec2,
-    pub cursor: Cursor,
+    pub chat_open: bool,
 
     pub server_thread: Option<Child>,
     pub resources: Resources,
@@ -132,6 +95,10 @@ impl AppState {
         self.active_stylepack.as_ref().map(|name| self.resources.stylepacks.get(name)).flatten()
     }
 
+    pub fn should_hide_cursor(&self) -> bool {
+        !self.ui_state.page_is_open() && self.game.is_some() && !self.chat_open
+    }
+
     pub fn new(username: String, resources: Resources) -> Self {
         let mut settings = Settings::default();
         settings.max_ray_bounces = 3;
@@ -148,7 +115,7 @@ impl AppState {
             input: InputState::default(),
             timers: Timers::new(),
             prev_win_size: UVec2::ZERO,
-            cursor: Cursor::default(),
+            chat_open: false,
 
             resources,
             active_stylepack: Some(String::from(active_stylepack)),
@@ -212,7 +179,6 @@ impl AppState {
 
         self.gpu_res = Some(gpu_res);
         self.game = Some(game);
-        self.cursor.hide(self.window.as_ref().unwrap());
         self.join_game_err = None;
         self.ui_state.clear_pages();
     }
@@ -296,7 +262,7 @@ impl AppState {
 
         // -------- Player Updates --------
         // Update player pos with input
-        if let (Some(game), true) = (&mut self.game, self.cursor.hidden) {
+        if let (true, Some(game)) = (self.should_hide_cursor(), &mut self.game) {
             let in_ = PlayerInput {
                 cursor_movement: input.cursor_delta,
                 left: input.key_down(&Key::KeyA),
@@ -312,7 +278,7 @@ impl AppState {
                 game.world.get_collisions_w(bb, &game.voxels)
             });
             let looking_at = cast_ray(
-                game.player.eye_pos(),
+                game.player.cam_pos(),
                 game.player.facing(),
                 10.0,
                 |pos| game.world.get_voxel(pos).map(|v| !v.is_empty()) == Ok(true)
@@ -353,7 +319,7 @@ impl AppState {
         }
         let window = self.window.as_ref().unwrap();
         if input.key_pressed(&Key::KeyT) {
-            self.cursor.toggle(&window);
+            self.chat_open = !self.chat_open;
         }
         if input.key_pressed(&Key::F11) {
             window.set_fullscreen(match window.fullscreen() {
@@ -361,20 +327,39 @@ impl AppState {
                 None => Some(Fullscreen::Borderless(None)),
             });
         }
-        if input.key_pressed(&Key::KeyQ) {
+        if input.key_pressed(&Key::F9) {
             self.freeze_world_anchor = !self.freeze_world_anchor;
+        }
+        if input.key_pressed(&Key::Escape) && self.game.is_some() {
+            if self.ui_state.page_is_open() {
+                self.ui_state.close_page();
+            } else {
+                self.ui_state.open_page(Page::PauseMenu);
+            }
         }
     }
 
     pub fn draw_frame(&mut self) -> Result<(), wgpu::SurfaceError> {
-        let gpu = self.gpu.as_ref().unwrap();
         let window = Arc::clone(self.window.as_ref().unwrap());
+        { // show or hide the cursor
+            let hidden = self.should_hide_cursor();
+            window.set_cursor_visible(!hidden);
+            let grab_mode = match (hidden, cfg!(target_os = "macos")) {
+                (false, _) => CursorGrabMode::None,
+                (_, true) => CursorGrabMode::Locked,
+                (_, false) => CursorGrabMode::Confined,
+            };
+            _ = window.set_cursor_grab(grab_mode);
+        }
+
+        let gpu = self.gpu.as_ref().unwrap();
 
         let (output, view) = gpu.get_output()?;
         let mut encoder = gpu.create_command_encoder();
 
         let mut join_game = None;
         let mut host_game = None;
+        let mut quit_game = false;
 
         // ----- RENDER GAME -----
         if let Some(game) = self.game.as_ref() {
@@ -390,7 +375,7 @@ impl AppState {
             buffers.crosshair.write(&gpu, &self.crosshair);
             let cam_data = CamData::create(
                 game.player.rot,
-                game.player.eye_pos(),
+                game.player.cam_pos(),
                 game.player.fov,
                 result_tex_size.as_vec2(),
             );
@@ -412,22 +397,15 @@ impl AppState {
             let egui_input = egui.winit.take_egui_input(&window);
 
             let egui_output = egui.ctx().run(egui_input, |ctx| {
-                if let Some(_game) = &self.game {
-                    _ = egui::Area::new(egui::Id::new("area1"))
-                        .default_pos(egui::pos2(0.0, 0.0))
-                        .movable(true)
-                        .show(ctx, |ui| {
-                            if let Some(game) = &mut self.game {
-                                if !self.hide_overlay {
-                                    ui::show_game_overlay(ui, game, &mut self.crosshair, &self.timers);
-                                }
-                            } else {
-                                ui.heading("NO GAME STATE!");
-                                if let Some(err) = &self.join_game_err {
-                                    ui.heading(err);
-                                }
-                            }
-                        })
+                if let Some(game) = &mut self.game {
+                    if !self.hide_overlay && !self.ui_state.page_is_open() {
+                        _ = egui::Area::new(egui::Id::new("area1"))
+                            .default_pos(egui::pos2(0.0, 0.0))
+                            .movable(true)
+                            .show(ctx, |ui| {
+                                ui::show_game_overlay(ui, &mut self.ui_state, game, &self.timers);
+                            })
+                    }
                 } else if !self.ui_state.page_is_open() {
                     _ = egui::CentralPanel::default().show(ctx, |ui| {
                         _ = ui.with_layout(Layout::top_down(Align::Center), |ui| {
@@ -438,7 +416,7 @@ impl AppState {
                 if self.ui_state.page_is_open() {
                     let rs = egui::CentralPanel::default().show(ctx, |ui| {
                         ui.with_layout(Layout::top_down(Align::Center), |ui| {
-                            ui::show_ui_state(ui, &mut self.ui_state, &self.resources)
+                            ui::show_ui_state(ui, &mut self.ui_state, &self.resources, &mut self.crosshair)
                         })
                     }).inner.inner.unwrap();
                     if let Some(world) = rs.host_new_world {
@@ -449,6 +427,7 @@ impl AppState {
                             host_game = Some(info.clone());
                         }
                     }
+                    quit_game = rs.quit_game;
                     join_game = rs.join_game;
                 }
             });
@@ -514,6 +493,13 @@ impl AppState {
             let addr = local_server_addr();
             self.host_game(addr, &path, datapack.voxels.clone());
         }
+        if quit_game {
+            self.game = None;
+            if let Some(mut thread) = self.server_thread.take() {
+                _ = thread.kill();
+            }
+            self.ui_state.clear_pages();
+        }
         Ok(())
     }
 }
@@ -549,16 +535,7 @@ impl ApplicationHandler for AppState {
                 game.world.size_in_chunks(),
             );
             gpu_res.buffers.nodes.write(&gpu, 0, game.world.nodes());
-            // let mats: Vec<_> = self
-            //     .stylepack
-            //     .voxel_styles
-            //     .iter()
-            //     .cloned()
-            //     .map(Material::construct)
-            //     .collect();
-            // gpu_res.buffers.voxel_materials.write_slice(&gpu, 0, &mats);
             self.gpu_res = Some(gpu_res);
-            self.cursor.hide(&window);
         }
 
         self.prev_win_size = win_size;
@@ -573,6 +550,8 @@ impl ApplicationHandler for AppState {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
+        let cursor_hidden = self.should_hide_cursor();
+
         let window = Arc::clone(self.window.as_ref().unwrap());
         let egui = self.egui.as_mut().unwrap();
         self.input.on_window_event(&event);
@@ -580,7 +559,7 @@ impl ApplicationHandler for AppState {
         let mut resize = None;
 
         match event {
-            e if !self.cursor.hidden && egui.winit.on_window_event(&window, &e).consumed => {}
+            e if !cursor_hidden && egui.winit.on_window_event(&window, &e).consumed => {}
             WindowEvent::CloseRequested => {
                 event_loop.exit();
                 _ = self.game.as_mut().map(GameState::disconnect);
