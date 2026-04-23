@@ -1,9 +1,12 @@
 pub mod noise;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use glam::{uvec3, IVec3, UVec3, Vec3};
 
 pub type NodeAddr = u32;
 pub type NodeRange = std::ops::Range<NodeAddr>;
+
+pub static LOG_FLAG: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, PartialEq)]
 pub enum SetVoxelErr {
@@ -46,7 +49,7 @@ pub const NODES_PER_CHUNK: u32 = 299_593;
 /// When adding a chunk to the world, this is the number of extra nodes the chunk makes room for.
 /// When a chunk needs to use more than this amount more of extra memory for storing nodes,
 /// The chunk will have to be re-located in memory.
-pub const CHUNK_INIT_FREE_MEM: u32 = 256;
+pub const CHUNK_INIT_FREE_MEM: u32 = 2048;
 
 #[inline(always)]
 pub fn world_to_chunk_pos(pos: IVec3) -> IVec3 {
@@ -326,7 +329,7 @@ impl Svo {
     ) -> Result<(), SetVoxelErr> {
         let mut node = self.find_node(nodes, pos, target_depth);
         let parent_voxel = nodes[node.idx as usize].voxel();
-        // No need to break-down the SVO because the highest node has the same voxel type.
+        // No need to break down the SVO because the highest node has the same voxel type.
         if parent_voxel == voxel {
             return Ok(());
         }
@@ -334,6 +337,7 @@ impl Svo {
         // If depth is less than target_depth,
         // the SVO doesn't go to the desired depth, so we must split until it does
         while node.depth < target_depth {
+            if LOG_FLAG.load(Ordering::Relaxed) { println!("Splitting SVO... free memory: {:?}", alloc.free_mem) }
             let first_child = alloc.next().ok_or(SetVoxelErr::OutOfMemory)?;
             nodes[first_child as usize..(first_child as usize + 8)]
                 .copy_from_slice(&[Node::new(parent_voxel); 8]);

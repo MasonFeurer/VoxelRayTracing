@@ -6,7 +6,7 @@ use crate::input::{InputState, Key};
 use graphics::{CamData, Crosshair, Egui, Gpu, GpuResources, Settings, WorldData};
 
 use client::common::resources::{Resources, Stylepack, VoxelPack};
-use client::common::world::{Node, Voxel};
+use client::common::world::{Node, Voxel, LOG_FLAG};
 use client::net::ServerConn;
 use client::player::PlayerInput;
 use client::world::ClientWorld;
@@ -16,6 +16,7 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::Child;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, SystemTime};
 use egui::{Align, Layout};
 use winit::application::ApplicationHandler;
@@ -35,6 +36,7 @@ pub fn app_save_dir() -> PathBuf {
 }
 
 pub fn main() {
+    LOG_FLAG.store(true, Ordering::Relaxed);
     env_logger::init();
 
     let username = match std::env::home_dir() {
@@ -318,14 +320,16 @@ impl AppState {
 
             let mut updated_chunks = vec![];
             if let (Some(hit), true) = (looking_at, input.left_button_pressed()) {
-                if let Ok(chunk) = game.world.set_voxel(hit.pos, Voxel::EMPTY) {
-                    updated_chunks.push((chunk.range.start, chunk.range.len()));
+                match game.world.set_voxel(hit.pos, Voxel::EMPTY) {
+                    Ok(chunk) => updated_chunks.push((chunk.range.start, chunk.range.len())),
+                    Err(e) => println!("Failed to set voxel: {e:?}"),
                 }
             }
             if let (Some(hit), true) = (looking_at, input.right_button_pressed()) {
-                let vox = Voxel::from_data(0);
-                if let Ok(chunk) = game.world.set_voxel(hit.pos + hit.face, vox) {
-                    updated_chunks.push((chunk.range.start, chunk.range.len()));
+                let vox = Voxel::from_data(1);
+                match game.world.set_voxel(hit.pos + hit.face, vox) {
+                    Ok(chunk) => updated_chunks.push((chunk.range.start, chunk.range.len())),
+                    Err(e) => println!("Failed to set voxel: {e:?}"),
                 }
             }
 

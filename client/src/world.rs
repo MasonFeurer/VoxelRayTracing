@@ -57,9 +57,9 @@ impl Chunk {
         }
     }
 
-    pub fn new(used: NodeRange, free: NodeRange) -> Self {
+    pub fn new(root: NodeAddr, used: NodeRange, free: NodeRange) -> Self {
         Self {
-            range: used.start..free.end,
+            range: (root + used.start)..(root + free.end),
             alloc: NodeAlloc::new(used, free),
         }
     }
@@ -258,9 +258,7 @@ impl ChunkAlloc {
         };
         let chunk_space = space.start..(space.start + req_space);
         space.start = chunk_space.end;
-        let used_mem = chunk_space.start..(chunk_space.start + size);
-        let free_mem = (chunk_space.start + size)..chunk_space.end;
-        Chunk::new(used_mem, free_mem)
+        Chunk::new(chunk_space.start, 0..size, size..req_space)
     }
 }
 
@@ -358,7 +356,10 @@ impl ClientWorld {
                 let end = start + nodes.len();
 
                 self.nodes[start..end].copy_from_slice(&nodes);
-                chunk.alloc = NodeAlloc::new(start as u32..end as u32, end as u32..chunk.range.end);
+
+                // The addresses used in NodeAlloc are relative to the chunk root.
+                chunk.alloc = NodeAlloc::new(0..nodes.len() as u32, nodes.len() as u32..chunk.range.len() as u32);
+
                 return Ok(start as u32);
             }
         }
