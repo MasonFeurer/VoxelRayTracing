@@ -1,6 +1,7 @@
 pub mod noise;
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use bincode::{Decode, Encode};
 use glam::{uvec3, IVec3, UVec3, Vec3};
 
 pub type NodeAddr = u32;
@@ -80,9 +81,10 @@ pub fn inchunk_to_world_pos(chunk: IVec3, pos: UVec3) -> IVec3 {
 /// ## 1yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
 /// Node splits into 8 nodes of half size at `y`.
 #[repr(transparent)]
-#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Encode, Decode, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Node(u32);
 impl Node {
+
     // same as Node::new(Voxel::EMPTY)
     pub const ZERO: Self = Self(0);
 

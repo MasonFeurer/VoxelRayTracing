@@ -40,6 +40,16 @@ impl<'a> Resources {
 
         Ok(Self { path: data_folder.as_ref().to_owned(), datapacks, stylepacks, worlds })
     }
+    
+    pub fn reload_worlds(&mut self) -> anyhow::Result<()> {
+        self.worlds.clear();
+        for world_folder in std::fs::read_dir(&self.path.join("worlds"))? {
+            let world_folder = world_folder?.path();
+            let world = WorldInfo::load_from(world_folder)?;
+            self.worlds.push(world);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]

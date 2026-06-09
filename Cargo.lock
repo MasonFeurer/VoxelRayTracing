@@ -283,8 +283,10 @@ dependencies = [
  "egui-wgpu",
  "egui-winit",
  "env_logger",
+ "fastrand",
  "glam",
  "pollster",
+ "ron",
  "wgpu",
  "winit",
 ]
@@ -294,6 +296,7 @@ name = "blockworld-common"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bincode",
  "fastrand",
  "glam",
  "noise",
@@ -324,8 +327,11 @@ name = "blockworld-server-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bincode",
  "blockworld-server",
  "fastrand",
+ "glam",
+ "ron",
 ]
 
 [[package]]

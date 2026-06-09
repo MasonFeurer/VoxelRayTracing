@@ -22,6 +22,7 @@ pub struct UiResponse {
     pub host_new_world: Option<WorldOptions>,
     pub join_game: Option<SocketAddr>,
     pub quit_game: bool,
+    pub reload_worlds: bool,
 }
 //
 
@@ -45,8 +46,8 @@ impl Default for UiState {
             create_world_seed: String::new(),
             join_world_address: String::from("127.0.0.1:60000"),
 
-            s2_open: false,
-            s3_open: false,
+            s2_open: true,
+            s3_open: true,
         }
     }
 }
@@ -77,12 +78,13 @@ pub enum Page {
 }
 
 pub fn show_title_screen(ui: &mut Ui, state: &mut UiState) -> UiResponse {
-    let rs = UiResponse::default();
+    let mut rs = UiResponse::default();
 
     ui.heading("Block World");
     ui.add_space(10.0);
     if ui.button("My Worlds").clicked() {
         state.open_page(Page::MyWorlds);
+        rs.reload_worlds = true;
     }
     if ui.button("Join World").clicked() {
         state.open_page(Page::JoinWorld);
@@ -258,7 +260,7 @@ fn show_my_worlds(ui: &mut Ui, state: &mut UiState, resources: &Resources) -> Ui
     let mut rs = UiResponse::default();
     for world in &resources.worlds {
         ui.group(|ui| {
-            true_horizontal_centered!(ui, 
+            true_horizontal_centered!(ui,
                 |ui| {
                     ui.heading(world.name.clone());
                 },
@@ -289,24 +291,35 @@ fn show_my_worlds(ui: &mut Ui, state: &mut UiState, resources: &Resources) -> Ui
 fn show_create_world(ui: &mut Ui, state: &mut UiState, resources: &Resources) -> UiResponse {
     let mut rs = UiResponse::default();
 
-    ui.text_edit_singleline(&mut state.create_world_name);
     let path = resources.path.join("worlds").join(&state.create_world_name);
+    let is_valid = !path.exists();
+
+    ui.text_edit_singleline(&mut state.create_world_name);
+
     ui.label(format!("Stored at {}", path.display()));
-    ui.text_edit_singleline(&mut state.create_world_seed);
+    if !is_valid {
+        ui.visuals_mut().override_text_color = Some(egui::Color32::RED);
+        ui.label("ERROR: directory already exists");
+        ui.visuals_mut().override_text_color = None;
+    }
+
+    egui::TextEdit::singleline(&mut state.create_world_seed).hint_text("leave blank for random seed").show(ui);
 
     ui.separator();
 
     true_horizontal_centered!(ui,
         |ui| {
-            if ui.button("Create").clicked() {
-                state.pages.clear();
-                rs.host_new_world = Some(WorldInfo {
-                    name: state.create_world_name.clone(),
-                    version: CURRENT_VERSION,
-                    datapack: String::from("blockworld.vanilla"),
-                    stylepack: String::from("blockworld.vanilla"),
-                });
-            }
+            ui.add_enabled_ui(is_valid, |ui| {
+                if ui.button("Create").clicked() {
+                    state.pages.clear();
+                    rs.host_new_world = Some(WorldInfo {
+                        name: state.create_world_name.clone(),
+                        version: CURRENT_VERSION,
+                        datapack: String::from("blockworld.vanilla"),
+                        stylepack: String::from("blockworld.vanilla"),
+                    });
+                }
+            })
         },
         |ui| {
             if ui.button("Back").clicked() {

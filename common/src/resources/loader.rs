@@ -1,6 +1,6 @@
 use super::{Biome, Feature, Source, Version, VoxelData, VoxelPack, VoxelStyle, VoxelStylepack, WorldFeatures, WorldPreset};
 use crate::world::noise::Map;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug)]
@@ -51,12 +51,13 @@ pub struct RawMeta {
     pub version: Version,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct RawWorldMeta {
     pub name: String,
     pub version: Version,
     pub datapack: String,
     pub stylepack: String,
+    pub seed: i64,
 }
 
 #[derive(Deserialize)]

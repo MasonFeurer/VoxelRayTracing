@@ -16,9 +16,10 @@ use std::collections::HashSet;
 use std::net::{SocketAddr, TcpListener};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use world::gen::{BuiltFeature, WorldGen};
 use world::{ServerChunk, ServerWorld};
+use crate::world::WorldFsExt;
 
 pub struct Client {
     pub name: String,
@@ -48,29 +49,36 @@ impl Client {
     }
 }
 
-pub struct ChunkBuilder {
+pub struct ChunkBuilder<Fs> {
     done: Arc<AtomicBool>,
+    _marker: std::marker::PhantomData<Fs>,
 }
-impl ChunkBuilder {
+impl<Fs: WorldFsExt + Send + Sync + 'static> ChunkBuilder<Fs> {
     pub fn spawn(
         gen: Arc<WorldGen>,
+        fs: Arc<RwLock<Fs>>,
         chunks: Vec<IVec3>,
         send: Sender<(IVec3, ServerChunk, Vec<BuiltFeature>)>,
     ) -> Self {
         let done = Arc::new(AtomicBool::new(false));
         let done_copy = Arc::clone(&done);
+        let fs_copy = Arc::clone(&fs);
         std::thread::spawn(move || {
             let mut built_features = Vec::new();
             let mut node_buffer = vec![Node::ZERO; NODES_PER_CHUNK as usize];
             for pos in chunks {
-                let chunk = gen.generate_chunk(&mut node_buffer, pos, &mut built_features);
+                let chunk = if let Some(chunk) = fs_copy.read().unwrap().read_chunk(pos) {
+                    chunk
+                } else {
+                    gen.generate_chunk(&mut node_buffer, pos, &mut built_features)
+                };
                 send.send((pos, chunk, built_features.clone())).unwrap();
                 built_features.clear();
                 node_buffer.fill(Node::ZERO);
             }
             done_copy.store(true, Ordering::Relaxed);
         });
-        Self { done }
+        Self { done, _marker: std::marker::PhantomData }
     }
 
     pub fn is_done(&self) -> bool {
@@ -108,25 +116,25 @@ pub fn connect_clients_blocking(
     }
 }
 
-pub struct ServerState {
+pub struct ServerState<Fs: WorldFsExt> {
     pub address: SocketAddr,
     pub name: String,
     pub clients: Vec<Client>,
     pub new_clients_recv: Option<Receiver<Client>>,
 
-    pub world: ServerWorld,
+    pub world: ServerWorld<Fs>,
 
     pub chunk_builder_send: Sender<(IVec3, ServerChunk, Vec<BuiltFeature>)>,
     pub chunk_builder_recv: Receiver<(IVec3, ServerChunk, Vec<BuiltFeature>)>,
     pub chunks_to_build: Vec<IVec3>,
     pub chunks_to_build_set: HashSet<IVec3>,
-    pub chunk_builders: Vec<ChunkBuilder>,
+    pub chunk_builders: Vec<ChunkBuilder<Fs>>,
     pub dirty_chunks: HashSet<IVec3>,
 
     pub kill: Arc<AtomicBool>,
 }
-impl ServerState {
-    pub fn new(address: SocketAddr, name: String, world: ServerWorld) -> Self {
+impl<Fs: WorldFsExt + Send + Sync + 'static> ServerState<Fs> {
+    pub fn new(address: SocketAddr, name: String, world: ServerWorld<Fs>) -> Self {
         let (chunk_builder_send, chunk_builder_recv) = channel();
         Self {
             address,
@@ -247,6 +255,7 @@ impl ServerState {
             }
             self.chunk_builders.push(ChunkBuilder::spawn(
                 Arc::clone(&self.world.gen),
+                Arc::clone(&self.world.fs),
                 next,
                 self.chunk_builder_send.clone(),
             ));

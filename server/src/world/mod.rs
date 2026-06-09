@@ -8,19 +8,25 @@ use common::world::{
 use gen::{BuiltFeature, WorldGen};
 use glam::{ivec3, IVec3, UVec3};
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
-pub struct ServerWorld {
+pub trait WorldFsExt {
+    fn read_chunk(&self, pos: IVec3) -> Option<ServerChunk>;
+}
+
+pub struct ServerWorld<Fs: WorldFsExt> {
     pub chunks: HashMap<IVec3, ServerChunk>,
     pub unplaced_features: Vec<BuiltFeature>,
     pub gen: Arc<WorldGen>,
+    pub fs: Arc<RwLock<Fs>>,
 }
-impl ServerWorld {
-    pub fn new(preset: &WorldPreset, features: WorldFeatures, seed: i64) -> Self {
+impl<Fs: WorldFsExt> ServerWorld<Fs> {
+    pub fn new(preset: &WorldPreset, features: WorldFeatures, seed: i64, fs: Arc<RwLock<Fs>>) -> Self {
         Self {
             chunks: HashMap::new(),
             unplaced_features: Vec::new(),
             gen: Arc::new(WorldGen::new(preset, features, seed)),
+            fs
         }
     }
 
@@ -97,9 +103,17 @@ pub struct ServerChunk {
     pub nodes: Vec<Node>,
     pub node_alloc: NodeAlloc,
 }
+/// Constructors
 impl ServerChunk {
     pub fn new() -> Self {
         Self::with_capacity(256)
+    }
+
+    pub fn from_nodes(nodes: Vec<Node>) -> Self {
+        Self {
+            node_alloc: NodeAlloc::new(0..nodes.len() as u32, nodes.len() as u32..nodes.len() as u32 + 256),
+            nodes,
+        }
     }
 
     pub fn with_capacity(cap: u32) -> Self {
@@ -110,7 +124,9 @@ impl ServerChunk {
             node_alloc: NodeAlloc::new(0..1, 1..cap),
         }
     }
-
+}
+/// 
+impl ServerChunk {
     pub fn used_nodes(&self) -> &[Node] {
         &self.nodes[0..=self.node_alloc.last_used_addr() as usize]
     }

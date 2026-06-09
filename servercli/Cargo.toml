@@ -8,4 +8,7 @@ server = { package = "blockworld-server", path = "../server" }
 
 fastrand = "2.3.0"
 anyhow = "1.0.93"
+ron = "0.12.0"
+glam = "0.31.0"
+bincode = "2.0.0"
 

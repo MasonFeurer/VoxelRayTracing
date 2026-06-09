@@ -2,6 +2,7 @@ pub mod graphics;
 pub mod input;
 pub mod ui;
 
+use std::io::Write;
 use crate::input::{InputState, Key};
 use graphics::{CamData, Crosshair, Egui, Gpu, GpuResources, Settings, WorldData};
 
@@ -24,6 +25,7 @@ use winit::event::*;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{CursorGrabMode, Fullscreen, Window, WindowAttributes, WindowId};
 use client::common::math::cast_ray;
+use client::common::resources::loader::RawWorldMeta;
 use crate::graphics::Material;
 use crate::ui::{Page, UiState};
 
@@ -59,8 +61,47 @@ pub fn main() {
     if let Err(err) = EventLoop::new().unwrap().run_app(&mut app_state) {
         eprintln!("Failed to run app: {err:?}");
     }
-    if let Some(thread) = &mut app_state.server_thread {
-        _ = thread.kill();
+    if let Some(program) = app_state.server_program {
+        program.shutdown().unwrap();
+    }
+}
+
+struct ServerProgram {
+    thread: Child,
+}
+impl ServerProgram {
+    fn host(path: impl AsRef<Path>, data_path: impl AsRef<Path>, world_path: impl AsRef<Path>) -> Result<Self, String> {
+        let thread = std::process::Command::new(&format!("{}", path.as_ref().display()))
+            .stdout(std::io::stdout())
+            .stderr(std::io::stderr())
+            .stdin(std::process::Stdio::piped())
+            .arg(format!("{}", data_path.as_ref().display()))
+            .arg(format!("{}", world_path.as_ref().display()))
+            .arg("60000")
+            .spawn();
+        let thread = match thread {
+            Ok(v) => v,
+            Err(e) => {
+                println!("Failed to spawn server thread: {e:?}");
+                return Err(format!("{e:?}"));
+            }
+        };
+        Ok(Self { thread })
+    }
+
+    fn shutdown(self) -> Result<(), String> {
+        let mut thread = self.thread;
+        let mut stdin = thread.stdin.take().unwrap();
+        stdin.write_all(b"stop\n").unwrap();
+
+        std::thread::sleep(Duration::from_millis(100));
+        match thread.try_wait() {
+            Ok(_) => Ok(()),
+            Err(err) => {
+                println!("Failed to shutdown server thread: {err:?}");
+                Err(format!("{err:?}"))
+            },
+        }
     }
 }
 
@@ -74,7 +115,7 @@ pub struct AppState {
     pub prev_win_size: UVec2,
     pub chat_open: bool,
 
-    pub server_thread: Option<Child>,
+    server_program: Option<ServerProgram>,
     pub resources: Resources,
     pub active_stylepack: Option<String>,
 
@@ -122,7 +163,7 @@ impl AppState {
 
             settings,
             vertical_samples: 1080,
-            server_thread: None,
+            server_program: None,
 
             username,
             max_nodes: 0,
@@ -183,25 +224,19 @@ impl AppState {
         self.ui_state.clear_pages();
     }
 
-    pub fn host_game(&mut self, addr: SocketAddr, data_path: impl AsRef<Path>, voxels: VoxelPack) {
+    pub fn host_game(&mut self, addr: SocketAddr, data_path: impl AsRef<Path>, voxels: VoxelPack, world_name: &str) {
         let server = self.resources.path.join("blockworld-server-cli");
-        let server_thread = std::process::Command::new(&format!("{}", server.display()))
-            .stdout(std::io::stdout())
-            .stderr(std::io::stderr())
-            .arg(format!("{}", data_path.as_ref().display()))
-            .arg("60000")
-            .spawn();
-        let server_thread = match server_thread {
+        let world_folder = self.resources.path.join("worlds").join(world_name);
+        let program = match ServerProgram::host(&server, data_path, world_folder) {
             Ok(v) => v,
             Err(e) => {
                 self.join_game_err = Some(format!("{e:?}"));
-                println!("Failed to spawn server thread: {e:?}");
                 return;
             }
         };
 
         self.join_game(addr, Some(voxels));
-        self.server_thread = Some(server_thread);
+        self.server_program = Some(program);
     }
 
     fn on_resize(&mut self, new_size: UVec2) -> Option<()> {
@@ -357,8 +392,9 @@ impl AppState {
         let (output, view) = gpu.get_output()?;
         let mut encoder = gpu.create_command_encoder();
 
-        let mut join_game = None;
-        let mut host_game = None;
+        let mut join_server = None;
+        let mut host_world = None;
+        let mut create_world = None;
         let mut quit_game = false;
 
         // ----- RENDER GAME -----
@@ -409,7 +445,10 @@ impl AppState {
                 } else if !self.ui_state.page_is_open() {
                     _ = egui::CentralPanel::default().show(ctx, |ui| {
                         _ = ui.with_layout(Layout::top_down(Align::Center), |ui| {
-                            ui::show_title_screen(ui, &mut self.ui_state)
+                            let rs = ui::show_title_screen(ui, &mut self.ui_state);
+                            if rs.reload_worlds {
+                                _ = self.resources.reload_worlds();
+                            }
                         }).inner;
                     })
                 }
@@ -420,15 +459,16 @@ impl AppState {
                         })
                     }).inner.inner.unwrap();
                     if let Some(world) = rs.host_new_world {
-                        host_game = Some(world);
+                        create_world = Some(world.clone());
+                        host_world = Some(world);
                     }
                     if let Some(world_name) = rs.host_world {
                         if let Some(info) = self.resources.worlds.iter().find(|w| w.name == world_name) {
-                            host_game = Some(info.clone());
+                            host_world = Some(info.clone());
                         }
                     }
                     quit_game = rs.quit_game;
-                    join_game = rs.join_game;
+                    join_server = rs.join_game;
                 }
             });
 
@@ -484,19 +524,40 @@ impl AppState {
         // --- done rendering ---
         output.present();
 
-        if let Some(addr) = join_game {
+        if let Some(addr) = join_server {
             self.join_game(addr, None);
+            // can't join a server and host our own world at the same time, so we exit early
+            return Ok(())
         }
-        if let Some(info) = host_game {
+        if let Some(info) = create_world {
+            let path = self.resources.path.join("worlds").join(&info.name);
+            std::fs::create_dir(&path).unwrap();
+            std::fs::create_dir(&path.join("regions")).unwrap();
+
+            let world_meta: RawWorldMeta = RawWorldMeta {
+                name: info.name,
+                version: info.version,
+                datapack: info.datapack,
+                stylepack: info.stylepack,
+                seed: fastrand::i64(..),
+            };
+            let meta_bytes = ron::ser::to_string(&world_meta).unwrap();
+            std::fs::write(path.join("meta.ron"), meta_bytes).unwrap();
+        }
+        if let Some(info) = host_world {
+            // println!("Host game: {info:#?}");
+            // println!("resources: {:#?}", self.resources);
             let datapack = self.resources.datapacks.get(&info.datapack).unwrap();
             let path = datapack.path.clone();
             let addr = local_server_addr();
-            self.host_game(addr, &path, datapack.voxels.clone());
+            self.host_game(addr, &path, datapack.voxels.clone(), &info.name);
         }
         if quit_game {
             self.game = None;
-            if let Some(mut thread) = self.server_thread.take() {
-                _ = thread.kill();
+            if let Some(program) = self.server_program.take() {
+                if let Err(e)  = program.shutdown() {
+                    println!("Failed to shutdown server: {e:?}");
+                }
             }
             self.ui_state.clear_pages();
         }
