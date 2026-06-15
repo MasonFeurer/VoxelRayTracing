@@ -307,6 +307,7 @@ impl AppState {
                 jump: input.key_down(&Key::Space),
                 crouch: input.key_down(&Key::ShiftLeft),
                 toggle_fly: input.key_pressed(&Key::KeyZ),
+                sprint: input.key_down(&Key::ShiftLeft)
             };
             let player_updates = game.player.process_input(delta, &in_);
             game.player.update(&player_updates, |bb| {
@@ -320,15 +321,15 @@ impl AppState {
             );
 
             let mut updated_chunks = vec![];
-            
+
             let set_vox = if let (Some(hit), true) = (looking_at, input.left_button_pressed()) {
                 Some((hit.pos, Voxel::EMPTY))
             }
             else if let (Some(hit), true) = (looking_at, input.right_button_pressed()) {
                 Some((hit.pos + hit.face, Voxel::from_data(1)))
-            } 
+            }
             else { None };
-            
+
             if let Some((pos, vox)) = set_vox {
                 match game.set_voxel(pos, vox) {
                     Err(err) => warn!("Failed to set voxel at {pos:?}: {err:?}"),

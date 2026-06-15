@@ -14,6 +14,7 @@ pub struct PlayerInput {
     pub jump: bool,
     pub crouch: bool,
     pub toggle_fly: bool,
+    pub sprint: bool,
 }
 
 #[derive(Default)]
@@ -155,6 +156,9 @@ impl Player {
                 frame_vel.y = 0.6;
                 result.jumped = true;
             }
+        }
+        if input.sprint {
+            frame_vel *= 1.5;
         }
         result.frame_vel = frame_vel * t_delta;
         result
