@@ -35,7 +35,7 @@ impl ServerConn {
     }
 
     /// Not blocking
-    pub fn try_read(&mut self) -> anyhow::Result<Option<ClientCmd>> {
+    pub fn try_read(&mut self) -> anyhow::Result<Option<ClientCmd<'static>>> {
         self.stream.set_nonblocking(true)?;
         match self.stream.read_to_end(&mut self.received_bytes) {
             Ok(_) => {}
@@ -54,7 +54,7 @@ impl ServerConn {
     }
 
     /// Blocking
-    pub fn read(&mut self) -> anyhow::Result<ClientCmd> {
+    pub fn read(&mut self) -> anyhow::Result<ClientCmd<'static>> {
         loop {
             if let Some(cmd) = self.try_read()? {
                 return Ok(cmd)

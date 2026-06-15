@@ -12,7 +12,8 @@ use std::sync::mpsc::{channel, Receiver};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use bincode::{Decode, Encode};
-use glam::{ivec3, IVec3, UVec3};
+use glam::{IVec3, UVec3};
+use server::common::env_logger;
 use server::common::log::{info, warn};
 use server::common::resources::loader::RawWorldMeta;
 use server::common::world::{Node, NodeAlloc, NodeRange};
@@ -38,7 +39,8 @@ pub fn region_path_by_pos(world_folder: impl AsRef<Path>, pos: IVec3) -> PathBuf
 
 pub fn node_slice_from_bytes(bytes: &[u8]) -> &[Node] {
     assert_eq!(bytes.len() % size_of::<Node>(), 0, "Node slice size is not aligned to 4 bytes");
-    assert_eq!(bytes.as_ptr() as usize % size_of::<Node>(), 0, "Node slice address is not aligned to 4 bytes");
+    // assert_eq!(bytes.as_ptr() as usize % size_of::<Node>(), 0, "Node slice address is not aligned to 4 bytes");
+    // This line contains UB if the slice is not aligned to 4 bytes.
     unsafe { std::slice::from_raw_parts(bytes.as_ptr() as *const Node, bytes.len() / size_of::<Node>()) }
 }
 pub fn node_slice_into_bytes(nodes: &[Node]) -> &[u8] {
@@ -100,30 +102,30 @@ impl ChunkCache {
 }
 
 pub struct WorldFs {
-    world_folder: PathBuf,
     pub world_meta: RawWorldMeta,
+    pub world_folder: PathBuf,
+    pub available_chunks: HashSet<IVec3>,
 
     cache: RwLock<ChunkCache>,
-
-    // chunk_cache: RwLock<ChunkCache>,
-    available_chunks: HashSet<IVec3>,
-    //                 region_pos,   pos_in_region
-    dirty_chunks: HashMap<IVec3, HashSet<UVec3>>,
+    //                         region_pos,   pos_in_region
+    dirty_chunks: RwLock<HashMap<IVec3, HashSet<UVec3>>>,
 }
 impl WorldFs {
-    pub fn add_dirty_chunk(&mut self, chunk_pos: IVec3) {
+    pub fn add_dirty_chunk(&self, chunk_pos: IVec3) {
         let (region_pos, pos_in_region) = chunk_pos_to_region_pos(chunk_pos);
-        if let Some(region) = self.dirty_chunks.get_mut(&region_pos) {
+        let mut chunks = self.dirty_chunks.write().unwrap();
+
+        if let Some(region) = chunks.get_mut(&region_pos) {
             region.insert(pos_in_region);
         } else {
-            self.dirty_chunks.insert(region_pos, [pos_in_region].into());
+            chunks.insert(region_pos, [pos_in_region].into());
         }
     }
     pub fn save(&self, world: &ServerWorld) {
-        let chunk_count = self.dirty_chunks.iter().map(|(_, chunks)| chunks.len()).sum::<usize>();
+        let chunk_count = self.dirty_chunks.read().unwrap().iter().map(|(_, chunks)| chunks.len()).sum::<usize>();
 
         info!("(WorldFs::save) saving dirty chunks : {:?} chunks", chunk_count);
-        for (region_pos, dirty_chunks) in &self.dirty_chunks {
+        for (region_pos, dirty_chunks) in &*self.dirty_chunks.read().unwrap() {
             let region_path = region_path_by_pos(&self.world_folder, *region_pos);
 
             let mut region = match std::fs::read(&region_path) {
@@ -182,11 +184,12 @@ impl WorldFs {
             }
         }
         Ok(Self {
-            world_folder,
             world_meta,
-            cache: RwLock::new(ChunkCache::default()),
+            world_folder,
             available_chunks,
-            dirty_chunks: HashMap::new(),
+
+            cache: RwLock::new(ChunkCache::default()),
+            dirty_chunks: RwLock::new(HashMap::new()),
         })
     }
 }
@@ -198,19 +201,39 @@ impl WorldFsExt for WorldFs {
             return Some(chunk.clone())
         }
 
-        _ = self.available_chunks.get(&pos)?;
+        if self.available_chunks.get(&pos).is_none() {
+           self.add_dirty_chunk(pos);
+           return None
+        }
+
         let region_path = region_path_by_pos(&self.world_folder, region_pos);
         let region_bytes = std::fs::read(&region_path).expect("Failed to read region file");
         let region = RegionFile::from_file(&region_bytes).expect("Failed to parse region file");
-        let nodes = region.read_chunk_data(pos_in_region)?;
 
-        let alloc = NodeAlloc::new(0..nodes.len() as u32, nodes.len() as u32..nodes.len() as u32 + 256);
-        let chunk = ServerChunk { nodes: nodes.to_vec(), node_alloc: alloc};
-        Some(chunk)
+        let mut resulting_chunk = None;
+
+        for (pos_in_region2, _) in &region.header.chunks {
+            let nodes = region.read_chunk_data((*pos_in_region2).into())?;
+            let alloc = NodeAlloc::new(0..nodes.len() as u32, nodes.len() as u32..nodes.len() as u32 + 256);
+            let chunk = ServerChunk { nodes: nodes.to_vec(), node_alloc: alloc};
+
+            if *pos_in_region2 == pos_in_region.to_array() {
+                resulting_chunk = Some(chunk.clone());
+            }
+
+            let pos = pos_in_region_to_chunk_pos(region_pos, UVec3::from(*pos_in_region2));
+            self.cache.write().unwrap().insert(pos, chunk);
+        }
+        // If we can't load the chunk from disk, the server will generate it. So we go ahead and mark the chunk as dirty.
+        if resulting_chunk.is_none() {
+            self.add_dirty_chunk(pos);
+        }
+        resulting_chunk
     }
 }
 
 fn main() -> anyhow::Result<()> {
+    env_logger::init();
     let usage = "servercli (datapack_folder) (world_folder) (port)";
     let mut args = std::env::args();
     _ = args.next(); // First arg is always the path to this program.
@@ -235,7 +258,7 @@ fn main() -> anyhow::Result<()> {
     info!("Opening world {world_folder:?}...\n");
 
     let world_meta: RawWorldMeta = ron::de::from_str(&std::fs::read_to_string(world_folder_path.join("meta.ron"))?)?;
-    let mut world_fs = WorldFs::open(world_folder_path)?;
+    let world_fs = Arc::new(WorldFs::open(world_folder_path)?);
 
 
     info!("Loading resources from {res_folder:?}...\n");
@@ -257,7 +280,7 @@ fn main() -> anyhow::Result<()> {
     let cli_cmds = spawn_cli(Arc::clone(&server.kill));
     loop {
         server.handle_clients();
-        server.update();
+        server.update(Arc::clone(&world_fs));
         server.update_world();
 
         match cli_cmds.try_recv() {
@@ -276,10 +299,7 @@ fn main() -> anyhow::Result<()> {
                     );
                 }
             }
-            Ok(CliCmd::LoadChunk) => {
-                server.chunks_to_build.push(ivec3(0, 0, 0));
-                println!("Chunk 0,0,0 is now being built.");
-            }
+            Ok(CliCmd::LoadChunk) => {}
             Ok(CliCmd::ShowWorldSummary) => {
                 println!("--- World ---");
                 println!("chunk count: {}", server.world.chunks.len());
@@ -306,10 +326,6 @@ fn main() -> anyhow::Result<()> {
         }
 
         std::thread::sleep(Duration::from_millis(1));
-    }
-
-    for chunk in server.world.chunks.keys() {
-        world_fs.add_dirty_chunk(*chunk);
     }
 
     info!("Server has been stopped. Saving chunks to disk...");

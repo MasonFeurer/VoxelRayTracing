@@ -5,6 +5,7 @@ A library that provides an interface for creating and managing a BlockWorld serv
 pub mod net;
 pub mod world;
 
+use std::borrow::Cow;
 pub use common;
 
 use common::net::{ClientCmd, ServerCmd};
@@ -21,6 +22,7 @@ use world::gen::{BuiltFeature, WorldGen};
 use world::{ServerChunk, ServerWorld};
 
 use common::log::*;
+use crate::world::WorldFsExt;
 
 pub struct Client {
     pub name: String,
@@ -61,10 +63,11 @@ pub struct ChunkBuilder {
     done: Arc<AtomicBool>,
 }
 impl ChunkBuilder {
-    pub fn spawn(
+    pub fn spawn<Fs: WorldFsExt + Sync + Send + 'static>(
         gen: Arc<WorldGen>,
         chunks: Vec<IVec3>,
         send: Sender<(IVec3, ServerChunk, Vec<BuiltFeature>)>,
+        fs: Arc<Fs>
     ) -> Self {
         let done = Arc::new(AtomicBool::new(false));
         let done_copy = Arc::clone(&done);
@@ -72,7 +75,11 @@ impl ChunkBuilder {
             let mut built_features = Vec::new();
             let mut node_buffer = vec![Node::ZERO; NODES_PER_CHUNK as usize];
             for pos in chunks {
-                let chunk = gen.generate_chunk(&mut node_buffer, pos, &mut built_features);
+                let chunk = if let Some(chunk) = fs.read_chunk(pos) {
+                    chunk
+                } else {
+                    gen.generate_chunk(&mut node_buffer, pos, &mut built_features)
+                };
                 send.send((pos, chunk, built_features.clone())).unwrap();
                 built_features.clear();
                 node_buffer.fill(Node::ZERO);
@@ -127,7 +134,6 @@ pub struct ServerState {
     pub chunk_builder_send: Sender<(IVec3, ServerChunk, Vec<BuiltFeature>)>,
     pub chunk_builder_recv: Receiver<(IVec3, ServerChunk, Vec<BuiltFeature>)>,
     pub chunks_to_build: Vec<IVec3>,
-    pub chunks_to_build_set: HashSet<IVec3>,
     pub chunk_builders: Vec<ChunkBuilder>,
     pub dirty_chunks: HashSet<IVec3>,
 
@@ -147,7 +153,6 @@ impl ServerState {
             chunk_builder_send,
             chunk_builder_recv,
             chunks_to_build: Default::default(),
-            chunks_to_build_set: Default::default(),
             chunk_builders: vec![],
             dirty_chunks: HashSet::default(),
 
@@ -185,7 +190,7 @@ impl ServerState {
         Ok(())
     }
 
-    pub fn update(&mut self) {
+    pub fn update<Fs: WorldFsExt + Sync + Send + 'static>(&mut self, fs: Arc<Fs>) {
         // --- Add any new clients to the client list ---
         if let Some(new_clients) = &self.new_clients_recv {
             while let Ok(client) = new_clients.try_recv() {
@@ -210,17 +215,17 @@ impl ServerState {
         // --- Send any updated chunks to all the clients ---
         for chunk_pos in &self.dirty_chunks {
             let chunk = self.world.get_chunk(*chunk_pos).unwrap();
-            let nodes = Vec::from(chunk.used_nodes());
+            let nodes = chunk.used_nodes();
 
             for client in &mut self.clients {
-                // If the chunk is not within render distance of the client,
+                // If the chunk has not been requested by the client, or if the client has disconnected,
                 // don't bother sending it.
                 if client.conn.broken_pipe || !client.using_chunk(*chunk_pos) {
                     continue;
                 }
                 client.send_cmd(ClientCmd::GiveChunkData(
                     *chunk_pos,
-                    nodes.clone(),
+                    Cow::Borrowed(nodes),
                     NodeAlloc::new(0..1, 1..2),
                 ));
             }
@@ -242,13 +247,11 @@ impl ServerState {
             if next.is_empty() {
                 break;
             }
-            for chunk in &next {
-                _ = self.chunks_to_build_set.remove(chunk);
-            }
             self.chunk_builders.push(ChunkBuilder::spawn(
                 Arc::clone(&self.world.gen),
                 next,
                 self.chunk_builder_send.clone(),
+                Arc::clone(&fs),
             ));
         }
         self.chunks_to_build = chunks_to_build.collect();
@@ -287,13 +290,12 @@ impl ServerState {
                     if let Some(data) = self.world.get_chunk(chunk_pos) {
                         client.send_cmd(ClientCmd::GiveChunkData(
                             chunk_pos,
-                            data.used_nodes().to_vec(),
+                            Cow::Borrowed(data.used_nodes()),
                             NodeAlloc::new(0..1, 1..2),
                         ));
                     } else {
-                        if !self.chunks_to_build_set.contains(&chunk_pos) {
+                        if !self.chunks_to_build.contains(&chunk_pos) {
                             self.chunks_to_build.push(chunk_pos);
-                            self.chunks_to_build_set.insert(chunk_pos);
                         }
                     }
                 }

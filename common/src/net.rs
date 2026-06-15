@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use crate::server::PlayerInfo;
 use crate::world::{Node, NodeAlloc, Voxel};
 use glam::{IVec3, Vec3};
@@ -41,12 +42,12 @@ pub enum ServerCmd {
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub enum ClientCmd {
+pub enum ClientCmd<'a> {
     HandshakeAccepted(Vec3),
     HandshakeDenied,
 
     Kick(String),
     PlayersList(Vec<PlayerInfo>),
     GiveVoxelData(u32, IVec3, Voxel),
-    GiveChunkData(IVec3, Vec<Node>, NodeAlloc),
+    GiveChunkData(IVec3, Cow<'a, [Node]>, NodeAlloc),
 }

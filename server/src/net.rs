@@ -1,6 +1,6 @@
 use common::net::{ClientCmd, ConnError, ServerCmd};
 use glam::Vec3;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::net::TcpStream;
 
 pub struct ClientConn {
