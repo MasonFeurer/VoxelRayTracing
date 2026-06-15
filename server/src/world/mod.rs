@@ -8,34 +8,26 @@ use common::world::{
 use gen::{BuiltFeature, WorldGen};
 use glam::{ivec3, IVec3, UVec3};
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc};
+use common::log::warn;
 
 pub trait WorldFsExt {
     fn read_chunk(&self, pos: IVec3) -> Option<ServerChunk>;
 }
 
-pub struct ServerWorld<Fs: WorldFsExt> {
+pub struct ServerWorld {
     pub chunks: HashMap<IVec3, ServerChunk>,
     pub unplaced_features: Vec<BuiltFeature>,
     pub gen: Arc<WorldGen>,
-    pub fs: Arc<RwLock<Fs>>,
 }
-impl<Fs: WorldFsExt> ServerWorld<Fs> {
-    pub fn new(preset: &WorldPreset, features: WorldFeatures, seed: i64, fs: Arc<RwLock<Fs>>) -> Self {
+impl ServerWorld {
+    pub fn new(preset: &WorldPreset, features: WorldFeatures, seed: i64) -> Self {
         Self {
             chunks: HashMap::new(),
             unplaced_features: Vec::new(),
             gen: Arc::new(WorldGen::new(preset, features, seed)),
-            fs
         }
     }
-
-    // pub fn create_chunk(&mut self, chunk_pos: IVec3) {
-    //     let chunk = self
-    //         .gen
-    //         .generate_chunk(chunk_pos, &mut self.unplaced_features);
-    //     self.chunks.insert(chunk_pos, chunk);
-    // }
 
     pub fn place_features(&mut self) -> Vec<IVec3> {
         let mut out = HashSet::new();
@@ -61,10 +53,7 @@ impl<Fs: WorldFsExt> ServerWorld<Fs> {
                 match set_voxel_w_chunks(&mut self.chunks, pos, voxel) {
                     Ok(()) => _ = out.insert(world_to_chunk_pos(pos)),
                     Err(err) => {
-                        eprintln!(
-                            "Failed to place voxel for feature {feature_idx} at {pos:?} : {err:?}"
-                        );
-                        continue 'f;
+                        warn!("Failed to place voxel for feature {feature_idx} at {pos:?} : {err:?}");
                     }
                 }
             }
@@ -99,6 +88,7 @@ pub fn set_voxel_w_chunks(
     chunk.set_voxel(pos_in_chunk, voxel)
 }
 
+#[derive(Clone)]
 pub struct ServerChunk {
     pub nodes: Vec<Node>,
     pub node_alloc: NodeAlloc,

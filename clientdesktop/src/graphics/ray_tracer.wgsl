@@ -222,8 +222,7 @@ fn ray_world(start_ray: Ray) -> HitResult {
         voxel = node_voxel(get_node(found_node.root + found_node.idx)); // just voxel - most time air
         
         let is_liquid = voxel_mats[voxel].is_liquid == 1u;
-        
-        // TODO FIXME
+
         if voxel != 0u && !is_liquid { // not air, so return it
             break;
         }

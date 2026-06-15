@@ -70,13 +70,11 @@ impl Chunk {
         pos: UVec3,
         voxel: Voxel,
     ) -> Result<(), SetVoxelErr> {
-        // TODO: bounds checks
         let nodes = &mut nodes[self.range.start as usize..self.range.end as usize];
         Svo::new(0, CHUNK_SIZE).set_node(nodes, pos, voxel, CHUNK_DEPTH, &mut self.alloc)
     }
 
     pub fn get_voxel(&self, nodes: &[Node], pos: UVec3) -> Result<Voxel, SetVoxelErr> {
-        // TODO: bounds checks
         let nodes = &nodes[self.range.start as usize..self.range.end as usize];
         let node = Svo::new(0, CHUNK_SIZE).find_node(nodes, pos, CHUNK_DEPTH);
         Ok(nodes[node.idx as usize].voxel())
@@ -173,7 +171,6 @@ impl ChunkGrid {
     }
 
     pub fn chunk_at(&self, pos: UVec3) -> Option<ChunkPtr> {
-        // TODO: bounds checks
         let idx = pos.x + pos.y * self.size + pos.z * self.size * self.size;
         Some(ChunkPtr::new(self.size, self.cycle, idx as usize))
     }
@@ -195,14 +192,6 @@ impl ChunkGrid {
             return None;
         }
         self.chunks.get_mut(ptr.idx())?.as_mut()
-    }
-
-    pub fn resize(&mut self, _new_size: u32) {
-        todo!()
-    }
-
-    pub fn clear(&mut self) {
-        todo!()
     }
 }
 
@@ -349,7 +338,7 @@ impl ClientWorld {
         let local_pos = (pos - self.min_chunk()).as_uvec3();
         let chunk_ptr = self
             .chunk_at(local_pos)
-            .ok_or(SetVoxelErr::PosOutOfBounds)?;
+            .ok_or(SetVoxelErr::NoChunk)?;
         if let Some(chunk) = self.chunks.get_chunk_mut(&chunk_ptr) {
             if chunk.range.len() >= nodes.len() {
                 let start = chunk.range.start as usize;

@@ -232,7 +232,6 @@ struct LineWalker {
     step: IVec3,
     p1: i32,
     p2: i32,
-    // TODO mode can be a struct generic type (it is only set at struct construction time)
     mode: u8,
 }
 impl Iterator for LineWalker {

@@ -1,13 +1,10 @@
 pub mod noise;
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use bincode::{Decode, Encode};
 use glam::{uvec3, IVec3, UVec3, Vec3};
 
 pub type NodeAddr = u32;
 pub type NodeRange = std::ops::Range<NodeAddr>;
-
-pub static LOG_FLAG: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, PartialEq)]
 pub enum SetVoxelErr {
@@ -339,7 +336,6 @@ impl Svo {
         // If depth is less than target_depth,
         // the SVO doesn't go to the desired depth, so we must split until it does
         while node.depth < target_depth {
-            if LOG_FLAG.load(Ordering::Relaxed) { println!("Splitting SVO... free memory: {:?}", alloc.free_mem) }
             let first_child = alloc.next().ok_or(SetVoxelErr::OutOfMemory)?;
             nodes[first_child as usize..(first_child as usize + 8)]
                 .copy_from_slice(&[Node::new(parent_voxel); 8]);
@@ -367,7 +363,6 @@ impl Svo {
         // this set of nodes to simplify the SVO.
         loop {
             if let Some(parent_node) = self.node_parent(nodes, &node) {
-                // println!("node {found_node:?} has parent {node:?}");
                 node = parent_node;
             } else {
                 break;

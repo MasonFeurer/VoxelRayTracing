@@ -16,10 +16,11 @@ use std::collections::HashSet;
 use std::net::{SocketAddr, TcpListener};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc};
 use world::gen::{BuiltFeature, WorldGen};
 use world::{ServerChunk, ServerWorld};
-use crate::world::WorldFsExt;
+
+use common::log::*;
 
 pub struct Client {
     pub name: String,
@@ -47,38 +48,38 @@ impl Client {
     pub fn address(&self) -> SocketAddr {
         self.conn.stream.local_addr().unwrap()
     }
+
+    pub fn send_cmd(&mut self, cmd: ClientCmd) {
+        if let Err(err) = self.conn.write(cmd)
+        {
+            warn!("Failed to send command to client {:?} : {:?}", self.name, err)
+        }
+    }
 }
 
-pub struct ChunkBuilder<Fs> {
+pub struct ChunkBuilder {
     done: Arc<AtomicBool>,
-    _marker: std::marker::PhantomData<Fs>,
 }
-impl<Fs: WorldFsExt + Send + Sync + 'static> ChunkBuilder<Fs> {
+impl ChunkBuilder {
     pub fn spawn(
         gen: Arc<WorldGen>,
-        fs: Arc<RwLock<Fs>>,
         chunks: Vec<IVec3>,
         send: Sender<(IVec3, ServerChunk, Vec<BuiltFeature>)>,
     ) -> Self {
         let done = Arc::new(AtomicBool::new(false));
         let done_copy = Arc::clone(&done);
-        let fs_copy = Arc::clone(&fs);
         std::thread::spawn(move || {
             let mut built_features = Vec::new();
             let mut node_buffer = vec![Node::ZERO; NODES_PER_CHUNK as usize];
             for pos in chunks {
-                let chunk = if let Some(chunk) = fs_copy.read().unwrap().read_chunk(pos) {
-                    chunk
-                } else {
-                    gen.generate_chunk(&mut node_buffer, pos, &mut built_features)
-                };
+                let chunk = gen.generate_chunk(&mut node_buffer, pos, &mut built_features);
                 send.send((pos, chunk, built_features.clone())).unwrap();
                 built_features.clear();
                 node_buffer.fill(Node::ZERO);
             }
             done_copy.store(true, Ordering::Relaxed);
         });
-        Self { done, _marker: std::marker::PhantomData }
+        Self { done }
     }
 
     pub fn is_done(&self) -> bool {
@@ -94,47 +95,46 @@ pub fn connect_clients_blocking(
 ) {
     for stream in listener.incoming() {
         if kill.load(Ordering::Relaxed) {
-            println!("Stopping client connections; Dropping TCPListener...");
             break;
         }
         match stream {
             Ok(stream) => {
-                println!(
+                info!(
                     "Establishing client connection from {:?}",
                     stream.local_addr()
                 );
                 match ClientConn::establish(stream, client_start_pos) {
                     Ok((conn, name)) => {
-                        println!("Connected client: {name}!");
+                        info!("Connected client: {name}!");
                         _ = sender.send(Client::new(name, conn));
                     }
-                    Err(err) => println!("Failed to establish client connection: {err:?}"),
+                    Err(err) => warn!("Failed to establish client connection: {err:?}")
                 };
             }
-            Err(err) => println!("Failed to receive client stream from TcpListener : {err:?}"),
+            Err(err) => warn!("Failed to listen on TCP: {err:?}")
         }
     }
 }
 
-pub struct ServerState<Fs: WorldFsExt> {
+pub struct ServerState {
     pub address: SocketAddr,
     pub name: String,
     pub clients: Vec<Client>,
     pub new_clients_recv: Option<Receiver<Client>>,
 
-    pub world: ServerWorld<Fs>,
+    pub world: ServerWorld,
 
     pub chunk_builder_send: Sender<(IVec3, ServerChunk, Vec<BuiltFeature>)>,
     pub chunk_builder_recv: Receiver<(IVec3, ServerChunk, Vec<BuiltFeature>)>,
     pub chunks_to_build: Vec<IVec3>,
     pub chunks_to_build_set: HashSet<IVec3>,
-    pub chunk_builders: Vec<ChunkBuilder<Fs>>,
+    pub chunk_builders: Vec<ChunkBuilder>,
     pub dirty_chunks: HashSet<IVec3>,
 
     pub kill: Arc<AtomicBool>,
 }
-impl<Fs: WorldFsExt + Send + Sync + 'static> ServerState<Fs> {
-    pub fn new(address: SocketAddr, name: String, world: ServerWorld<Fs>) -> Self {
+impl ServerState {
+    pub fn new(address: SocketAddr, name: String, world: ServerWorld) -> Self {
         let (chunk_builder_send, chunk_builder_recv) = channel();
         Self {
             address,
@@ -155,7 +155,7 @@ impl<Fs: WorldFsExt + Send + Sync + 'static> ServerState<Fs> {
         }
     }
 
-    pub fn player_list(&self) -> Vec<PlayerInfo> {
+    pub fn get_player_list(&self) -> Vec<PlayerInfo> {
         self.clients
             .iter()
             .map(|client| PlayerInfo {
@@ -196,10 +196,7 @@ impl<Fs: WorldFsExt + Send + Sync + 'static> ServerState<Fs> {
         for idx in (0..self.clients.len()).rev() {
             if self.clients[idx].conn.broken_pipe {
                 let client = self.clients.remove(idx);
-                println!(
-                    "Client {:?} connection interupted, disconnecting...",
-                    client.name
-                );
+                info!("Disconnected client due to broken pipe: {}", client.name);
             }
         }
 
@@ -221,16 +218,11 @@ impl<Fs: WorldFsExt + Send + Sync + 'static> ServerState<Fs> {
                 if client.conn.broken_pipe || !client.using_chunk(*chunk_pos) {
                     continue;
                 }
-                if let Err(err) = client.conn.write(ClientCmd::GiveChunkData(
+                client.send_cmd(ClientCmd::GiveChunkData(
                     *chunk_pos,
                     nodes.clone(),
                     NodeAlloc::new(0..1, 1..2),
-                )) {
-                    println!(
-                        "Error sending chunk data to client {:?} : {:?}",
-                        client.name, err
-                    );
-                }
+                ));
             }
         }
         self.dirty_chunks.clear();
@@ -244,7 +236,7 @@ impl<Fs: WorldFsExt + Send + Sync + 'static> ServerState<Fs> {
         }
         let mut chunks_to_build = self.chunks_to_build.iter().copied();
 
-        let chunks_per_buider = 10;
+        let chunks_per_buider = 128;
         while self.chunk_builders.len() < 16 {
             let next: Vec<_> = (&mut chunks_to_build).take(chunks_per_buider).collect();
             if next.is_empty() {
@@ -255,7 +247,6 @@ impl<Fs: WorldFsExt + Send + Sync + 'static> ServerState<Fs> {
             }
             self.chunk_builders.push(ChunkBuilder::spawn(
                 Arc::clone(&self.world.gen),
-                Arc::clone(&self.world.fs),
                 next,
                 self.chunk_builder_send.clone(),
             ));
@@ -276,17 +267,11 @@ impl<Fs: WorldFsExt + Send + Sync + 'static> ServerState<Fs> {
             ServerCmd::Handshake { .. } => {}
             ServerCmd::DisconnectNotice => {
                 client.conn.broken_pipe = true;
-                println!("client sent disconnect notice {:?}", client.name)
+                info!("Received disconnect notice from client {:?}", client.name);
             }
             ServerCmd::GetPlayersList => {
-                if let Err(err) = client
-                    .conn
-                    .write(ClientCmd::PlayersList(player_list.to_vec()))
-                {
-                    println!("Error sending cmd to client {:?} : {:?}", client.name, err);
-                }
+                client.send_cmd(ClientCmd::PlayersList(player_list.to_vec()));
             }
-
             ServerCmd::UpdateMyPlayerPos(new_pos) => {
                 client.pos = new_pos;
             }
@@ -300,13 +285,11 @@ impl<Fs: WorldFsExt + Send + Sync + 'static> ServerState<Fs> {
                     }
                     client.wants_chunks.insert(chunk_pos);
                     if let Some(data) = self.world.get_chunk(chunk_pos) {
-                        if let Err(err) = client.conn.write(ClientCmd::GiveChunkData(
+                        client.send_cmd(ClientCmd::GiveChunkData(
                             chunk_pos,
                             data.used_nodes().to_vec(),
                             NodeAlloc::new(0..1, 1..2),
-                        )) {
-                            println!("Error sending cmd to client {:?} : {:?}", client.name, err);
-                        }
+                        ));
                     } else {
                         if !self.chunks_to_build_set.contains(&chunk_pos) {
                             self.chunks_to_build.push(chunk_pos);
@@ -325,38 +308,9 @@ impl<Fs: WorldFsExt + Send + Sync + 'static> ServerState<Fs> {
         }
     }
 
-    pub fn poll_clients(clients: &mut [Client]) -> PollResults {
-        let mut remove_clients = vec![];
-        let mut commands = vec![];
-
-        for client_idx in 0..clients.len() {
-            let client = &mut clients[client_idx];
-
-            let rs = client.conn.try_read();
-
-            let cmd = match rs {
-                Ok(Some(cmd)) => cmd,
-                Ok(None) => continue,
-                Err(err) => {
-                    println!(
-                        "Failed to poll commands from client {:?} : {:?}",
-                        client.name, err
-                    );
-                    remove_clients.push(client_idx);
-                    continue;
-                }
-            };
-            commands.push((client_idx, cmd));
-        }
-        PollResults {
-            remove_clients,
-            commands,
-        }
-    }
-
     pub fn handle_clients(&mut self) {
-        let player_list = self.player_list();
-        let poll = Self::poll_clients(&mut self.clients);
+        let player_list = self.get_player_list();
+        let poll = poll_clients(&mut self.clients);
         for (client_idx, cmd) in poll.commands {
             self.handle_client_cmd(client_idx, cmd, &player_list);
         }
@@ -370,4 +324,29 @@ impl<Fs: WorldFsExt + Send + Sync + 'static> ServerState<Fs> {
 pub struct PollResults {
     pub remove_clients: Vec<usize>,
     pub commands: Vec<(usize, ServerCmd)>,
+}
+pub fn poll_clients(clients: &mut [Client]) -> PollResults {
+    let mut remove_clients = vec![];
+    let mut commands = vec![];
+
+    for client_idx in 0..clients.len() {
+        let client = &mut clients[client_idx];
+
+        let rs = client.conn.try_read();
+
+        let cmd = match rs {
+            Ok(Some(cmd)) => cmd,
+            Ok(None) => continue,
+            Err(err) => {
+                warn!("Failed to poll commands from client {:?} : {:?}", client.name, err);
+                remove_clients.push(client_idx);
+                continue;
+            }
+        };
+        commands.push((client_idx, cmd));
+    }
+    PollResults {
+        remove_clients,
+        commands,
+    }
 }

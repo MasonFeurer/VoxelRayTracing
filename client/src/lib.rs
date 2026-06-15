@@ -17,6 +17,7 @@ use net::ServerConn;
 use player::Player;
 use std::collections::HashSet;
 use std::time::SystemTime;
+use common::log::{info, warn};
 use common::resources::VoxelPack;
 use world::ClientWorld;
 
@@ -88,7 +89,7 @@ impl GameState {
                 .host
                 .write(ServerCmd::LoadChunks(ChunksList(chunks_to_load.clone())))
             {
-                println!("Failed to send cmd to server: {err:?}");
+                warn!("Failed to send cmd to server: {err:?}");
             } else {
                 self.chunk_requests_sent.extend(chunks_to_load);
             }
@@ -102,12 +103,12 @@ impl GameState {
                 match self.world.create_chunk(pos, &nodes) {
                     Ok(addr) => rs.updated_chunks.push((pos, addr, nodes.len())),
                     Err(SetVoxelErr::PosOutOfBounds) => rs.received_oob_chunks.push(pos),
-                    Err(err) => println!("Encountered error creating chunk: {err:?}"),
+                    Err(err) => warn!("Error constructing chunk at {pos:?}: {err:?}"),
                 };
             }
             ClientCmd::Kick(reason) => {
                 rs.kicked = true;
-                println!("We've been kicked : {reason:?}");
+                info!("We've been kicked : {reason:?}");
             }
             ClientCmd::PlayersList(_list) => {}
             _ => {}

@@ -13,6 +13,7 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use bincode::{Decode, Encode};
 use glam::{ivec3, IVec3, UVec3};
+use server::common::log::{info, warn};
 use server::common::resources::loader::RawWorldMeta;
 use server::common::world::{Node, NodeAlloc, NodeRange};
 use server::world::{ServerChunk, WorldFsExt};
@@ -37,8 +38,7 @@ pub fn region_path_by_pos(world_folder: impl AsRef<Path>, pos: IVec3) -> PathBuf
 
 pub fn node_slice_from_bytes(bytes: &[u8]) -> &[Node] {
     assert_eq!(bytes.len() % size_of::<Node>(), 0, "Node slice size is not aligned to 4 bytes");
-    // TODO: IS THIS NECESSARY?
-    // assert_eq!(bytes.as_ptr() as usize % size_of::<Node>(), 0, "Node slice address is not aligned to 4 bytes");
+    assert_eq!(bytes.as_ptr() as usize % size_of::<Node>(), 0, "Node slice address is not aligned to 4 bytes");
     unsafe { std::slice::from_raw_parts(bytes.as_ptr() as *const Node, bytes.len() / size_of::<Node>()) }
 }
 pub fn node_slice_into_bytes(nodes: &[Node]) -> &[u8] {
@@ -83,6 +83,7 @@ impl RegionFile {
     }
 }
 
+#[derive(Default)]
 pub struct ChunkCache {
     chunks: HashMap<IVec3, ServerChunk>,
 }
@@ -102,6 +103,8 @@ pub struct WorldFs {
     world_folder: PathBuf,
     pub world_meta: RawWorldMeta,
 
+    cache: RwLock<ChunkCache>,
+
     // chunk_cache: RwLock<ChunkCache>,
     available_chunks: HashSet<IVec3>,
     //                 region_pos,   pos_in_region
@@ -116,10 +119,10 @@ impl WorldFs {
             self.dirty_chunks.insert(region_pos, [pos_in_region].into());
         }
     }
-    pub fn save(&self, world: &ServerWorld<Self>) {
+    pub fn save(&self, world: &ServerWorld) {
         let chunk_count = self.dirty_chunks.iter().map(|(_, chunks)| chunks.len()).sum::<usize>();
 
-        println!("(WorldFs::save) saving dirty chunks : {:?} chunks", chunk_count);
+        info!("(WorldFs::save) saving dirty chunks : {:?} chunks", chunk_count);
         for (region_pos, dirty_chunks) in &self.dirty_chunks {
             let region_path = region_path_by_pos(&self.world_folder, *region_pos);
 
@@ -153,7 +156,7 @@ impl WorldFs {
         for file in std::fs::read_dir(region_dir)?.filter_map(|e| {
             match e {
                 Err(e) => {
-                    eprintln!("Failed to read region file: {}", e);
+                    warn!("Failed to read region file: {}", e);
                     None
                 }
                 Ok(e) => Some(e)
@@ -181,6 +184,7 @@ impl WorldFs {
         Ok(Self {
             world_folder,
             world_meta,
+            cache: RwLock::new(ChunkCache::default()),
             available_chunks,
             dirty_chunks: HashMap::new(),
         })
@@ -189,6 +193,11 @@ impl WorldFs {
 impl WorldFsExt for WorldFs {
     fn read_chunk(&self, pos: IVec3) -> Option<ServerChunk> {
         let (region_pos, pos_in_region) = chunk_pos_to_region_pos(pos);
+
+        if let Some(chunk) = self.cache.read().unwrap().get(pos) {
+            return Some(chunk.clone())
+        }
+
         _ = self.available_chunks.get(&pos)?;
         let region_path = region_path_by_pos(&self.world_folder, region_pos);
         let region_bytes = std::fs::read(&region_path).expect("Failed to read region file");
@@ -196,7 +205,8 @@ impl WorldFsExt for WorldFs {
         let nodes = region.read_chunk_data(pos_in_region)?;
 
         let alloc = NodeAlloc::new(0..nodes.len() as u32, nodes.len() as u32..nodes.len() as u32 + 256);
-        Some(ServerChunk { nodes: nodes.to_vec(), node_alloc: alloc})
+        let chunk = ServerChunk { nodes: nodes.to_vec(), node_alloc: alloc};
+        Some(chunk)
     }
 }
 
@@ -222,14 +232,13 @@ fn main() -> anyhow::Result<()> {
 
     let address = SocketAddr::new("127.0.0.1".parse()?, port);
 
-    println!("Opening world {world_folder:?}...\n");
+    info!("Opening world {world_folder:?}...\n");
 
     let world_meta: RawWorldMeta = ron::de::from_str(&std::fs::read_to_string(world_folder_path.join("meta.ron"))?)?;
-    let world_fs = Arc::new(RwLock::new(WorldFs::open(world_folder_path)?));
-    // println!("{world_fs:#?}\n");
+    let mut world_fs = WorldFs::open(world_folder_path)?;
 
 
-    println!("Loading resources from {res_folder:?}...\n");
+    info!("Loading resources from {res_folder:?}...\n");
 
     let datapack = Datapack::load_from(&res_folder).context("Failed to load resources")?;
 
@@ -237,15 +246,14 @@ fn main() -> anyhow::Result<()> {
         &datapack.world_presets[0],
         datapack.world_features,
         world_meta.seed,
-        Arc::clone(&world_fs)
     );
 
-    println!("Using address {address:?}...\n");
+    info!("Using address {address:?}...\n");
     let mut server = ServerState::new(address, "My Dev Server".to_string(), world);
 
     server.start().context("Failed to start server")?;
 
-    println!("Server is running.");
+    info!("Server is running.");
     let cli_cmds = spawn_cli(Arc::clone(&server.kill));
     loop {
         server.handle_clients();
@@ -301,11 +309,11 @@ fn main() -> anyhow::Result<()> {
     }
 
     for chunk in server.world.chunks.keys() {
-        world_fs.write().unwrap().add_dirty_chunk(*chunk);
+        world_fs.add_dirty_chunk(*chunk);
     }
 
-    println!("Server has been stopped. Saving chunks to disk...");
-    world_fs.read().unwrap().save(&server.world);
+    info!("Server has been stopped. Saving chunks to disk...");
+    world_fs.save(&server.world);
     Ok(())
 }
 

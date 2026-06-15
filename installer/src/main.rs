@@ -13,8 +13,6 @@ fn write(path: impl AsRef<std::path::Path>, contents: &str) -> Result<(), std::i
 }
 
 fn main() {
-    println!("Hello, world!");
-
     let path = dirs::config_dir().unwrap().join("blockworld");
 
     println!("Using assets directory at {:?}", path.display());

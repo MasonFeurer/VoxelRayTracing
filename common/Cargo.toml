@@ -11,3 +11,5 @@ serde = { version = "1.0.219", features = ["serde_derive"] }
 ron = "0.12.0"
 noise = "0.9"
 bincode = "2.0.0"
+env_logger = "0.11.10"
+log = "0.4.32"

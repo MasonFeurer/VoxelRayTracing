@@ -7,7 +7,7 @@ use crate::input::{InputState, Key};
 use graphics::{CamData, Crosshair, Egui, Gpu, GpuResources, Settings, WorldData};
 
 use client::common::resources::{Resources, Stylepack, VoxelPack};
-use client::common::world::{Node, Voxel, LOG_FLAG};
+use client::common::world::{Node, Voxel};
 use client::net::ServerConn;
 use client::player::PlayerInput;
 use client::world::ClientWorld;
@@ -17,13 +17,13 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::Child;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 use std::time::{Duration, SystemTime};
 use egui::{Align, Layout};
 use winit::application::ApplicationHandler;
 use winit::event::*;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{CursorGrabMode, Fullscreen, Window, WindowAttributes, WindowId};
+use client::common::log::{error, info, warn};
 use client::common::math::cast_ray;
 use client::common::resources::loader::RawWorldMeta;
 use crate::graphics::Material;
@@ -38,7 +38,6 @@ pub fn app_save_dir() -> PathBuf {
 }
 
 pub fn main() {
-    LOG_FLAG.store(true, Ordering::Relaxed);
     env_logger::init();
 
     let username = match std::env::home_dir() {
@@ -52,18 +51,20 @@ pub fn main() {
         Ok(v) => v,
         Err(e) => {
             let dir = app_save_dir();
-            println!("Failed to load resources from {dir:?}: {e}. Hint: you may need to run blockworld-installer to setup the game config directory.");
-            return;
+            error!("Failed to load resources from {dir:?}: {e}. Hint: you may need to run blockworld-installer to setup the game config directory.");
+            std::process::exit(1);
         }
     };
     let mut app_state = AppState::new(username, resources);
 
-    if let Err(err) = EventLoop::new().unwrap().run_app(&mut app_state) {
-        eprintln!("Failed to run app: {err:?}");
+    let result = EventLoop::new().unwrap().run_app(&mut app_state);
+    if let Err(err) = &result {
+        error!("Failed to run app: {err:?}");
     }
     if let Some(program) = app_state.server_program {
         program.shutdown().unwrap();
     }
+    std::process::exit(result.is_err() as i32);
 }
 
 struct ServerProgram {
@@ -82,7 +83,7 @@ impl ServerProgram {
         let thread = match thread {
             Ok(v) => v,
             Err(e) => {
-                println!("Failed to spawn server thread: {e:?}");
+                error!("Failed to spawn server thread: {e:?}");
                 return Err(format!("{e:?}"));
             }
         };
@@ -98,7 +99,7 @@ impl ServerProgram {
         match thread.try_wait() {
             Ok(_) => Ok(()),
             Err(err) => {
-                println!("Failed to shutdown server thread: {err:?}");
+                warn!("Failed to shutdown server thread: {err:?}");
                 Err(format!("{err:?}"))
             },
         }
@@ -177,7 +178,7 @@ impl AppState {
     }
 
     pub fn join_game(&mut self, addr: SocketAddr, voxels: Option<VoxelPack>) {
-        let world = ClientWorld::new(ivec3(0, 0, 0), self.max_nodes, 15);
+        let world = ClientWorld::new(ivec3(0, 0, 0), self.max_nodes, 30);
         let server = match ServerConn::establish(addr, &self.username) {
             Ok(v) => v,
             Err(e) => {
@@ -190,7 +191,6 @@ impl AppState {
             voxels
         } else {
             self.resources.datapacks.get("blockworld.vanilla").unwrap().voxels.clone()
-            // unimplemented!()
             // TODO: request voxel pack from server
         };
 
@@ -277,7 +277,7 @@ impl AppState {
             let rs = match rs {
                 Ok(rs) => rs,
                 Err(err) => {
-                    println!("Encountered error : {err:?}");
+                    warn!("Encountered error : {err:?}");
                     return;
                 }
             };
@@ -323,14 +323,14 @@ impl AppState {
             if let (Some(hit), true) = (looking_at, input.left_button_pressed()) {
                 match game.world.set_voxel(hit.pos, Voxel::EMPTY) {
                     Ok(chunk) => updated_chunks.push((chunk.range.start, chunk.range.len())),
-                    Err(e) => println!("Failed to set voxel: {e:?}"),
+                    Err(e) => warn!("Failed to set voxel: {e:?}"),
                 }
             }
             if let (Some(hit), true) = (looking_at, input.right_button_pressed()) {
                 let vox = Voxel::from_data(1);
                 match game.world.set_voxel(hit.pos + hit.face, vox) {
                     Ok(chunk) => updated_chunks.push((chunk.range.start, chunk.range.len())),
-                    Err(e) => println!("Failed to set voxel: {e:?}"),
+                    Err(e) => warn!("Failed to set voxel: {e:?}"),
                 }
             }
 
@@ -545,8 +545,6 @@ impl AppState {
             std::fs::write(path.join("meta.ron"), meta_bytes).unwrap();
         }
         if let Some(info) = host_world {
-            // println!("Host game: {info:#?}");
-            // println!("resources: {:#?}", self.resources);
             let datapack = self.resources.datapacks.get(&info.datapack).unwrap();
             let path = datapack.path.clone();
             let addr = local_server_addr();
@@ -556,7 +554,7 @@ impl AppState {
             self.game = None;
             if let Some(program) = self.server_program.take() {
                 if let Err(e)  = program.shutdown() {
-                    println!("Failed to shutdown server: {e:?}");
+                    warn!("Failed to shutdown server: {e:?}");
                 }
             }
             self.ui_state.clear_pages();
@@ -579,7 +577,7 @@ impl ApplicationHandler for AppState {
 
         self.max_nodes = gpu.device.limits().max_storage_buffer_binding_size
             / size_of::<Node>() as u32;
-        println!("max nodes: {}", self.max_nodes);
+        info!("max nodes: {}", self.max_nodes);
 
         let win_aspect = win_size.x as f32 / win_size.y as f32;
         let result_tex_size = uvec2(
@@ -647,9 +645,9 @@ impl ApplicationHandler for AppState {
                 self.update_game();
                 match self.draw_frame() {
                     Ok(_) => {}
-                    Err(wgpu::SurfaceError::Lost) => println!("SurfaceError: Lost"),
+                    Err(wgpu::SurfaceError::Lost) => warn!("SurfaceError: Lost"),
                     Err(wgpu::SurfaceError::OutOfMemory) => event_loop.exit(),
-                    Err(e) => eprintln!("{e:?}"),
+                    Err(e) => warn!("{e:?}"),
                 };
 
                 self.input.finish_frame();
@@ -670,8 +668,7 @@ impl ApplicationHandler for AppState {
             _ => {}
         }
         if let Some(size) = resize {
-
-            println!("{:?}", self.on_resize(size));
+            self.on_resize(size);
         }
     }
     fn device_event(
