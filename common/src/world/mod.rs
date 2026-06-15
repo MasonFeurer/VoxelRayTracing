@@ -11,6 +11,7 @@ pub enum SetVoxelErr {
     PosOutOfBounds,
     OutOfMemory,
     NoChunk,
+    NoChange,
 }
 
 #[repr(transparent)]

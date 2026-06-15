@@ -320,17 +320,19 @@ impl AppState {
             );
 
             let mut updated_chunks = vec![];
-            if let (Some(hit), true) = (looking_at, input.left_button_pressed()) {
-                match game.world.set_voxel(hit.pos, Voxel::EMPTY) {
-                    Ok(chunk) => updated_chunks.push((chunk.range.start, chunk.range.len())),
-                    Err(e) => warn!("Failed to set voxel: {e:?}"),
-                }
+            
+            let set_vox = if let (Some(hit), true) = (looking_at, input.left_button_pressed()) {
+                Some((hit.pos, Voxel::EMPTY))
             }
-            if let (Some(hit), true) = (looking_at, input.right_button_pressed()) {
-                let vox = Voxel::from_data(1);
-                match game.world.set_voxel(hit.pos + hit.face, vox) {
+            else if let (Some(hit), true) = (looking_at, input.right_button_pressed()) {
+                Some((hit.pos + hit.face, Voxel::from_data(1)))
+            } 
+            else { None };
+            
+            if let Some((pos, vox)) = set_vox {
+                match game.set_voxel(pos, vox) {
+                    Err(err) => warn!("Failed to set voxel at {pos:?}: {err:?}"),
                     Ok(chunk) => updated_chunks.push((chunk.range.start, chunk.range.len())),
-                    Err(e) => warn!("Failed to set voxel: {e:?}"),
                 }
             }
 

@@ -11,7 +11,7 @@ pub use common;
 
 use anyhow::Context;
 use common::net::{ChunksList, ClientCmd, ServerCmd};
-use common::world::{NodeAddr, SetVoxelErr};
+use common::world::{NodeAddr, SetVoxelErr, Voxel};
 use glam::IVec3;
 use net::ServerConn;
 use player::Player;
@@ -20,6 +20,7 @@ use std::time::SystemTime;
 use common::log::{info, warn};
 use common::resources::VoxelPack;
 use world::ClientWorld;
+use crate::world::Chunk;
 
 #[derive(Default)]
 pub struct CmdResult {
@@ -54,13 +55,24 @@ impl GameState {
 impl GameState {
     pub fn center_chunks(&mut self, anchor: IVec3) {
         let removed_chunks = self.world.center_chunks(anchor);
-        let (posis, chunks): (Vec<_>, Vec<_>) = removed_chunks.into_iter().unzip();
+        let (positions, chunks): (Vec<_>, Vec<_>) = removed_chunks.into_iter().unzip();
         for chunk in chunks {
             _ = self.world.free_chunk(chunk);
         }
-        if posis.len() > 0 {
-            _ = self.host.write(ServerCmd::UnloadChunks(ChunksList(posis)));
+        if positions.len() > 0 {
+            _ = self.host.write(ServerCmd::UnloadChunks(ChunksList(positions)));
         }
+    }
+    
+    pub fn set_voxel(&mut self, pos: IVec3, vox: Voxel) -> Result<&Chunk, SetVoxelErr> {
+        if self.world.get_voxel(pos)? == vox {
+            return Err(SetVoxelErr::NoChange);
+        }
+        let chunk =self.world.set_voxel(pos, vox)?;
+        if let Err(e) = self.host.write(ServerCmd::SetVoxel(pos, vox)) {
+            warn!("Failed to send SetVoxel to server: {e:?}");
+        }
+        Ok(chunk)
     }
 }
 /// Server functions

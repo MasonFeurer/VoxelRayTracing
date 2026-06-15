@@ -38,7 +38,7 @@ pub enum ServerCmd {
     DisconnectNotice,
     GetPlayersList,
     GetVoxelData(u32, IVec3),
-    PlaceVoxelData(Voxel, IVec3),
+    SetVoxel(IVec3, Voxel),
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]

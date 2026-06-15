@@ -280,6 +280,10 @@ fn main() -> anyhow::Result<()> {
     let cli_cmds = spawn_cli(Arc::clone(&server.kill));
     loop {
         server.handle_clients();
+        for (pos, _) in &server.dirty_chunks {
+            world_fs.add_dirty_chunk(*pos);
+        }
+
         server.update(Arc::clone(&world_fs));
         server.update_world();
 
@@ -288,9 +292,9 @@ fn main() -> anyhow::Result<()> {
                 if server.clients.len() == 0 {
                     println!("No players online!");
                 }
-                for client in &server.clients {
+                for (id, client) in &server.clients {
                     println!(
-                        "- {:?} | ({:.2}, {:.2}, {:.2}) | {:?}",
+                        "{id:x} - {:?} | ({:.2}, {:.2}, {:.2}) | {:?}",
                         client.name,
                         client.pos.x,
                         client.pos.y,
