@@ -1,17 +1,14 @@
+use std::mem::MaybeUninit;
 use crate::{GameState, Timers};
-use egui::{Align, Layout, Rect, Ui};
+use egui::{Align, Align2, Color32, Context, FontFamily, FontId, Id, Layout, Rect, Response, RichText, Sense, Stroke, StrokeKind, Ui, UiBuilder, Vec2};
 use std::net::SocketAddr;
 use std::str::FromStr;
+use client::common::log::warn;
 use client::common::resources::{Resources, WorldInfo, CURRENT_VERSION};
 use crate::graphics::Crosshair;
 
-macro_rules! true_horizontal_centered {
-    ($ui:ident, $left:expr, $right:expr) => {
-        $ui.columns_const(|[col0, col1]| {
-            col0.with_layout(Layout::top_down(Align::Max), $left);
-            col1.with_layout(Layout::top_down(Align::Min), $right);
-        });
-    };
+fn screen_size(ctx: &Context) -> Vec2 {
+    ctx.input(|i| i.content_rect()).size()
 }
 
 pub type WorldOptions = WorldInfo;
@@ -23,6 +20,7 @@ pub struct UiResponse {
     pub join_game: Option<SocketAddr>,
     pub quit_game: bool,
     pub reload_worlds: bool,
+    pub exit_app: bool,
 }
 //
 
@@ -34,6 +32,7 @@ pub struct UiState {
     create_world_name: String,
     create_world_seed: String,
     join_world_address: String,
+    selected_world: Option<String>,
 
     s2_open: bool,
     s3_open: bool,
@@ -45,6 +44,7 @@ impl Default for UiState {
             create_world_name: String::from("New World"),
             create_world_seed: String::new(),
             join_world_address: String::from("127.0.0.1:60000"),
+            selected_world: None,
 
             s2_open: true,
             s3_open: true,
@@ -80,17 +80,21 @@ pub enum Page {
 pub fn show_title_screen(ui: &mut Ui, state: &mut UiState) -> UiResponse {
     let mut rs = UiResponse::default();
 
-    ui.heading("Block World");
-    ui.add_space(10.0);
-    if ui.button("My Worlds").clicked() {
+    title(ui, "Block World");
+    ui.add_space(ROW_H);
+
+    if show_buttons(ui, ["My Worlds"])[0].clicked() {
         state.open_page(Page::MyWorlds);
         rs.reload_worlds = true;
     }
-    if ui.button("Join World").clicked() {
+    if show_buttons(ui, ["Join World"])[0].clicked() {
         state.open_page(Page::JoinWorld);
     }
-    if ui.button("Options").clicked() {
+    if show_buttons(ui, ["Options"])[0].clicked() {
         state.open_page(Page::Options);
+    }
+    if show_buttons(ui, ["Exit"])[0].clicked() {
+        rs.exit_app = true;
     }
     rs
 }
@@ -101,13 +105,13 @@ pub fn show_game_overlay(
     game: &mut GameState,
     timers: &Timers,
 ) {
-    ui.visuals_mut().override_text_color = Some(egui::Color32::WHITE);
+    ui.visuals_mut().override_text_color = Some(Color32::WHITE);
 
-    ui.allocate_at_least(egui::vec2(200.0, 10.0), egui::Sense::empty());
+    ui.allocate_at_least(egui::vec2(200.0, 10.0), Sense::empty());
     ui.painter().rect_filled(
         ui.max_rect(),
         egui::CornerRadius::same(5),
-        egui::Color32::from_rgba_unmultiplied(0, 0, 0, 240),
+        Color32::from_rgba_unmultiplied(0, 0, 0, 240),
     );
     ui.add_space(40.0);
     ui.heading(format!("fps: {}", timers.fps));
@@ -120,7 +124,7 @@ pub fn show_game_overlay(
                 egui::vec2(ui.available_width(), 24.0),
             ),
             egui::CornerRadius::same(5),
-            egui::Color32::from_rgba_unmultiplied(30, 30, 30, 150),
+            Color32::from_rgba_unmultiplied(30, 30, 30, 150),
         );
     }
     fn section(ui: &mut Ui, open: &mut bool, name: &str, f: impl FnOnce(&mut Ui)) {
@@ -159,27 +163,135 @@ pub fn show_game_overlay(
     });
 }
 
-pub fn show_ui_state(ui: &mut Ui, state: &mut UiState, resources: &Resources, crosshair: &mut Crosshair) -> Option<UiResponse> {
-    Some(match state.pages.last()? {
-        Page::PauseMenu => show_pause_menu(ui, state),
-        Page::Options => show_options(ui, state, resources),
-        Page::MyWorlds => show_my_worlds(ui, state, resources),
-        Page::CreateWorld => show_create_world(ui, state, resources),
-        Page::JoinWorld => show_join_world(ui, state),
-        Page::Visuals => show_visuals(ui, state, crosshair),
-        Page::Controls => show_controls(ui, state),
-    })
+const ROW_W: f32 = 500.0;
+const ROW_H: f32 = 50.0;
+const BUTTON_PAD: f32 = 10.0;
+
+fn title(ui: &mut Ui, text: &str) {
+    let y = ui.next_widget_position().y;
+    let x = screen_size(ui.ctx()).x * 0.5;
+
+    ui.painter().text(
+        egui::pos2(x, y),
+        Align2::CENTER_TOP,
+        text,
+        FontId::new(ROW_H, FontFamily::Proportional),
+        Color32::WHITE,
+    );
+    ui.add_space(ROW_H);
+}
+fn heading(ui: &mut Ui, text: &str) {
+    let y = ui.next_widget_position().y;
+    let x = screen_size(ui.ctx()).x * 0.5;
+
+    ui.painter().text(
+        egui::pos2(x, y),
+        Align2::CENTER_TOP,
+        text,
+        FontId::new(ROW_H * 0.6, FontFamily::Proportional),
+        Color32::WHITE,
+    );
+    ui.add_space(ROW_H);
+}
+fn comment(ui: &mut Ui, text: &str, color: Color32) {
+    let y = ui.next_widget_position().y;
+    let x = screen_size(ui.ctx()).x * 0.5;
+
+    ui.painter().text(
+        egui::pos2(x, y),
+        Align2::CENTER_TOP,
+        text,
+        FontId::new(ROW_H * 0.34, FontFamily::Proportional),
+        color,
+    );
+    ui.add_space(ROW_H);
+}
+
+fn show_buttons<const N: usize>(ui: &mut Ui, titles: [&str; N]) -> [Response; N] {
+    show_buttons_enabled(ui, titles, [true; N])
+}
+
+fn show_buttons_enabled<const N: usize>(ui: &mut Ui, titles: [&str; N], enabled: [bool; N]) -> [Response; N] {
+    let mut responses: [Response; N] = unsafe { MaybeUninit::zeroed().assume_init() };
+
+    let y = ui.next_widget_position().y;
+    let mut x = screen_size(ui.ctx()).x * 0.5 - ROW_W * 0.5 + BUTTON_PAD * 0.5;
+    let button_w = (ROW_W - BUTTON_PAD) / N as f32 - BUTTON_PAD;
+
+    for i in 0..N {
+        let pos = egui::pos2(x, y);
+        let size = egui::vec2(button_w, ROW_H);
+        let font = FontId::new(ROW_H * 0.8, FontFamily::Proportional);
+        let button = egui::Button::new(RichText::new(titles[i]).font(font));
+        let mut rs = ui.add_enabled_ui(enabled[i], |ui| {
+            ui.place(Rect::from_min_size(pos, size), button)
+        }).inner;
+
+        std::mem::swap(&mut rs, &mut responses[i]);
+        std::mem::forget(rs);
+
+        x += button_w + BUTTON_PAD;
+    }
+    ui.add_space(ROW_H + BUTTON_PAD);
+
+    responses
+}
+
+fn group<T>(ui: &mut Ui, id: impl Into<Id>, h: f32, align: Align, selected: bool, f: impl FnMut(&mut Ui) -> T) -> egui::InnerResponse<T> {
+    let min = egui::pos2(screen_size(ui.ctx()).x * 0.5 - ROW_W * 0.5, ui.next_widget_position().y);
+    let size = egui::vec2(ROW_W, ROW_H * h);
+
+    let stroke = match selected {
+        true => Stroke::new(5.0, Color32::WHITE),
+        false => Stroke::new(3.0, Color32::GRAY),
+    };
+
+    ui.painter().rect_stroke(Rect::from_min_size(min, size).expand(4.0), 3.0, stroke, StrokeKind::Outside);
+    let mut new_ui = ui.new_child(UiBuilder::new().id(id.into()).max_rect(Rect::from_min_size(min, size)));
+    new_ui.set_min_size(size);
+    let mut val = new_ui.with_layout(Layout::top_down(align), f);
+
+    ui.add_space(ROW_H * h + BUTTON_PAD + 4.0);
+    val.response.rect = Rect::from_min_size(min, size);
+    val.response.interact_rect = val.response.rect;
+    val
+}
+
+pub fn show_ui_state(ctx: &Context, state: &mut UiState, resources: &Resources, crosshair: &mut Crosshair) -> Option<UiResponse> {
+
+    egui::Area::new("some".into()).movable(false).show(ctx, |ui| {
+        let rect = Rect::from_center_size(
+            (screen_size(ui.ctx()) * 0.5).to_pos2(),
+            egui::vec2(ROW_W + BUTTON_PAD * 2.0, screen_size(ui.ctx()).y * 0.9)
+        );
+        ui.painter().rect_filled(rect, 5.0, Color32::from_rgba_unmultiplied(0, 0, 0, 100));
+        ui.allocate_at_least(egui::vec2(ROW_W, 10.0), Sense::empty());
+
+        ui.with_layout(Layout::top_down(Align::Center), |ui| {
+            Some(match state.pages.last()? {
+                Page::PauseMenu => show_pause_menu(ui, state),
+                Page::Options => show_options(ui, state, resources),
+                Page::MyWorlds => show_my_worlds(ui, state, resources),
+                Page::CreateWorld => show_create_world(ui, state, resources),
+                Page::JoinWorld => show_join_world(ui, state),
+                Page::Visuals => show_visuals(ui, state, crosshair),
+                Page::Controls => show_controls(ui, state),
+            })
+        }).inner
+    }).inner
 }
 
 fn show_pause_menu(ui: &mut Ui, state: &mut UiState) -> UiResponse {
     let mut rs = UiResponse::default();
-    if ui.button("Resume").clicked() {
+
+    ui.add_space(ROW_H * 2.0);
+    if show_buttons(ui, ["Resume"])[0].clicked() {
         state.close_page();
     }
-    if ui.button("Options").clicked() {
+    if show_buttons(ui, ["Options"])[0].clicked() {
         state.open_page(Page::Options);
     }
-    if ui.button("Save & Quit").clicked() {
+    if show_buttons(ui, ["Save & Quit"])[0].clicked() {
         rs.quit_game = true;
     }
     rs
@@ -189,17 +301,17 @@ fn show_options(ui: &mut Ui, state: &mut UiState, _resources: &Resources) -> UiR
     ui.skip_ahead_auto_ids(5);
 
     ui.add_space(30.0);
-    ui.heading("Options");
+    title(ui, "Options");
     ui.add_space(30.0);
 
-    if ui.button("Visuals").clicked() {
+    let [visuals, controls] = show_buttons(ui, ["Visuals", "Controls"]);
+    if visuals.clicked() {
         state.open_page(Page::Visuals);
     }
-    if ui.button("Controls").clicked() {
+    if controls.clicked() {
         state.open_page(Page::Controls);
     }
-    ui.add_space(30.0);
-    if ui.button("Back").clicked() {
+    if show_buttons(ui, ["Back"])[0].clicked() {
         state.close_page();
     }
     UiResponse::default()
@@ -209,26 +321,29 @@ fn show_visuals(ui: &mut Ui, state: &mut UiState, crosshair: &mut Crosshair) -> 
     let rs = UiResponse::default();
 
     ui.add_space(30.0);
-    ui.heading("Visuals");
+    title(ui, "Visuals");
     ui.add_space(30.0);
-    ui.heading("Crosshair");
-    ui.heading("style: ");
-    ui.horizontal(|ui| {
-        ui.selectable_value(&mut crosshair.style, 0, "off");
-        ui.selectable_value(&mut crosshair.style, 1, "dot");
-        ui.selectable_value(&mut crosshair.style, 2, "cross");
+    heading(ui, "Crosshair");
+
+    group(ui, "visuals", 5.0, Align::Min, false, |ui| {
+        ui.heading("style: ");
+
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut crosshair.style, 0, "off");
+            ui.selectable_value(&mut crosshair.style, 1, "dot");
+            ui.selectable_value(&mut crosshair.style, 2, "cross");
+        });
+        ui.label("size");
+
+        ui.add(egui::Slider::new(&mut crosshair.size, 1.0..=30.0));
+        ui.color_edit_button_rgba_unmultiplied(&mut crosshair.color);
     });
-    ui.label("size");
 
-    ui.add(egui::Slider::new(&mut crosshair.size, 1.0..=30.0));
-    ui.color_edit_button_rgba_unmultiplied(&mut crosshair.color);
-
-    if ui.button("reset").clicked() {
+    let [back, reset] = show_buttons(ui, ["Back", "Reset"]);
+    if reset.clicked() {
         *crosshair = Crosshair::default();
     }
-
-    ui.add_space(30.0);
-    if ui.button("Back").clicked() {
+    if back.clicked() {
         state.close_page();
     }
     rs
@@ -237,20 +352,21 @@ fn show_visuals(ui: &mut Ui, state: &mut UiState, crosshair: &mut Crosshair) -> 
 fn show_controls(ui: &mut Ui, state: &mut UiState) -> UiResponse {
     let rs = UiResponse::default();
     ui.add_space(30.0);
-    ui.heading("Controls");
+    title(ui, "Controls");
+
     ui.add_space(30.0);
-    ui.label("Movement - A-W-S-D + mouse");
-    ui.label("Sprint - Shift");
-    ui.label("Toggle chat - T");
-    ui.label("Toggle flying - Z");
-    ui.label("Pause - Esc");
-    ui.label("Toggle fullscreen - F11");
-    ui.label("Toggle debug overlay - F1");
-    ui.label("Toggle debug rendering - F2");
-    ui.label("Toggle world loading - F9");
+    ui.heading("Movement - A-W-S-D + mouse");
+    ui.heading("Sprint - Shift");
+    ui.heading("Toggle chat - T");
+    ui.heading("Toggle flying - Z");
+    ui.heading("Pause - Esc");
+    ui.heading("Toggle fullscreen - F11");
+    ui.heading("Toggle debug overlay - F1");
+    ui.heading("Toggle debug rendering - F2");
+    ui.heading("Toggle world loading - F9");
     ui.add_space(30.0);
 
-    if ui.button("Back").clicked() {
+    if show_buttons(ui, ["Back"])[0].clicked() {
         state.close_page();
     }
     rs
@@ -259,34 +375,41 @@ fn show_controls(ui: &mut Ui, state: &mut UiState) -> UiResponse {
 fn show_my_worlds(ui: &mut Ui, state: &mut UiState, resources: &Resources) -> UiResponse {
     let mut rs = UiResponse::default();
     for world in &resources.worlds {
-        ui.group(|ui| {
-            true_horizontal_centered!(ui,
-                |ui| {
-                    ui.heading(world.name.clone());
-                },
-                |ui| {
-                    if ui.button("Play").clicked() {
-                        rs.host_world = Some(world.name.clone());
-                    }
-                }
-            );
-        });
-    }
+        let selected = state.selected_world == Some(world.name.clone());
+        let id = Id::from(format!("world-{}", world.name));
+        let rs = group(ui, id, 1.0, Align::Center, selected, |ui| {
+            let label = RichText::new(world.name.clone())
+                .font(FontId::new(ROW_H * 0.6, FontFamily::Proportional));
+            ui.add(egui::Label::new(label).selectable(false))
+        }).response;
 
-    true_horizontal_centered!(ui,
-        |ui| {
-           if ui.button("Create World").clicked() {
-                state.open_page(Page::CreateWorld);
-            }
-        },
-        |ui| {
-            if ui.button("Back").clicked() {
-                state.close_page();
-            }
+        if rs.interact(Sense::click_and_drag()).clicked() {
+            state.selected_world = Some(world.name.clone());
         }
-    );
+    }
+    if let Some(world) = &state.selected_world {
+        let [play, delete, edit] = show_buttons(ui, ["Play", "Delete", "Edit"]);
+        if play.clicked() {
+            rs.host_world = Some(world.clone());
+        }
+        if delete.clicked() {
+            warn!("Not implemented");
+        }
+        if edit.clicked() {
+            warn!("Not implemented");
+        }
+    }
+    let [back, create] = show_buttons(ui, ["Back", "Create"]);
+    if create.clicked() {
+        state.open_page(Page::CreateWorld);
+    }
+    if back.clicked() {
+        state.close_page();
+    }
     rs
 }
+
+
 
 fn show_create_world(ui: &mut Ui, state: &mut UiState, resources: &Resources) -> UiResponse {
     let mut rs = UiResponse::default();
@@ -294,60 +417,76 @@ fn show_create_world(ui: &mut Ui, state: &mut UiState, resources: &Resources) ->
     let path = resources.path.join("worlds").join(&state.create_world_name);
     let is_valid = !path.exists();
 
-    ui.text_edit_singleline(&mut state.create_world_name);
+    let font = FontId::new(ROW_H * 0.8, FontFamily::Proportional);
+    let edit = egui::TextEdit::singleline(&mut state.create_world_name).font(font).min_size(egui::vec2(ROW_W, ROW_H));
+    let rect = Rect::from_min_size(
+        egui::pos2(screen_size(ui.ctx()).x * 0.5 - ROW_W  * 0.5, ui.next_widget_position().y),
+        egui::vec2(ROW_W, ROW_H)
+    );
+    ui.place(rect, edit);
+    ui.add_space(ROW_H * 1.5);
 
-    ui.label(format!("Stored at {}", path.display()));
+    // ui.text_edit_singleline(&mut state.create_world_name);
+
+    comment(ui, &format!("Stored at {}", path.display()), Color32::WHITE);
     if !is_valid {
-        ui.visuals_mut().override_text_color = Some(egui::Color32::RED);
-        ui.label("ERROR: directory already exists");
-        ui.visuals_mut().override_text_color = None;
+        comment(ui, "ERROR: directory already exists", Color32::RED);
     }
 
-    egui::TextEdit::singleline(&mut state.create_world_seed).hint_text("leave blank for random seed").show(ui);
-
-    ui.separator();
-
-    true_horizontal_centered!(ui,
-        |ui| {
-            ui.add_enabled_ui(is_valid, |ui| {
-                if ui.button("Create").clicked() {
-                    state.pages.clear();
-                    rs.host_new_world = Some(WorldInfo {
-                        name: state.create_world_name.clone(),
-                        version: CURRENT_VERSION,
-                        datapack: String::from("blockworld.vanilla"),
-                        stylepack: String::from("blockworld.vanilla"),
-                    });
-                }
-            })
-        },
-        |ui| {
-            if ui.button("Back").clicked() {
-                state.close_page();
-            }
-        }
+    let font = FontId::new(ROW_H * 0.5, FontFamily::Proportional);
+    let edit = egui::TextEdit::singleline(&mut state.create_world_seed)
+        .font(font)
+        .text_color(Color32::GRAY)
+        .min_size(egui::vec2(ROW_W, ROW_H))
+        .hint_text("leave blank for random seed");
+    let rect = Rect::from_min_size(
+        egui::pos2(screen_size(ui.ctx()).x * 0.5 - ROW_W  * 0.5, ui.next_widget_position().y),
+        egui::vec2(ROW_W, ROW_H)
     );
+    ui.place(rect, edit);
+    ui.add_space(ROW_H * 2.0);
+
+    let [back, create] =  show_buttons_enabled(ui, ["Back", "Create"], [true, is_valid]);
+    if create.clicked() {
+        state.pages.clear();
+        rs.host_new_world = Some(WorldInfo {
+            name: state.create_world_name.clone(),
+            version: CURRENT_VERSION,
+            datapack: String::from("blockworld.vanilla"),
+            stylepack: String::from("blockworld.vanilla"),
+        });
+    }
+    if back.clicked() {
+        state.close_page();
+    }
     rs
 }
 
 fn show_join_world(ui: &mut Ui, state: &mut UiState) -> UiResponse {
     let mut rs = UiResponse::default();
 
-    ui.text_edit_singleline(&mut state.join_world_address);
+    let font = FontId::new(ROW_H * 0.8, FontFamily::Proportional);
+    let edit = egui::TextEdit::singleline(&mut state.join_world_address).font(font).min_size(egui::vec2(ROW_W, ROW_H));
+    let rect = Rect::from_min_size(
+        egui::pos2(screen_size(ui.ctx()).x * 0.5 - ROW_W  * 0.5, ui.next_widget_position().y),
+        egui::vec2(ROW_W, ROW_H)
+    );
+    ui.place(rect, edit);
+    ui.add_space(ROW_H * 1.5);
 
     let addr = SocketAddr::from_str(&state.join_world_address);
     if addr.is_err() {
-        ui.visuals_mut().override_text_color = Some(egui::Color32::RED);
-        ui.label("Invalid address - should be in the format: 127.0.0.1:60000");
+        comment(ui, "Invalid address - should be in the format: 127.0.0.1:60000", Color32::RED);
     }
 
-    if ui.button("Join").clicked() {
+    let [back, join] = show_buttons_enabled(ui, ["Back", "Join"], [true, addr.is_ok()]);
+
+    if join.clicked() {
         if let Ok(addr) = addr {
             rs.join_game = Some(addr);
         }
     }
-    ui.separator();
-    if ui.button("Back").clicked() {
+    if back.clicked() {
         state.close_page()
     }
     rs

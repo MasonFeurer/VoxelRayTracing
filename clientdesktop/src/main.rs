@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::process::Child;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use egui::{Align, Layout};
+use egui::Visuals;
 use winit::application::ApplicationHandler;
 use winit::event::*;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
@@ -427,6 +427,9 @@ impl AppState {
             let egui = self.egui.as_mut().unwrap();
             let surface_size = gpu.surface_size();
             let egui_input = egui.winit.take_egui_input(&window);
+            let mut visuals = Visuals::default();
+            visuals.override_text_color = Some(egui::Color32::from_rgb(255, 255, 255));
+            egui.ctx().set_visuals(visuals);
 
             let egui_output = egui.ctx().run(egui_input, |ctx| {
                 if let Some(game) = &mut self.game {
@@ -438,22 +441,21 @@ impl AppState {
                                 ui::show_game_overlay(ui, &mut self.ui_state, game, &self.timers);
                             })
                     }
-                } else if !self.ui_state.page_is_open() {
+                } else {
                     _ = egui::CentralPanel::default().show(ctx, |ui| {
-                        _ = ui.with_layout(Layout::top_down(Align::Center), |ui| {
+                        if !self.ui_state.page_is_open() {
                             let rs = ui::show_title_screen(ui, &mut self.ui_state);
                             if rs.reload_worlds {
                                 _ = self.resources.reload_worlds();
                             }
-                        }).inner;
+                            if rs.exit_app {
+                                self.window = None;
+                            }
+                        }
                     })
                 }
                 if self.ui_state.page_is_open() {
-                    let rs = egui::CentralPanel::default().show(ctx, |ui| {
-                        ui.with_layout(Layout::top_down(Align::Center), |ui| {
-                            ui::show_ui_state(ui, &mut self.ui_state, &self.resources, &mut self.crosshair)
-                        })
-                    }).inner.inner.unwrap();
+                    let rs = ui::show_ui_state(ctx, &mut self.ui_state, &self.resources, &mut self.crosshair).unwrap();
                     if let Some(world) = rs.host_new_world {
                         create_world = Some(world.clone());
                         host_world = Some(world);
@@ -607,7 +609,12 @@ impl ApplicationHandler for AppState {
     ) {
         let cursor_hidden = self.should_hide_cursor();
 
-        let window = Arc::clone(self.window.as_ref().unwrap());
+        let window = if self.window.is_some() {
+            Arc::clone(self.window.as_ref().unwrap())
+        } else {
+            event_loop.exit();
+            return;
+        };
         let egui = self.egui.as_mut().unwrap();
         self.input.on_window_event(&event);
 
