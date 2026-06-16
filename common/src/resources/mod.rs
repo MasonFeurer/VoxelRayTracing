@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use crate::world::noise::Map;
 use crate::world::Voxel;
 
@@ -208,7 +208,7 @@ impl WorldFeatures {
 
 /// Lists all voxels that can exist in the world,
 /// and gives them properties
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoxelPack {
     voxels: Vec<VoxelData>,
 }
@@ -239,14 +239,14 @@ impl VoxelPack {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum VoxelState {
     Solid,
     Liquid,
     Gas,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoxelData {
     pub state: VoxelState,
     pub name: String,

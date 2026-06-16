@@ -6,7 +6,7 @@ use std::io::Write;
 use crate::input::{InputState, Key};
 use graphics::{CamData, Crosshair, Egui, Gpu, GpuResources, Settings, WorldData};
 
-use client::common::resources::{Resources, Stylepack, VoxelPack};
+use client::common::resources::{Resources, Stylepack};
 use client::common::world::{Node, Voxel};
 use client::net::ServerConn;
 use client::player::PlayerInput;
@@ -177,7 +177,7 @@ impl AppState {
         }
     }
 
-    pub fn join_game(&mut self, addr: SocketAddr, voxels: Option<VoxelPack>) {
+    pub fn join_game(&mut self, addr: SocketAddr) {
         let world = ClientWorld::new(ivec3(0, 0, 0), self.max_nodes, 30);
         let server = match ServerConn::establish(addr, &self.username) {
             Ok(v) => v,
@@ -187,14 +187,7 @@ impl AppState {
             }
         };
 
-        let voxels = if let Some(voxels) = voxels {
-            voxels
-        } else {
-            self.resources.datapacks.get("blockworld.vanilla").unwrap().voxels.clone()
-            // TODO: request voxel pack from server
-        };
-
-        let game = GameState::new(self.username.clone(), world, server, voxels.clone());
+        let game = GameState::new(self.username.clone(), world, server);
 
         let gpu = self.gpu.as_ref().unwrap();
         let win_size: UVec2 = <[u32; 2]>::from(self.window.as_ref().unwrap().inner_size()).into();
@@ -213,7 +206,7 @@ impl AppState {
         );
         gpu_res.buffers.nodes.write(&gpu, 0, game.world.nodes());
         if let Some(pack) = self.active_stylepack() {
-            let mats = Material::construct_arr(&voxels, pack);
+            let mats = Material::construct_arr(&game.voxels, pack);
 
             gpu_res.buffers.voxel_materials.write_slice(&gpu, 0, &mats);
         }
@@ -224,7 +217,7 @@ impl AppState {
         self.ui_state.clear_pages();
     }
 
-    pub fn host_game(&mut self, addr: SocketAddr, data_path: impl AsRef<Path>, voxels: VoxelPack, world_name: &str) {
+    pub fn host_game(&mut self, addr: SocketAddr, data_path: impl AsRef<Path>, world_name: &str) {
         let server = self.resources.path.join("blockworld-server-cli");
         let world_folder = self.resources.path.join("worlds").join(world_name);
         let program = match ServerProgram::host(&server, data_path, world_folder) {
@@ -235,7 +228,7 @@ impl AppState {
             }
         };
 
-        self.join_game(addr, Some(voxels));
+        self.join_game(addr);
         self.server_program = Some(program);
     }
 
@@ -528,7 +521,7 @@ impl AppState {
         output.present();
 
         if let Some(addr) = join_server {
-            self.join_game(addr, None);
+            self.join_game(addr);
             // can't join a server and host our own world at the same time, so we exit early
             return Ok(())
         }
@@ -551,7 +544,7 @@ impl AppState {
             let datapack = self.resources.datapacks.get(&info.datapack).unwrap();
             let path = datapack.path.clone();
             let addr = local_server_addr();
-            self.host_game(addr, &path, datapack.voxels.clone(), &info.name);
+            self.host_game(addr, &path, &info.name);
         }
         if quit_game {
             self.game = None;

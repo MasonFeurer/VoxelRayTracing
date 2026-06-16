@@ -22,6 +22,7 @@ use world::gen::{BuiltFeature, WorldGen};
 use world::{ServerChunk, ServerWorld};
 
 use common::log::*;
+use common::resources::VoxelPack;
 use crate::world::WorldFsExt;
 
 pub type ClientId = u64;
@@ -107,6 +108,7 @@ pub fn connect_clients_blocking(
     sender: Sender<Client>,
     kill: Arc<AtomicBool>,
     client_start_pos: Vec3,
+    voxel_pack: VoxelPack,
 ) {
     for stream in listener.incoming() {
         if kill.load(Ordering::Relaxed) {
@@ -118,7 +120,7 @@ pub fn connect_clients_blocking(
                     "Establishing client connection from {:?}",
                     stream.local_addr()
                 );
-                match ClientConn::establish(stream, client_start_pos) {
+                match ClientConn::establish(stream, client_start_pos, voxel_pack.clone()) {
                     Ok((conn, name)) => {
                         info!("Connected client: {name}!");
                         _ = sender.send(Client::new(name, conn));
@@ -182,7 +184,7 @@ impl ServerState {
         self.kill.store(true, Ordering::Relaxed);
     }
 
-    pub fn start(&mut self) -> anyhow::Result<()> {
+    pub fn start(&mut self, voxel_pack: VoxelPack) -> anyhow::Result<()> {
         let listener = TcpListener::bind(&self.address)?;
 
         let (sender, receiver) = channel();
@@ -193,7 +195,7 @@ impl ServerState {
         let client_start_pos = vec3(0.0, client_start_y, 0.0);
 
         std::thread::spawn(move || {
-            connect_clients_blocking(listener, sender, kill, client_start_pos)
+            connect_clients_blocking(listener, sender, kill, client_start_pos, voxel_pack)
         });
         Ok(())
     }

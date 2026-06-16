@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use crate::server::PlayerInfo;
 use crate::world::{Node, NodeAlloc, Voxel};
 use glam::{IVec3, Vec3};
+use crate::resources::VoxelPack;
 
 impl std::error::Error for ConnError {}
 #[derive(Debug)]
@@ -43,7 +44,7 @@ pub enum ServerCmd {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub enum ClientCmd<'a> {
-    HandshakeAccepted(Vec3),
+    HandshakeAccepted(Vec3, VoxelPack),
     HandshakeDenied,
 
     Kick(String),

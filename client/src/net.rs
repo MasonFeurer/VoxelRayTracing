@@ -3,11 +3,13 @@ use common::net::{ClientCmd, ConnError, ServerCmd};
 use glam::Vec3;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
+use common::resources::VoxelPack;
 
 pub struct ServerConn {
     pub stream: TcpStream,
     pub received_bytes: Vec<u8>,
     pub player_pos: Vec3,
+    pub voxel_pack: VoxelPack,
 }
 impl ServerConn {
     pub fn establish(addr: SocketAddr, name: impl Into<String>) -> anyhow::Result<Self> {
@@ -16,12 +18,16 @@ impl ServerConn {
             stream,
             received_bytes: vec![],
             player_pos: Vec3::ZERO,
+            voxel_pack: VoxelPack::new(vec![]),
         };
 
         stream.write(ServerCmd::Handshake { name: name.into() })?;
         let response = stream.read();
         match response? {
-            ClientCmd::HandshakeAccepted(player_pos) => stream.player_pos = player_pos,
+            ClientCmd::HandshakeAccepted(player_pos, datapack) => {
+                stream.player_pos = player_pos;
+                stream.voxel_pack = datapack;
+            },
             ClientCmd::HandshakeDenied => Err(ConnError::ServerDeniedConnection)?,
             _ => Err(ConnError::ServerGaveInvalidData)?,
         };

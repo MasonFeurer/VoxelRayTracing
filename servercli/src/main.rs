@@ -274,7 +274,7 @@ fn main() -> anyhow::Result<()> {
     info!("Using address {address:?}...\n");
     let mut server = ServerState::new(address, "My Dev Server".to_string(), world);
 
-    server.start().context("Failed to start server")?;
+    server.start(datapack.voxels.clone()).context("Failed to start server")?;
 
     info!("Server is running.");
     let cli_cmds = spawn_cli(Arc::clone(&server.kill));

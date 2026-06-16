@@ -2,6 +2,7 @@ use common::net::{ClientCmd, ConnError, ServerCmd};
 use glam::Vec3;
 use std::io::Read;
 use std::net::TcpStream;
+use common::resources::VoxelPack;
 
 pub struct ClientConn {
     pub stream: TcpStream,
@@ -9,7 +10,7 @@ pub struct ClientConn {
     pub broken_pipe: bool,
 }
 impl ClientConn {
-    pub fn establish(stream: TcpStream, pos: Vec3) -> anyhow::Result<(Self, String)> {
+    pub fn establish(stream: TcpStream, pos: Vec3, voxel_pack: VoxelPack) -> anyhow::Result<(Self, String)> {
         let mut conn = Self {
             stream,
             received_bytes: vec![],
@@ -22,7 +23,7 @@ impl ClientConn {
         } else {
             Err(ConnError::ClientGaveInvalidData)?
         };
-        conn.write(ClientCmd::HandshakeAccepted(pos))?;
+        conn.write(ClientCmd::HandshakeAccepted(pos, voxel_pack))?;
 
         Ok((conn, name))
     }

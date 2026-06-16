@@ -39,12 +39,12 @@ pub struct GameState {
     chunk_requests_sent: HashSet<IVec3>,
 }
 impl GameState {
-    pub fn new(user_name: String, world: ClientWorld, server_conn: ServerConn, voxels: VoxelPack) -> Self {
+    pub fn new(user_name: String, world: ClientWorld, server_conn: ServerConn) -> Self {
         Self {
             user_name,
             player: Player::new(server_conn.player_pos, 0.2),
             world,
-            voxels,
+            voxels: server_conn.voxel_pack.clone(),
 
             host: server_conn,
             chunk_requests_sent: Default::default(),
