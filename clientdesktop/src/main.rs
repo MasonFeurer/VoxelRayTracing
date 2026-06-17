@@ -119,6 +119,7 @@ pub struct AppState {
     server_program: Option<ServerProgram>,
     pub resources: Resources,
     pub active_stylepack: Option<String>,
+    current_voxel: Voxel,
 
     pub settings: Settings,
     pub vertical_samples: u32,
@@ -161,6 +162,7 @@ impl AppState {
 
             resources,
             active_stylepack: Some(String::from(active_stylepack)),
+            current_voxel: Voxel::from_data(1),
 
             settings,
             vertical_samples: 1080,
@@ -298,7 +300,7 @@ impl AppState {
                 forward: input.key_down(&Key::KeyW),
                 backward: input.key_down(&Key::KeyS),
                 jump: input.key_down(&Key::Space),
-                crouch: input.key_down(&Key::ShiftLeft),
+                crouch: input.key_down(&Key::ControlLeft),
                 toggle_fly: input.key_pressed(&Key::KeyZ),
                 sprint: input.key_down(&Key::ShiftLeft)
             };
@@ -313,16 +315,28 @@ impl AppState {
                 |pos| game.world.get_voxel(pos).map(|v| !v.is_empty()) == Ok(true)
             );
 
-            let mut updated_chunks = vec![];
+            if input.scroll_delta.y > 0.0 {
+                let next_id = self.current_voxel.as_data() as usize + 1;
+                if next_id < game.voxels.count() {
+                    self.current_voxel = Voxel::from_data(next_id as u16);
+                }
+            }
+            if input.scroll_delta.y < 0.0 {
+                if self.current_voxel.as_data() as usize > 1 {
+                    let next_id = self.current_voxel.as_data() as usize - 1;
+                    self.current_voxel = Voxel::from_data(next_id as u16);
+                }
+            }
 
             let set_vox = if let (Some(hit), true) = (looking_at, input.left_button_pressed()) {
                 Some((hit.pos, Voxel::EMPTY))
             }
             else if let (Some(hit), true) = (looking_at, input.right_button_pressed()) {
-                Some((hit.pos + hit.face, Voxel::from_data(1)))
+                Some((hit.pos + hit.face, self.current_voxel))
             }
             else { None };
 
+            let mut updated_chunks = vec![];
             if let Some((pos, vox)) = set_vox {
                 match game.set_voxel(pos, vox) {
                     Err(err) => warn!("Failed to set voxel at {pos:?}: {err:?}"),
@@ -338,29 +352,29 @@ impl AppState {
                     nodes,
                 );
             }
+
+            // --- Misc. key binds ---
+            if input.key_pressed(&Key::F1) {
+                self.hide_overlay = !self.hide_overlay;
+            }
+            if input.key_pressed(&Key::F2) {
+                self.settings.show_step_count = 1 - self.settings.show_step_count;
+            }
+            let window = self.window.as_ref().unwrap();
+            if input.key_pressed(&Key::KeyT) {
+                self.chat_open = !self.chat_open;
+            }
+            if input.key_pressed(&Key::F11) {
+                window.set_fullscreen(match window.fullscreen() {
+                    Some(_) => None,
+                    None => Some(Fullscreen::Borderless(None)),
+                });
+            }
+            if input.key_pressed(&Key::F9) {
+                self.freeze_world_anchor = !self.freeze_world_anchor;
+            }
         }
 
-
-        // --- Misc. key binds ---
-        if input.key_pressed(&Key::F1) {
-            self.hide_overlay = !self.hide_overlay;
-        }
-        if input.key_pressed(&Key::F2) {
-            self.settings.show_step_count = 1 - self.settings.show_step_count;
-        }
-        let window = self.window.as_ref().unwrap();
-        if input.key_pressed(&Key::KeyT) {
-            self.chat_open = !self.chat_open;
-        }
-        if input.key_pressed(&Key::F11) {
-            window.set_fullscreen(match window.fullscreen() {
-                Some(_) => None,
-                None => Some(Fullscreen::Borderless(None)),
-            });
-        }
-        if input.key_pressed(&Key::F9) {
-            self.freeze_world_anchor = !self.freeze_world_anchor;
-        }
         if input.key_pressed(&Key::Escape) && self.game.is_some() {
             if self.ui_state.page_is_open() {
                 self.ui_state.close_page();
@@ -438,7 +452,7 @@ impl AppState {
                             .default_pos(egui::pos2(0.0, 0.0))
                             .movable(true)
                             .show(ctx, |ui| {
-                                ui::show_game_overlay(ui, &mut self.ui_state, game, &self.timers);
+                                ui::show_game_overlay(ui, self.current_voxel, &mut self.ui_state, game, &self.timers);
                             })
                     }
                 } else {

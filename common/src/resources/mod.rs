@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use crate::world::noise::Map;
-use crate::world::Voxel;
+use crate::world::{Node, Voxel};
 
 pub mod loader;
 
@@ -214,6 +214,7 @@ pub struct VoxelPack {
 }
 impl VoxelPack {
     pub fn new(voxels: Vec<VoxelData>) -> Self {
+        assert!(voxels.len() < Node::MAX_VOXEL as usize);
         Self { voxels }
     }
 
@@ -236,6 +237,15 @@ impl VoxelPack {
 
     pub fn get(&self, v: Voxel) -> Option<&VoxelData> {
         self.voxels.get(v.as_data() as usize)
+    }
+
+    pub fn count(&self) -> usize {
+        self.voxels.len()
+    }
+
+    pub fn get_all(&self) -> impl Iterator<Item = Voxel> {
+        let total = self.voxels.len() as u16;
+        (0..total).map(Voxel::from_data)
     }
 }
 

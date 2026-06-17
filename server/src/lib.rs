@@ -82,7 +82,7 @@ impl ChunkBuilder {
         let done_copy = Arc::clone(&done);
         std::thread::spawn(move || {
             let mut built_features = Vec::new();
-            let mut node_buffer = vec![Node::ZERO; NODES_PER_CHUNK as usize];
+            let mut node_buffer = vec![Node::EMPTY; NODES_PER_CHUNK as usize];
             for pos in chunks {
                 let chunk = if let Some(chunk) = fs.read_chunk(pos) {
                     chunk
@@ -91,7 +91,7 @@ impl ChunkBuilder {
                 };
                 send.send((pos, chunk, built_features.clone())).unwrap();
                 built_features.clear();
-                node_buffer.fill(Node::ZERO);
+                node_buffer.fill(Node::EMPTY);
             }
             done_copy.store(true, Ordering::Relaxed);
         });

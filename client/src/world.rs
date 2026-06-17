@@ -266,7 +266,7 @@ impl std::ops::Deref for ClientWorld {
 }
 impl ClientWorld {
     pub fn new(min_chunk: IVec3, max_nodes: u32, size: u32) -> Self {
-        let mut nodes = vec![Node::ZERO; max_nodes as usize].into_boxed_slice();
+        let mut nodes = vec![Node::EMPTY; max_nodes as usize].into_boxed_slice();
         nodes[0] = Node::new(Voxel::EMPTY); // 0 = air
         Self {
             min_chunk,

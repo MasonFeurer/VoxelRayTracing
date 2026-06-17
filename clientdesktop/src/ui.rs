@@ -5,6 +5,7 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 use client::common::log::warn;
 use client::common::resources::{Resources, WorldInfo, CURRENT_VERSION};
+use client::common::world::Voxel;
 use crate::graphics::Crosshair;
 
 fn screen_size(ctx: &Context) -> Vec2 {
@@ -101,6 +102,7 @@ pub fn show_title_screen(ui: &mut Ui, state: &mut UiState) -> UiResponse {
 
 pub fn show_game_overlay(
     ui: &mut Ui,
+    current_voxel: Voxel,
     state: &mut UiState,
     game: &mut GameState,
     timers: &Timers,
@@ -134,7 +136,10 @@ pub fn show_game_overlay(
             f(ui);
         }
     }
-
+    
+    let current_voxel = game.voxels.get(current_voxel).map(|data| data.name.as_str()).unwrap_or("Unknown");
+    ui.heading(format!("Place: {current_voxel:?}"));
+    
     section(ui, &mut state.s2_open, "Player", |ui| {
         column(ui);
         ui.heading(format!(

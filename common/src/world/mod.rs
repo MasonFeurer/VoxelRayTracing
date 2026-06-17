@@ -16,22 +16,13 @@ pub enum SetVoxelErr {
 
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[allow(dead_code)] // Linter claims Voxel.0 is unused
 pub struct Voxel(u16);
 impl Voxel {
     pub const EMPTY: Self = Self(0);
-
-    pub fn is_empty(self) -> bool {
-        self.0 == 0
-    }
-
-    pub fn as_data(self) -> u16 {
-        self.0
-    }
-
-    pub fn from_data(byte: u16) -> Self {
-        Self(byte)
-    }
+    
+    pub const fn as_data(self) -> u16 { self.0 }
+    pub const fn from_data(byte: u16) -> Self { Self(byte) }
+    pub const fn is_empty(self) -> bool { self.0 == 0 }
 }
 
 /// The voxel-width of a chunk.
@@ -77,43 +68,42 @@ pub fn inchunk_to_world_pos(chunk: IVec3, pos: UVec3) -> IVec3 {
 /// Entire node is occupied by voxel `x`.
 ///
 /// ## 1yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
-/// Node splits into 8 nodes of half size at `y`.
+/// Node splits into 8 nodes of half-size at `y`.
 #[repr(transparent)]
 #[derive(Clone, Copy, Encode, Decode, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Node(u32);
 impl Node {
-
-    // same as Node::new(Voxel::EMPTY)
-    pub const ZERO: Self = Self(0);
-
+    pub const EMPTY: Self = Self::new(Voxel::EMPTY);
+    pub const MAX_VOXEL: u16 = u16::MAX;
+    
     const SPLIT_MASK: u32 = 0x8000_0000;
     const DATA_MASK: u32 = 0x7FFF_FFFF;
 
-    pub fn new(vox: Voxel) -> Self {
+    pub const fn new(vox: Voxel) -> Self {
         Self((vox.as_data() as u32) & Self::DATA_MASK)
     }
-    pub fn new_split(child_idx: u32) -> Self {
+    pub const fn new_split(child_idx: u32) -> Self {
         Self(child_idx | Self::SPLIT_MASK)
     }
 
-    pub fn voxel(self) -> Voxel {
+    pub const fn voxel(self) -> Voxel {
         Voxel::from_data((self.0 & 0xFFFF) as u16)
     }
-    pub fn set_voxel(&mut self, voxel: Voxel) {
+    pub const fn set_voxel(&mut self, voxel: Voxel) {
         self.0 = (self.0 & Self::SPLIT_MASK) | voxel.as_data() as u32;
     }
 
-    pub fn is_split(self) -> bool {
+    pub const fn is_split(self) -> bool {
         (self.0 >> 31) != 0
     }
-    pub fn set_split(&mut self, split: bool) {
+    pub const fn set_split(&mut self, split: bool) {
         self.0 = (self.0 & Self::DATA_MASK) | ((split as u32) << 31);
     }
 
-    pub fn child_idx(self) -> u32 {
+    pub const fn child_idx(self) -> u32 {
         self.0 & Self::DATA_MASK
     }
-    pub fn set_child_idx(&mut self, idx: u32) {
+    pub const fn set_child_idx(&mut self, idx: u32) {
         self.0 = (self.0 & Self::SPLIT_MASK) | idx;
     }
 }
@@ -250,7 +240,7 @@ pub struct Svo {
     pub size: u32,
 }
 impl Svo {
-    pub fn new(root: NodeAddr, size: u32) -> Self {
+    pub const fn new(root: NodeAddr, size: u32) -> Self {
         Self { root, size }
     }
 
@@ -384,7 +374,6 @@ impl Svo {
 
 #[inline(always)]
 fn nodes_are_eq(n: &[Node]) -> bool {
-    assert_eq!(n.len(), 8);
     n[0] == n[1]
         && n[0] == n[2]
         && n[0] == n[3]

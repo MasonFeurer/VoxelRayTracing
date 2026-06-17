@@ -107,7 +107,7 @@ impl ServerChunk {
     }
 
     pub fn with_capacity(cap: u32) -> Self {
-        let mut nodes = vec![Node::ZERO; cap as usize];
+        let mut nodes = vec![Node::EMPTY; cap as usize];
         nodes[0] = Node::new(Voxel::from_data(0));
         Self {
             nodes,
@@ -124,12 +124,12 @@ impl ServerChunk {
     pub fn set_voxel(&mut self, pos: UVec3, voxel: Voxel) -> Result<(), SetVoxelErr> {
         match self.node_alloc.peek() {
             None => {
-                self.nodes.extend(&[Node::ZERO; 128]);
+                self.nodes.extend(&[Node::EMPTY; 128]);
                 self.node_alloc.move_end(self.nodes.len() as u32);
             }
             Some(addr) => {
                 if (self.nodes.len() as u32 - addr) < 128 {
-                    self.nodes.extend(&[Node::ZERO; 128]);
+                    self.nodes.extend(&[Node::EMPTY; 128]);
                     self.node_alloc.move_end(self.nodes.len() as u32);
                 }
             }
