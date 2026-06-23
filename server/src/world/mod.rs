@@ -29,7 +29,7 @@ impl ServerWorld {
         'f: for feature_idx in (0..self.unplaced_features.len()).rev() {
             let feature = &self.unplaced_features[feature_idx];
 
-            let (min_chunk, max_chunk) = (feature.min(), feature.max());
+            let (min_chunk, max_chunk) = (feature.min().chunk().0, feature.max().chunk().0);
 
             // make sure all chunks covered by the feature exist before placing.
             for x in min_chunk.x..=max_chunk.x {
