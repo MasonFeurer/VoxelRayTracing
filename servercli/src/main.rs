@@ -12,28 +12,14 @@ use std::sync::mpsc::{channel, Receiver};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use bincode::{Decode, Encode};
-use glam::{IVec3, UVec3};
+use glam::UVec3;
 use server::common::env_logger;
 use server::common::log::{info, warn};
 use server::common::resources::loader::RawWorldMeta;
-use server::common::world::{Node, NodeAlloc, NodeRange};
+use server::common::world::{ChunkPos, ChunkPosInRegion, Node, NodeAlloc, NodeRange, RegionPos};
 use server::world::{ServerChunk, WorldFsExt};
 
-const REGION_SIZE: u32 = 16; // how many chunks in a region
-
-pub fn chunk_pos_to_region_pos(pos: IVec3) -> (IVec3, UVec3) {
-    let origin = pos.div_euclid(IVec3::splat(REGION_SIZE as i32));
-    let pos_in_region = (pos - (origin * REGION_SIZE as i32)).as_uvec3();
-    (origin, pos_in_region)
-}
-pub fn pos_in_region_to_chunk_pos(region_pos: IVec3, pos_in_region: UVec3) -> IVec3 {
-    region_pos * REGION_SIZE as i32 + pos_in_region.as_ivec3()
-}
-pub fn region_pos_to_chunk_pos(pos: IVec3) -> IVec3 {
-    pos * REGION_SIZE as i32
-}
-
-pub fn region_path_by_pos(world_folder: impl AsRef<Path>, pos: IVec3) -> PathBuf {
+pub fn region_path_by_pos(world_folder: impl AsRef<Path>, pos: RegionPos) -> PathBuf {
     world_folder.as_ref().join(format!("regions/r_{}_{}_{}_.data", pos.x, pos.y, pos.z))
 }
 
@@ -58,16 +44,16 @@ pub struct RegionFile {
     nodes: Vec<Node>,
 }
 impl RegionFile {
-    pub fn append_chunk(&mut self, pos: UVec3, chunk: &[Node]) {
+    pub fn append_chunk(&mut self, pos: ChunkPosInRegion, chunk: &[Node]) {
         let range = self.nodes.len() as u32..self.nodes.len() as u32 + chunk.len() as u32;
         self.header.chunks.insert(pos.to_array(), range);
         self.nodes.extend_from_slice(chunk);
     }
-    pub fn read_chunk_data(&self, local_pos: UVec3) -> Option<&[Node]> {
+    pub fn read_chunk_data(&self, local_pos: ChunkPosInRegion) -> Option<&[Node]> {
         let chunk = self.header.chunks.get(&local_pos.to_array())?;
         Some(&self.nodes[chunk.start as usize..chunk.end as usize])
     }
-    pub fn from_chunk(pos: UVec3, nodes: &[Node]) -> Self {
+    pub fn from_chunk(pos: ChunkPosInRegion, nodes: &[Node]) -> Self {
         let mut header = RegionFileHeader::default();
         header.chunks.insert(pos.to_array(), 0..nodes.len() as u32);
         Self { header, nodes: nodes.to_vec() }
@@ -87,16 +73,16 @@ impl RegionFile {
 
 #[derive(Default)]
 pub struct ChunkCache {
-    chunks: HashMap<IVec3, ServerChunk>,
+    chunks: HashMap<ChunkPos, ServerChunk>,
 }
 impl ChunkCache {
-    pub fn get(&self, pos: IVec3) -> Option<&ServerChunk> {
+    pub fn get(&self, pos: ChunkPos) -> Option<&ServerChunk> {
         self.chunks.get(&pos)
     }
-    pub fn insert(&mut self, pos: IVec3, chunk: ServerChunk) {
+    pub fn insert(&mut self, pos: ChunkPos, chunk: ServerChunk) {
         self.chunks.insert(pos, chunk);
     }
-    pub fn remove(&mut self, pos: IVec3) {
+    pub fn remove(&mut self, pos: ChunkPos) {
         self.chunks.remove(&pos);
     }
 }
@@ -104,15 +90,15 @@ impl ChunkCache {
 pub struct WorldFs {
     pub world_meta: RawWorldMeta,
     pub world_folder: PathBuf,
-    pub available_chunks: HashSet<IVec3>,
+    pub available_chunks: HashSet<ChunkPos>,
 
     cache: RwLock<ChunkCache>,
     //                         region_pos,   pos_in_region
-    dirty_chunks: RwLock<HashMap<IVec3, HashSet<UVec3>>>,
+    dirty_chunks: RwLock<HashMap<RegionPos, HashSet<ChunkPosInRegion>>>,
 }
 impl WorldFs {
-    pub fn add_dirty_chunk(&self, chunk_pos: IVec3) {
-        let (region_pos, pos_in_region) = chunk_pos_to_region_pos(chunk_pos);
+    pub fn add_dirty_chunk(&self, chunk_pos: ChunkPos) {
+        let (region_pos, pos_in_region) = chunk_pos.region();
         let mut chunks = self.dirty_chunks.write().unwrap();
 
         if let Some(region) = chunks.get_mut(&region_pos) {
@@ -135,14 +121,14 @@ impl WorldFs {
 
             let mut new_region = RegionFile::default();
             for chunk_pos in dirty_chunks {
-                let global_pos = pos_in_region_to_chunk_pos(*region_pos, *chunk_pos);
+                let global_pos = chunk_pos.global(*region_pos);
                 let chunk = world.chunks.get(&global_pos).unwrap();
 
                 new_region.append_chunk(*chunk_pos, &chunk.nodes);
                 region.header.chunks.remove(&chunk_pos.to_array());
             }
             for (chunk_pos, chunk) in region.header.chunks {
-                new_region.append_chunk(chunk_pos.into(), &region.nodes[chunk.start as usize..chunk.end as usize]);
+                new_region.append_chunk(UVec3::from(chunk_pos).into(), &region.nodes[chunk.start as usize..chunk.end as usize]);
             }
             std::fs::write(&region_path, new_region.to_file()).expect("Failed to write region file");
         }
@@ -174,12 +160,13 @@ impl WorldFs {
             let z = if let Ok(v) = parts[3].parse::<i32>() { v } else { continue };
             // parts[4] = ".data"
 
-            let region_pos = IVec3::new(x, y, z);
+            let region_pos = RegionPos(x, y, z);
 
             let mut file = std::fs::File::open(file.path())?;
             let header: RegionFileHeader = bincode::decode_from_std_read(&mut file, bincode::config::standard())?;
             for chunk_pos in header.chunks.keys() {
-                let chunk_pos = pos_in_region_to_chunk_pos(region_pos, UVec3::from_array(*chunk_pos));
+                let pos_in_region = ChunkPosInRegion::new(UVec3::from_array(*chunk_pos));
+                let chunk_pos = pos_in_region.unwrap().global(region_pos);
                 available_chunks.insert(chunk_pos);
             }
         }
@@ -194,8 +181,8 @@ impl WorldFs {
     }
 }
 impl WorldFsExt for WorldFs {
-    fn read_chunk(&self, pos: IVec3) -> Option<ServerChunk> {
-        let (region_pos, pos_in_region) = chunk_pos_to_region_pos(pos);
+    fn read_chunk(&self, pos: ChunkPos) -> Option<ServerChunk> {
+        let (region_pos, pos_in_region) = pos.region();
 
         if let Some(chunk) = self.cache.read().unwrap().get(pos) {
             return Some(chunk.clone())
@@ -213,7 +200,7 @@ impl WorldFsExt for WorldFs {
         let mut resulting_chunk = None;
 
         for (pos_in_region2, _) in &region.header.chunks {
-            let nodes = region.read_chunk_data((*pos_in_region2).into())?;
+            let nodes = region.read_chunk_data(UVec3::from(*pos_in_region2).into())?;
             let alloc = NodeAlloc::new(0..nodes.len() as u32, nodes.len() as u32..nodes.len() as u32 + 256);
             let chunk = ServerChunk { nodes: nodes.to_vec(), node_alloc: alloc};
 
@@ -221,7 +208,8 @@ impl WorldFsExt for WorldFs {
                 resulting_chunk = Some(chunk.clone());
             }
 
-            let pos = pos_in_region_to_chunk_pos(region_pos, UVec3::from(*pos_in_region2));
+            let pos_in_region2 = ChunkPosInRegion::new(UVec3::from(*pos_in_region2));
+            let pos = pos_in_region2.unwrap().global(region_pos);
             self.cache.write().unwrap().insert(pos, chunk);
         }
         // If we can't load the chunk from disk, the server will generate it. So we go ahead and mark the chunk as dirty.

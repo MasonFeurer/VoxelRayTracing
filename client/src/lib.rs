@@ -11,8 +11,7 @@ pub use common;
 
 use anyhow::Context;
 use common::net::{ChunksList, ClientCmd, ServerCmd};
-use common::world::{NodeAddr, SetVoxelErr, Voxel};
-use glam::IVec3;
+use common::world::{ChunkPos, NodeAddr, SetVoxelErr, Voxel, VoxelPos, VoxelPosInChunk};
 use net::ServerConn;
 use player::Player;
 use std::collections::HashSet;
@@ -25,8 +24,8 @@ use crate::world::Chunk;
 #[derive(Default)]
 pub struct CmdResult {
     pub kicked: bool,
-    pub updated_chunks: Vec<(IVec3, NodeAddr, usize)>,
-    pub received_oob_chunks: Vec<IVec3>,
+    pub updated_chunks: Vec<(ChunkPos, NodeAddr, usize)>,
+    pub received_oob_chunks: Vec<ChunkPos>,
 }
 
 pub struct GameState {
@@ -36,7 +35,7 @@ pub struct GameState {
     pub voxels: VoxelPack,
 
     host: ServerConn,
-    chunk_requests_sent: HashSet<IVec3>,
+    chunk_requests_sent: HashSet<ChunkPos>,
 }
 impl GameState {
     pub fn new(user_name: String, world: ClientWorld, server_conn: ServerConn) -> Self {
@@ -53,8 +52,9 @@ impl GameState {
 }
 /// World functions
 impl GameState {
-    pub fn center_chunks(&mut self, anchor: IVec3) {
-        let removed_chunks = self.world.center_chunks(anchor);
+    pub fn center_chunks(&mut self, anchor: ChunkPos) {
+        let mut removed_chunks = Vec::new();
+        self.world.center_chunks(anchor, &mut removed_chunks);
         let (positions, chunks): (Vec<_>, Vec<_>) = removed_chunks.into_iter().unzip();
         for chunk in chunks {
             _ = self.world.free_chunk(chunk);
@@ -64,7 +64,7 @@ impl GameState {
         }
     }
     
-    pub fn set_voxel(&mut self, pos: IVec3, vox: Voxel) -> Result<&Chunk, SetVoxelErr> {
+    pub fn set_voxel(&mut self, pos: VoxelPos, vox: Voxel) -> Result<&Chunk, SetVoxelErr> {
         if self.world.get_voxel(pos)? == vox {
             return Err(SetVoxelErr::NoChange);
         }
@@ -78,23 +78,22 @@ impl GameState {
 /// Server functions
 impl GameState {
     pub fn request_missing_chunks(&mut self) {
-        let mut empty_chunks = self.world.empty_chunks().collect::<Vec<_>>();
+        let mut empty_chunks = self.world.empty_chunks();
         empty_chunks.sort_by(|a, b| {
             let center = self.player.pos;
-            let a_dist = center.distance(a.global_center(&self.world).as_vec3());
-            let b_dist = center.distance(b.global_center(&self.world).as_vec3());
+            let a_dist = center.distance((*a.min() + VoxelPosInChunk::center().as_ivec3()).as_vec3());
+            let b_dist = center.distance((*b.min() + VoxelPosInChunk::center().as_ivec3()).as_vec3());
             a_dist
                 .partial_cmp(&b_dist)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        let mut chunks_to_load: Vec<IVec3> = vec![];
+        let mut chunks_to_load: Vec<ChunkPos> = vec![];
         for chunk in empty_chunks {
-            let global_pos = chunk.global_pos(&self.world);
-            if self.chunk_requests_sent.contains(&global_pos) {
+            if self.chunk_requests_sent.contains(&chunk) {
                 continue;
             }
-            chunks_to_load.push(global_pos);
+            chunks_to_load.push(chunk);
         }
         if !chunks_to_load.is_empty() {
             if let Err(err) = self

@@ -121,8 +121,8 @@ pub struct WorldData {
 impl WorldData {
     pub fn from(world: &ClientWorld) -> Self {
         Self {
-            min: world.min_voxel().into(),
-            size: world.size(),
+            min: world.min_voxel().0.into(),
+            size: world.size_in_voxels(),
             size_in_chunks: world.size_in_chunks(),
             _padding: Default::default(),
         }

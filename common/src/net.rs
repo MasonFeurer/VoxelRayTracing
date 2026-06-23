@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use crate::server::PlayerInfo;
-use crate::world::{Node, NodeAlloc, Voxel};
-use glam::{IVec3, Vec3};
+use crate::world::{ChunkPos, Node, NodeAlloc, Voxel, VoxelPos};
+use glam::Vec3;
 use crate::resources::VoxelPack;
 
 impl std::error::Error for ConnError {}
@@ -19,7 +19,7 @@ impl std::fmt::Display for ConnError {
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
-pub struct ChunksList(pub Vec<IVec3>);
+pub struct ChunksList(pub Vec<ChunkPos>);
 impl std::fmt::Debug for ChunksList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Debug::fmt(&self.0.len(), f)?;
@@ -38,8 +38,8 @@ pub enum ServerCmd {
 
     DisconnectNotice,
     GetPlayersList,
-    GetVoxelData(u32, IVec3),
-    SetVoxel(IVec3, Voxel),
+    GetVoxelData(u32, VoxelPos),
+    SetVoxel(VoxelPos, Voxel),
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -49,6 +49,6 @@ pub enum ClientCmd<'a> {
 
     Kick(String),
     PlayersList(Vec<PlayerInfo>),
-    GiveVoxelData(u32, IVec3, Voxel),
-    GiveChunkData(IVec3, Cow<'a, [Node]>, NodeAlloc),
+    GiveVoxelData(u32, VoxelPos, Voxel),
+    GiveChunkData(ChunkPos, Cow<'a, [Node]>, NodeAlloc),
 }

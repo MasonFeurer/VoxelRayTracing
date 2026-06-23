@@ -1,47 +1,7 @@
 use crate::common::math::Aabb;
 use crate::common::resources::VoxelPack;
 use crate::common::world::*;
-use glam::{ivec3, uvec3, IVec3, UVec3};
-
-#[derive(Clone, Debug)]
-pub struct ChunkPtr {
-    cycle: u32,
-    idx: usize,
-    local_pos: UVec3,
-}
-impl ChunkPtr {
-    fn new(grid_size: u32, cycle: u32, idx: usize) -> Self {
-        Self {
-            cycle,
-            idx,
-            local_pos: ChunkGrid::idx_to_local_pos(idx, grid_size),
-        }
-    }
-
-    #[inline(always)]
-    pub fn idx(&self) -> usize {
-        self.idx
-    }
-
-    #[inline(always)]
-    pub fn local_pos(&self) -> UVec3 {
-        self.local_pos
-    }
-
-    #[inline(always)]
-    pub fn global_pos(&self, world: &ClientWorld) -> IVec3 {
-        self.local_pos.as_ivec3() + world.min_chunk
-    }
-    #[inline(always)]
-    pub fn local_center(&self) -> IVec3 {
-        IVec3::splat(CHUNK_SIZE as i32 / 2)
-    }
-    #[inline(always)]
-    pub fn global_center(&self, world: &ClientWorld) -> IVec3 {
-        chunk_to_world_pos(self.local_pos.as_ivec3() + world.min_chunk)
-            + IVec3::splat(CHUNK_SIZE as i32 / 2)
-    }
-}
+use glam::{uvec3, IVec3, UVec3};
 
 #[derive(Clone)]
 pub struct Chunk {
@@ -67,84 +27,91 @@ impl Chunk {
     pub fn set_voxel(
         &mut self,
         nodes: &mut [Node],
-        pos: UVec3,
+        pos: VoxelPosInChunk,
         voxel: Voxel,
     ) -> Result<(), SetVoxelErr> {
         let nodes = &mut nodes[self.range.start as usize..self.range.end as usize];
-        Svo::new(0, CHUNK_SIZE).set_node(nodes, pos, voxel, CHUNK_DEPTH, &mut self.alloc)
+        Svo::new(0, CHUNK_SIZE).set_node(nodes, *pos, voxel, CHUNK_DEPTH, &mut self.alloc)
     }
 
-    pub fn get_voxel(&self, nodes: &[Node], pos: UVec3) -> Result<Voxel, SetVoxelErr> {
+    pub fn get_voxel(&self, nodes: &[Node], pos: VoxelPosInChunk) -> Result<Voxel, SetVoxelErr> {
         let nodes = &nodes[self.range.start as usize..self.range.end as usize];
-        let node = Svo::new(0, CHUNK_SIZE).find_node(nodes, pos, CHUNK_DEPTH);
+        let node = Svo::new(0, CHUNK_SIZE).find_node(nodes, *pos, CHUNK_DEPTH);
         Ok(nodes[node.idx as usize].voxel())
     }
 }
 
 pub struct ChunkGrid {
+    min: ChunkPos,
     chunks: Box<[Option<Chunk>]>,
-    chunk_count: usize,
-    size: u32,
-    cycle: u32,
+    size_in_chunks: u32,
 }
 impl ChunkGrid {
-    fn local_pos_to_idx(pos: UVec3, grid_size: u32) -> usize {
+    #[inline(always)]
+    const fn local_pos_to_idx(pos: UVec3, grid_size: u32) -> usize {
         (pos.x + pos.y * grid_size + pos.z * grid_size * grid_size) as usize
     }
-    fn idx_to_local_pos(idx: usize, grid_size: u32) -> UVec3 {
-        let mut idx = idx as u32;
-        let z = idx / (grid_size * grid_size);
-        idx -= z * grid_size * grid_size;
-        let y = idx / grid_size;
-        idx -= y * grid_size;
-        let x = idx;
-        uvec3(x, y, z)
-    }
 
-    pub fn new(size: u32) -> Self {
-        let volume = (size * size * size) as usize;
+    pub fn new(min: ChunkPos, size_in_chunks: u32) -> Self {
+        let volume = (size_in_chunks * size_in_chunks * size_in_chunks) as usize;
         let chunks = vec![<Option<Chunk>>::None; volume].into_boxed_slice();
 
-        Self {
-            chunks,
-            chunk_count: volume,
-            size,
-            cycle: 0,
+        Self { min, chunks, size_in_chunks }
+    }
+
+    pub fn local_pos_for(&self, pos: ChunkPos) -> Option<UVec3> {
+        if pos.cmplt(*self.min).any() {
+            None
+        } else {
+            Some((*pos - *self.min).as_uvec3())
         }
     }
-
-    pub fn chunk_count(&self) -> usize {
-        self.chunk_count
+    #[inline(always)] pub fn unlocal_pos_for(&self, pos: UVec3) -> ChunkPos {
+        ChunkPos::new(pos.as_ivec3() + *self.min)
     }
 
-    pub fn shift_chunks(&mut self, offset: IVec3) -> Vec<(UVec3, Chunk)> {
+    #[inline(always)] pub const fn chunk_count(&self) -> usize { self.chunks.len() }
+    #[inline(always)] pub const fn size_in_voxels(&self) -> u32 { self.size_in_chunks * CHUNK_SIZE }
+    #[inline(always)] pub const fn size_in_chunks(&self) -> u32 { self.size_in_chunks }
+
+    #[inline(always)] pub const fn min_voxel(&self) -> VoxelPos { self.min.min() }
+    #[inline(always)] pub const fn max_voxel(&self) -> VoxelPos { self.max_chunk().max() }
+
+    #[inline(always)] pub const fn min_chunk(&self) -> ChunkPos { self.min }
+    #[inline(always)] pub const fn max_chunk(&self) -> ChunkPos {
+        ChunkPos(
+            self.min.0.x + self.size_in_chunks as i32,
+            self.min.0.y + self.size_in_chunks as i32,
+            self.min.0.z + self.size_in_chunks as i32,
+        )
+    }
+
+    pub fn shift_chunks(&mut self, offset: IVec3, removed_chunks: &mut Vec<(ChunkPos, Chunk)>) {
         let mut new_chunks = vec![None; self.chunks.len()].into_boxed_slice();
-        let mut removed_chunks = Vec::new();
 
         let min = IVec3::ZERO;
-        let max = IVec3::splat(self.size as i32);
+        let max = IVec3::splat(self.size_in_chunks as i32);
 
-        for x in 0..self.size {
-            for y in 0..self.size {
-                for z in 0..self.size {
+        for x in 0..self.size_in_chunks {
+            for y in 0..self.size_in_chunks {
+                for z in 0..self.size_in_chunks {
                     let pos = uvec3(x, y, z);
 
-                    let idx = Self::local_pos_to_idx(pos, self.size);
+                    let idx = Self::local_pos_to_idx(pos, self.size_in_chunks);
 
                     let dst_pos = pos.as_ivec3() - offset;
                     if dst_pos.cmplt(min).any() || dst_pos.cmpge(max).any() {
                         if let Some(chunk) = self.chunks[idx].clone() {
-                            removed_chunks.push((pos, chunk));
+                            removed_chunks.push((self.unlocal_pos_for(pos), chunk));
                         }
                         continue;
                     }
-                    let dst_idx = Self::local_pos_to_idx(dst_pos.as_uvec3(), self.size);
+                    let dst_idx = Self::local_pos_to_idx(dst_pos.as_uvec3(), self.size_in_chunks);
                     new_chunks[dst_idx] = self.chunks[idx].clone();
                 }
             }
         }
         self.chunks = new_chunks;
-        removed_chunks
     }
 
     pub fn chunk_roots(&self) -> Vec<NodeAddr> {
@@ -162,36 +129,37 @@ impl ChunkGrid {
         r
     }
 
-    pub fn empty_chunks<'a>(&'a self) -> impl Iterator<Item = ChunkPtr> + 'a {
-        self.chunks
-            .iter()
-            .enumerate()
-            .filter(|(_idx, chunk)| chunk.is_none())
-            .map(|(idx, _)| ChunkPtr::new(self.size, self.cycle, idx))
+    pub fn empty_chunks(&self) -> Vec<ChunkPos> {
+        let mut chunks = Vec::new();
+        for x in 0..self.size_in_chunks {
+            for y in 0..self.size_in_chunks {
+                for z in 0..self.size_in_chunks {
+                    let pos = uvec3(x, y, z);
+                    let idx = Self::local_pos_to_idx(pos, self.size_in_chunks);
+                    if self.chunks[idx].is_none() {
+                        chunks.push(ChunkPos::new(pos.as_ivec3() + *self.min));
+                    }
+                }
+            }
+        }
+        chunks
     }
 
-    pub fn chunk_at(&self, pos: UVec3) -> Option<ChunkPtr> {
-        let idx = pos.x + pos.y * self.size + pos.z * self.size * self.size;
-        Some(ChunkPtr::new(self.size, self.cycle, idx as usize))
+    pub fn set_chunk(&mut self, pos: ChunkPos, chunk: Chunk) -> Option<()> {
+        let local_pos = self.local_pos_for(pos)?;
+        let idx = Self::local_pos_to_idx(local_pos, self.size_in_chunks);
+        self.chunks[idx] = Some(chunk);
+        Some(())
     }
-
-    pub fn put_chunk(&mut self, ptr: &ChunkPtr, chunk: Chunk) {
-        if ptr.cycle != self.cycle {
-            return;
-        }
-        self.chunks[ptr.idx()] = Some(chunk);
+    pub fn get_chunk(&self, pos: ChunkPos) -> Option<&Chunk> {
+        let local_pos = self.local_pos_for(pos)?;
+        let idx = Self::local_pos_to_idx(local_pos, self.size_in_chunks);
+        self.chunks.get(idx)?.as_ref()
     }
-    pub fn get_chunk(&self, ptr: &ChunkPtr) -> Option<&Chunk> {
-        if ptr.cycle != self.cycle {
-            return None;
-        }
-        self.chunks.get(ptr.idx())?.as_ref()
-    }
-    pub fn get_chunk_mut(&mut self, ptr: &ChunkPtr) -> Option<&mut Chunk> {
-        if ptr.cycle != self.cycle {
-            return None;
-        }
-        self.chunks.get_mut(ptr.idx())?.as_mut()
+    pub fn get_chunk_mut(&mut self, pos: ChunkPos) -> Option<&mut Chunk> {
+        let local_pos = self.local_pos_for(pos)?;
+        let idx = Self::local_pos_to_idx(local_pos, self.size_in_chunks);
+        self.chunks.get_mut(idx)?.as_mut()
     }
 }
 
@@ -252,26 +220,23 @@ impl ChunkAlloc {
 }
 
 pub struct ClientWorld {
-    min_chunk: IVec3,
-    size_in_chunks: u32,
     chunks: ChunkGrid,
     nodes: Box<[Node]>,
     chunk_alloc: ChunkAlloc,
 }
 impl std::ops::Deref for ClientWorld {
     type Target = ChunkGrid;
-    fn deref(&self) -> &ChunkGrid {
-        &self.chunks
-    }
+    fn deref(&self) -> &ChunkGrid { &self.chunks }
+}
+impl std::ops::DerefMut for ClientWorld {
+    fn deref_mut(&mut self) -> &mut ChunkGrid { &mut self.chunks }
 }
 impl ClientWorld {
-    pub fn new(min_chunk: IVec3, max_nodes: u32, size: u32) -> Self {
+    pub fn new(min_chunk: ChunkPos, max_nodes: u32, size: u32) -> Self {
         let mut nodes = vec![Node::EMPTY; max_nodes as usize].into_boxed_slice();
         nodes[0] = Node::new(Voxel::EMPTY); // 0 = air
         Self {
-            min_chunk,
-            size_in_chunks: size,
-            chunks: ChunkGrid::new(size),
+            chunks: ChunkGrid::new(min_chunk, size),
             nodes,
             chunk_alloc: ChunkAlloc::new(max_nodes),
         }
@@ -290,56 +255,27 @@ impl ClientWorld {
     pub fn nodes(&self) -> &[Node] {
         &self.nodes
     }
-
-    pub fn size_in_chunks(&self) -> u32 {
-        self.size_in_chunks
-    }
-    pub fn size(&self) -> u32 {
-        self.size_in_chunks * CHUNK_SIZE
-    }
-
-    pub fn min_voxel(&self) -> IVec3 {
-        chunk_to_world_pos(self.min_chunk)
-    }
-    pub fn max_voxel(&self) -> IVec3 {
-        self.min_voxel() + IVec3::splat(self.size() as i32)
-    }
-
-    pub fn min_chunk(&self) -> IVec3 {
-        self.min_chunk
-    }
-    pub fn max_chunk(&self) -> IVec3 {
-        self.min_chunk + IVec3::splat(self.size_in_chunks as i32)
-    }
 }
 impl ClientWorld {
-    pub fn center_chunks(&mut self, anchor: IVec3) -> Vec<(IVec3, Chunk)> {
-        let anchor_chunk = world_to_chunk_pos(anchor);
-        let curr_min_chunk = self.min_chunk();
-        let new_min_chunk = anchor_chunk - IVec3::splat(self.size as i32 / 2);
+    pub fn center_chunks(&mut self, anchor: ChunkPos, removed_chunks: &mut Vec<(ChunkPos, Chunk)>) {
+        let curr_min_chunk = self.min;
+        let new_min_chunk = ChunkPos::new(*anchor - IVec3::splat(self.size_in_chunks() as i32 / 2));
 
         if curr_min_chunk == new_min_chunk {
-            return vec![];
+            return
         }
-        self.min_chunk = new_min_chunk;
+        self.min = new_min_chunk;
 
-        let chunk_offset = new_min_chunk - curr_min_chunk;
-        let removed_chunks = self.chunks.shift_chunks(chunk_offset);
-        removed_chunks
-            .into_iter()
-            .map(|(local_pos, chunk)| (local_pos.as_ivec3() + self.min_chunk, chunk))
-            .collect()
+        let chunk_offset = *new_min_chunk - *curr_min_chunk;
+        self.chunks.shift_chunks(chunk_offset, removed_chunks);
     }
 
-    pub fn create_chunk(&mut self, pos: IVec3, nodes: &[Node]) -> Result<NodeAddr, SetVoxelErr> {
-        if pos.cmplt(self.min_chunk()).any() || pos.cmpge(self.max_chunk()).any() {
+    pub fn create_chunk(&mut self, pos: ChunkPos, nodes: &[Node]) -> Result<NodeAddr, SetVoxelErr> {
+        if pos.cmplt(*self.min_chunk()).any() || pos.cmpge(*self.max_chunk()).any() {
             return Err(SetVoxelErr::PosOutOfBounds);
         }
-        let local_pos = (pos - self.min_chunk()).as_uvec3();
-        let chunk_ptr = self
-            .chunk_at(local_pos)
-            .ok_or(SetVoxelErr::NoChunk)?;
-        if let Some(chunk) = self.chunks.get_chunk_mut(&chunk_ptr) {
+
+        if let Some(chunk) = self.chunks.get_chunk_mut(pos) {
             if chunk.range.len() >= nodes.len() {
                 let start = chunk.range.start as usize;
                 let end = start + nodes.len();
@@ -357,47 +293,35 @@ impl ClientWorld {
         let range = chunk.range.start..(chunk.range.start + nodes.len() as u32);
 
         self.nodes[(range.start as usize)..(range.end as usize)].copy_from_slice(&nodes);
-        self.chunks.put_chunk(&chunk_ptr, chunk);
+        self.chunks.set_chunk(pos, chunk);
         Ok(range.start)
     }
 
-    pub fn set_voxel(&mut self, pos: IVec3, voxel: Voxel) -> Result<&Chunk, SetVoxelErr> {
-        if pos.cmplt(self.min_voxel()).any() || pos.cmpge(self.max_voxel()).any() {
+    fn check_bounds(&self, pos: VoxelPos) -> Result<(), SetVoxelErr> {
+        if pos.cmplt(*self.min_voxel()).any() || pos.cmpge(*self.max_voxel()).any() {
             return Err(SetVoxelErr::PosOutOfBounds);
         }
+        Ok(())
+    }
 
-        let pos = (pos - self.min_voxel()).as_uvec3();
-        let chunk_pos = world_to_chunk_pos(pos.as_ivec3()).as_uvec3();
-        let pos_in_chunk = pos - (chunk_pos * CHUNK_SIZE);
-
-        let chunk = self.chunk_at(chunk_pos).unwrap();
-        let chunk = self.chunks.chunks[chunk.idx()]
-            .as_mut()
-            .ok_or(SetVoxelErr::NoChunk)?;
+    pub fn set_voxel(&mut self, pos: VoxelPos, voxel: Voxel) -> Result<&Chunk, SetVoxelErr> {
+        self.check_bounds(pos)?;
+        let (chunk_pos, pos_in_chunk) = pos.chunk();
+        let chunk = self.chunks.get_chunk_mut(chunk_pos).ok_or(SetVoxelErr::NoChunk)?;
         chunk.set_voxel(&mut self.nodes, pos_in_chunk, voxel)?;
         Ok(chunk)
     }
 
-    pub fn get_voxel(&self, pos: IVec3) -> Result<Voxel, SetVoxelErr> {
-        if pos.cmplt(self.min_voxel()).any() || pos.cmpge(self.max_voxel()).any() {
-            return Err(SetVoxelErr::PosOutOfBounds);
-        }
-
-        let pos = (pos - self.min_voxel()).as_uvec3();
-        let chunk_pos = world_to_chunk_pos(pos.as_ivec3()).as_uvec3();
-        let pos_in_chunk = pos - (chunk_pos * CHUNK_SIZE);
-
-        let chunk = self.chunk_at(chunk_pos).unwrap();
-        let chunk = self.chunks.chunks[chunk.idx()]
-            .as_ref()
-            .ok_or(SetVoxelErr::NoChunk)?;
-        let vox = chunk.get_voxel(&self.nodes, pos_in_chunk);
-        vox
+    pub fn get_voxel(&self, pos: VoxelPos) -> Result<Voxel, SetVoxelErr> {
+        self.check_bounds(pos)?;
+        let (chunk_pos, pos_in_chunk) = pos.chunk();
+        let chunk = self.chunks.get_chunk(chunk_pos).ok_or(SetVoxelErr::NoChunk)?;
+        chunk.get_voxel(&self.nodes, pos_in_chunk)
     }
 
-    pub fn highest_vox_at(&self, x: i32, z: i32) -> Option<i32> {
+    pub fn highest_vox_at(&self, pos: VoxelPos) -> Option<i32> {
         for y in (self.min_voxel().y..self.max_voxel().y).rev() {
-            if self.get_voxel(ivec3(x, y, z)).map(Voxel::is_empty) == Ok(false) {
+            if self.get_voxel(VoxelPos(pos.x, y, pos.z)).map(Voxel::is_empty) == Ok(false) {
                 return Some(y);
             }
         }
@@ -414,7 +338,7 @@ impl ClientWorld {
         for x in from.x..to.x {
             for y in from.y..to.y {
                 for z in from.z..to.z {
-                    let pos = ivec3(x, y, z);
+                    let pos = VoxelPos(x, y, z);
 
                     let voxel = self.get_voxel(pos).unwrap_or(Voxel::EMPTY);
 

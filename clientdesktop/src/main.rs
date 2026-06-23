@@ -7,12 +7,12 @@ use crate::input::{InputState, Key};
 use graphics::{CamData, Crosshair, Egui, Gpu, GpuResources, Settings, WorldData};
 
 use client::common::resources::{Resources, Stylepack};
-use client::common::world::{Node, Voxel};
+use client::common::world::{ChunkPos, Node, Voxel, VoxelPos};
 use client::net::ServerConn;
 use client::player::PlayerInput;
 use client::world::ClientWorld;
 use client::GameState;
-use glam::{ivec3, uvec2, UVec2};
+use glam::{uvec2, UVec2};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::Child;
@@ -180,7 +180,7 @@ impl AppState {
     }
 
     pub fn join_game(&mut self, addr: SocketAddr) {
-        let world = ClientWorld::new(ivec3(0, 0, 0), self.max_nodes, 30);
+        let world = ClientWorld::new(ChunkPos(0, 0, 0), self.max_nodes, 30);
         let server = match ServerConn::establish(addr, &self.username) {
             Ok(v) => v,
             Err(e) => {
@@ -260,7 +260,7 @@ impl AppState {
             return;
         };
         if !self.freeze_world_anchor {
-            game.center_chunks(game.player.pos.as_ivec3());
+            game.center_chunks(VoxelPos::new(game.player.pos.as_ivec3()).chunk().0);
         }
         game.request_missing_chunks();
     }
@@ -312,7 +312,7 @@ impl AppState {
                 game.player.cam_pos(),
                 game.player.facing(),
                 10.0,
-                |pos| game.world.get_voxel(pos).map(|v| !v.is_empty()) == Ok(true)
+                |pos| game.world.get_voxel(VoxelPos::new(pos)).map(|v| !v.is_empty()) == Ok(true)
             );
 
             if input.scroll_delta.y > 0.0 {
@@ -329,10 +329,10 @@ impl AppState {
             }
 
             let set_vox = if let (Some(hit), true) = (looking_at, input.left_button_pressed()) {
-                Some((hit.pos, Voxel::EMPTY))
+                Some((VoxelPos::new(hit.pos), Voxel::EMPTY))
             }
             else if let (Some(hit), true) = (looking_at, input.right_button_pressed()) {
-                Some((hit.pos + hit.face, self.current_voxel))
+                Some((VoxelPos::new(hit.pos + hit.face), self.current_voxel))
             }
             else { None };
 

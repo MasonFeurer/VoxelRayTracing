@@ -1,22 +1,18 @@
 pub mod gen;
 
 use common::resources::{Biome, WorldFeatures, WorldPreset};
-use common::world::{
-    world_to_chunk_pos, world_to_inchunk_pos, Node, NodeAlloc, SetVoxelErr, Svo, Voxel,
-    CHUNK_DEPTH, CHUNK_SIZE,
-};
+use common::world::{ChunkPos, Node, NodeAlloc, SetVoxelErr, Svo, Voxel, VoxelPos, VoxelPosInChunk, CHUNK_DEPTH, CHUNK_SIZE};
 use gen::{BuiltFeature, WorldGen};
-use glam::{ivec3, IVec3, UVec3};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::{Arc};
 use common::log::warn;
 
 pub trait WorldFsExt {
-    fn read_chunk(&self, pos: IVec3) -> Option<ServerChunk>;
+    fn read_chunk(&self, pos: ChunkPos) -> Option<ServerChunk>;
 }
 
 pub struct ServerWorld {
-    pub chunks: HashMap<IVec3, ServerChunk>,
+    pub chunks: HashMap<ChunkPos, ServerChunk>,
     pub unplaced_features: Vec<BuiltFeature>,
     pub gen: Arc<WorldGen>,
 }
@@ -29,20 +25,17 @@ impl ServerWorld {
         }
     }
 
-    pub fn place_features(&mut self) -> Vec<IVec3> {
-        let mut out = HashSet::new();
-
+    pub fn place_features(&mut self, mut dirty_chunk: impl FnMut(ChunkPos)) {
         'f: for feature_idx in (0..self.unplaced_features.len()).rev() {
             let feature = &self.unplaced_features[feature_idx];
 
-            let min_chunk = world_to_chunk_pos(feature.min());
-            let max_chunk = world_to_chunk_pos(feature.max());
+            let (min_chunk, max_chunk) = (feature.min(), feature.max());
 
             // make sure all chunks covered by the feature exist before placing.
             for x in min_chunk.x..=max_chunk.x {
                 for y in min_chunk.y..=max_chunk.y {
                     for z in min_chunk.z..=max_chunk.z {
-                        if self.get_chunk(ivec3(x, y, z)).is_none() {
+                        if self.get_chunk(ChunkPos(x, y, z)).is_none() {
                             continue 'f;
                         }
                     }
@@ -51,7 +44,7 @@ impl ServerWorld {
 
             for (pos, voxel) in feature.voxel_placements() {
                 match set_voxel_w_chunks(&mut self.chunks, pos, voxel) {
-                    Ok(()) => _ = out.insert(world_to_chunk_pos(pos)),
+                    Ok(()) => _ = dirty_chunk(pos.chunk().0),
                     Err(err) => {
                         warn!("Failed to place voxel for feature {feature_idx} at {pos:?} : {err:?}");
                     }
@@ -59,29 +52,27 @@ impl ServerWorld {
             }
             _ = self.unplaced_features.remove(feature_idx);
         }
-        out.into_iter().collect()
     }
 
     pub fn biome_at(&self, x: i32, z: i32) -> &Biome {
         self.gen.biome_at(x, z)
     }
 
-    pub fn get_chunk(&self, pos: IVec3) -> Option<&ServerChunk> {
+    pub fn get_chunk(&self, pos: ChunkPos) -> Option<&ServerChunk> {
         self.chunks.get(&pos)
     }
 
-    pub fn set_voxel(&mut self, pos: IVec3, voxel: Voxel) -> Result<(), SetVoxelErr> {
+    pub fn set_voxel(&mut self, pos: VoxelPos, voxel: Voxel) -> Result<(), SetVoxelErr> {
         set_voxel_w_chunks(&mut self.chunks, pos, voxel)
     }
 }
 
 pub fn set_voxel_w_chunks(
-    chunks: &mut HashMap<IVec3, ServerChunk>,
-    pos: IVec3,
+    chunks: &mut HashMap<ChunkPos, ServerChunk>,
+    pos: VoxelPos,
     voxel: Voxel,
 ) -> Result<(), SetVoxelErr> {
-    let chunk_pos = world_to_chunk_pos(pos);
-    let pos_in_chunk = world_to_inchunk_pos(pos);
+    let (chunk_pos, pos_in_chunk) = pos.chunk();
     let chunk = chunks
         .get_mut(&chunk_pos)
         .ok_or(SetVoxelErr::PosOutOfBounds)?;
@@ -121,7 +112,7 @@ impl ServerChunk {
         &self.nodes[0..=self.node_alloc.last_used_addr() as usize]
     }
 
-    pub fn set_voxel(&mut self, pos: UVec3, voxel: Voxel) -> Result<(), SetVoxelErr> {
+    pub fn set_voxel(&mut self, pos: VoxelPosInChunk, voxel: Voxel) -> Result<(), SetVoxelErr> {
         match self.node_alloc.peek() {
             None => {
                 self.nodes.extend(&[Node::EMPTY; 128]);
@@ -136,7 +127,7 @@ impl ServerChunk {
         }
         Svo::new(0, CHUNK_SIZE).set_node(
             &mut self.nodes,
-            pos,
+            *pos,
             voxel,
             CHUNK_DEPTH,
             &mut self.node_alloc,

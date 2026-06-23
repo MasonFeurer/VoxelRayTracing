@@ -10,8 +10,8 @@ pub use common;
 
 use common::net::{ClientCmd, ServerCmd};
 use common::server::PlayerInfo;
-use common::world::{world_to_chunk_pos, Node, NodeAlloc, NODES_PER_CHUNK};
-use glam::{vec3, IVec3, Vec3};
+use common::world::{ChunkPos, Node, NodeAlloc, NODES_PER_CHUNK};
+use glam::{vec3, Vec3};
 use net::ClientConn;
 use std::collections::{HashMap, HashSet};
 use std::net::{SocketAddr, TcpListener};
@@ -33,7 +33,7 @@ pub struct Client {
     pub pos: Vec3,
     pub render_distance: u32,
 
-    pub wants_chunks: HashSet<IVec3>,
+    pub wants_chunks: HashSet<ChunkPos>,
 }
 impl Client {
     pub fn new(name: String, conn: ClientConn) -> Self {
@@ -46,13 +46,9 @@ impl Client {
         }
     }
 
-    pub fn using_chunk(&self, pos: IVec3) -> bool {
-        self.wants_chunks.contains(&pos)
-    }
+    pub fn using_chunk(&self, pos: ChunkPos) -> bool { self.wants_chunks.contains(&pos) }
 
-    pub fn address(&self) -> SocketAddr {
-        self.conn.stream.local_addr().unwrap()
-    }
+    pub fn address(&self) -> SocketAddr { self.conn.stream.local_addr().unwrap() }
 
     pub fn send_cmd(&mut self, cmd: ClientCmd) {
         if let Err(err) = self.conn.write(cmd)
@@ -64,7 +60,7 @@ impl Client {
 
 #[derive(Clone, Copy)]
 pub struct DirtyChunk {
-    pub pos: IVec3,
+    pub pos: ChunkPos,
     pub source: Option<ClientId>
 }
 
@@ -74,8 +70,8 @@ pub struct ChunkBuilder {
 impl ChunkBuilder {
     pub fn spawn<Fs: WorldFsExt + Sync + Send + 'static>(
         gen: Arc<WorldGen>,
-        chunks: Vec<IVec3>,
-        send: Sender<(IVec3, ServerChunk, Vec<BuiltFeature>)>,
+        chunks: Vec<ChunkPos>,
+        send: Sender<(ChunkPos, ServerChunk, Vec<BuiltFeature>)>,
         fs: Arc<Fs>
     ) -> Self {
         let done = Arc::new(AtomicBool::new(false));
@@ -141,11 +137,11 @@ pub struct ServerState {
 
     pub world: ServerWorld,
 
-    pub chunk_builder_send: Sender<(IVec3, ServerChunk, Vec<BuiltFeature>)>,
-    pub chunk_builder_recv: Receiver<(IVec3, ServerChunk, Vec<BuiltFeature>)>,
-    pub chunks_to_build: Vec<IVec3>,
+    pub chunk_builder_send: Sender<(ChunkPos, ServerChunk, Vec<BuiltFeature>)>,
+    pub chunk_builder_recv: Receiver<(ChunkPos, ServerChunk, Vec<BuiltFeature>)>,
+    pub chunks_to_build: Vec<ChunkPos>,
     pub chunk_builders: Vec<ChunkBuilder>,
-    pub dirty_chunks: HashMap<IVec3, Option<ClientId>>,
+    pub dirty_chunks: HashMap<ChunkPos, Option<ClientId>>,
 
     pub kill: Arc<AtomicBool>,
 }
@@ -266,9 +262,7 @@ impl ServerState {
     }
 
     pub fn update_world(&mut self) {
-        for chunk_pos in self.world.place_features() {
-            self.dirty_chunks.insert(chunk_pos, None);
-        }
+        self.world.place_features(|pos| _ = self.dirty_chunks.insert(pos, None));
     }
 
     fn handle_client_cmd(&mut self, client_id: ClientId, cmd: ServerCmd, player_list: &[PlayerInfo]) {
@@ -319,7 +313,7 @@ impl ServerState {
                     warn!("Failed to set voxel (from client) at {:?} : {:?}", pos, err);
                 }
                 info!("Received `SetVoxel` command from client {:?} : {:?} = {:?}", client.name, pos, voxel);
-                self.dirty_chunks.insert(world_to_chunk_pos(pos), Some(client_id));
+                self.dirty_chunks.insert(pos.chunk().0, Some(client_id));
             }
         }
     }

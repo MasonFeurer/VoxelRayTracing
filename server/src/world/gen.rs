@@ -2,8 +2,8 @@ use crate::world::ServerChunk;
 use common::math::rand_cardinal_dir;
 use common::resources::{Biome, Feature, Source, WorldFeatures, WorldPreset};
 use common::world::noise::{Map, MappedNoise, RawNoise};
-use common::world::{inchunk_to_world_pos, Node, NodeAlloc, Svo, Voxel, CHUNK_DEPTH, CHUNK_SIZE};
-use glam::{ivec3, uvec3, vec2, IVec3, UVec3, Vec3};
+use common::world::{ChunkPos, Node, NodeAlloc, Svo, Voxel, VoxelPos, VoxelPosInChunk, CHUNK_DEPTH, CHUNK_SIZE};
+use glam::{ivec3, uvec3, vec2, IVec3, Vec3};
 use std::collections::HashMap;
 
 fn randf32(range: std::ops::Range<f32>) -> f32 {
@@ -138,23 +138,22 @@ impl WorldGen {
     pub fn generate_chunk(
         &self,
         buffer: &mut [Node],
-        chunk_pos: IVec3,
+        chunk_pos: ChunkPos,
         out_features: &mut Vec<BuiltFeature>,
     ) -> ServerChunk {
         let mut node_alloc = NodeAlloc::new(0..1, 1..buffer.len() as u32);
 
         {
-            let min = inchunk_to_world_pos(chunk_pos, UVec3::ZERO).as_vec3();
-            let max = min + Vec3::splat(CHUNK_SIZE as f32);
+            let (min, max) = (chunk_pos.min(), chunk_pos.max());
             let surface_samples = [
                 // sample the world surface at the 4 corners and the center of the chunk.
-                self.height_map.eval(min.x, min.z),
-                self.height_map.eval(max.x, min.z),
-                self.height_map.eval(min.x, max.z),
-                self.height_map.eval(max.x, max.z),
+                self.height_map.eval(min.x as f32, min.z as f32),
+                self.height_map.eval(max.x as f32, min.z as f32),
+                self.height_map.eval(min.x as f32, max.z as f32),
+                self.height_map.eval(max.x as f32, max.z as f32),
                 self.height_map.eval(
-                    min.x + CHUNK_SIZE as f32 * 0.5,
-                    min.z + CHUNK_SIZE as f32 * 0.5,
+                    min.x as f32 + CHUNK_SIZE as f32 * 0.5,
+                    min.z as f32 + CHUNK_SIZE as f32 * 0.5,
                 ),
             ];
             // get the min
@@ -164,14 +163,14 @@ impl WorldGen {
             // Because of this assumption, we can change the chunk to be a single node consisting of the
             // `earth` voxel. This saves the permormance cost of writing `earth` to most of the chunk
             // starting from Air.
-            if surface_min > max.y {
+            if surface_min > max.y as f32 {
                 buffer[0] = Node::new(self.earth);
             }
         }
 
         for x in 0..CHUNK_SIZE {
             'a: for z in 0..CHUNK_SIZE {
-                let world_pos = inchunk_to_world_pos(chunk_pos, uvec3(x, 0, z));
+                let world_pos = VoxelPosInChunk(x, 0, z).unwrap().global(chunk_pos);
 
                 let biome = self.biome_at(world_pos.x, world_pos.z).clone();
                 let h = self.height_map.eval(world_pos.x as f32, world_pos.z as f32) as i32;
@@ -243,7 +242,7 @@ impl WorldGen {
                     continue 'a;
                 };
                 let feature = self.features.get(feature).unwrap().clone();
-                out_features.push(build_feature(ivec3(world_pos.x, h, world_pos.z), feature));
+                out_features.push(build_feature(VoxelPos(world_pos.x, h, world_pos.z), feature));
             }
         }
         let used_voxels = node_alloc.last_used_addr() + 64;
@@ -256,47 +255,43 @@ impl WorldGen {
 
 #[derive(Clone)]
 pub struct BuiltFeature {
-    voxels: HashMap<IVec3, Voxel>,
-    bounds: (IVec3, IVec3),
+    voxels: HashMap<VoxelPos, Voxel>,
+    bounds: (VoxelPos, VoxelPos),
 }
 impl BuiltFeature {
     pub fn new() -> Self {
         Self {
             voxels: HashMap::new(),
-            bounds: (IVec3::MAX, IVec3::MIN),
+            bounds: (VoxelPos::new(IVec3::MAX), VoxelPos::new(IVec3::MIN)),
         }
     }
 
-    pub fn min(&self) -> IVec3 {
-        self.bounds.0
-    }
-    pub fn max(&self) -> IVec3 {
-        self.bounds.1
-    }
+    #[inline(always)] pub fn min(&self) -> VoxelPos { self.bounds.0 }
+    #[inline(always)] pub fn max(&self) -> VoxelPos { self.bounds.1 }
 
-    pub fn voxel_placements<'a>(&'a self) -> impl Iterator<Item = (IVec3, Voxel)> + 'a {
+    pub fn voxel_placements<'a>(&'a self) -> impl Iterator<Item = (VoxelPos, Voxel)> + 'a {
         self.voxels.iter().map(|(pos, vox)| (*pos, *vox))
     }
-    pub fn into_voxel_placements(self) -> impl Iterator<Item = (IVec3, Voxel)> {
+    pub fn into_voxel_placements(self) -> impl Iterator<Item = (VoxelPos, Voxel)> {
         self.voxels.into_iter()
     }
 
-    pub fn set_voxel(&mut self, pos: IVec3, v: Voxel) {
+    pub fn set_voxel(&mut self, pos: VoxelPos, v: Voxel) {
         self.voxels.insert(pos, v);
-        self.bounds.0 = self.bounds.0.min(pos);
-        self.bounds.1 = self.bounds.1.max(pos);
+        self.bounds.0 = VoxelPos::new(self.bounds.0.min(*pos));
+        self.bounds.1 = VoxelPos::new(self.bounds.1.max(*pos));
     }
 
-    pub fn place_line(&mut self, start: IVec3, end: IVec3, v: Voxel) {
-        for pos in common::math::walk_line(start, end) {
-            self.set_voxel(pos, v);
+    pub fn place_line(&mut self, start: VoxelPos, end: VoxelPos, v: Voxel) {
+        for pos in common::math::walk_line(*start, *end) {
+            self.set_voxel(VoxelPos::new(pos), v);
         }
     }
 
-    pub fn place_sphere(&mut self, center: IVec3, r: u32, v: Voxel) {
+    pub fn place_sphere(&mut self, center: VoxelPos, r: u32, v: Voxel) {
         let pos_center = center.as_vec3() + Vec3::splat(0.5);
-        let min = center - IVec3::splat(r as i32);
-        let max = center + IVec3::splat(r as i32);
+        let min = *center - IVec3::splat(r as i32);
+        let max = *center + IVec3::splat(r as i32);
         let r_sq = r as f32 * r as f32;
 
         for x in min.x..=max.x {
@@ -308,16 +303,16 @@ impl BuiltFeature {
                     if dist_sq >= r_sq {
                         continue;
                     }
-                    self.set_voxel(ivec3(x, y, z), v);
+                    self.set_voxel(VoxelPos(x, y, z), v);
                 }
             }
         }
     }
 
-    pub fn place_disc(&mut self, center: IVec3, r: f32, height: u32, v: Voxel) {
+    pub fn place_disc(&mut self, center: VoxelPos, r: f32, height: u32, v: Voxel) {
         let pos_center = center.as_vec3() + Vec3::splat(0.5);
-        let min = center - ivec3(r as i32, 0, r as i32);
-        let max = center + ivec3(r as i32, height as i32 - 1, r as i32);
+        let min = *center - ivec3(r as i32, 0, r as i32);
+        let max = *center + ivec3(r as i32, height as i32 - 1, r as i32);
         let r_sq = r * r;
 
         for x in min.x..=max.x {
@@ -329,14 +324,14 @@ impl BuiltFeature {
                     if dist_sq >= r_sq {
                         continue;
                     }
-                    self.set_voxel(ivec3(x, y, z), v);
+                    self.set_voxel(VoxelPos(x, y, z), v);
                 }
             }
         }
     }
 }
 
-pub fn build_feature(surface: IVec3, feature: Feature) -> BuiltFeature {
+pub fn build_feature(surface: VoxelPos, feature: Feature) -> BuiltFeature {
     let mut out = BuiltFeature::new();
     match feature {
         Feature::Tree {
@@ -350,7 +345,7 @@ pub fn build_feature(surface: IVec3, feature: Feature) -> BuiltFeature {
             branch_len,
         } => {
             let height = fastrand::u32(height);
-            let top = surface + ivec3(0, height as i32, 0);
+            let top = VoxelPos::new(*surface + ivec3(0, height as i32, 0));
 
             let branch_count = match height {
                 ..=8 => 0,
@@ -363,8 +358,8 @@ pub fn build_feature(surface: IVec3, feature: Feature) -> BuiltFeature {
                 let branch_len = fastrand::u32(branch_len.clone());
 
                 let branch_dir = common::math::rand_hem_dir(Vec3::Y);
-                let start = ivec3(surface.x, surface.y + branch_h as i32, surface.z);
-                let end = (start.as_vec3() + branch_dir * branch_len as f32).as_ivec3();
+                let start = VoxelPos(surface.x, surface.y + branch_h as i32, surface.z);
+                let end = VoxelPos::new((start.as_vec3() + branch_dir * branch_len as f32).as_ivec3());
 
                 out.place_sphere(end, 3, leaf_voxel);
                 out.place_line(start, end, branch_voxel);
@@ -381,7 +376,7 @@ pub fn build_feature(surface: IVec3, feature: Feature) -> BuiltFeature {
             let r = fastrand::u32(5..11) as f32 - 0.1;
 
             let height = fastrand::u32(height);
-            let top = surface + ivec3(0, height as i32, 0);
+            let top = VoxelPos::new(*surface + ivec3(0, height as i32, 0));
 
             out.place_line(surface, top, trunk_voxel);
             out.place_disc(top, r, 1, leaf_voxel);
@@ -392,8 +387,8 @@ pub fn build_feature(surface: IVec3, feature: Feature) -> BuiltFeature {
                 let branch_len = fastrand::u32(3..6);
 
                 let branch_dir = common::math::rand_hem_dir(Vec3::Y);
-                let start = ivec3(surface.x, surface.y + branch_h as i32, surface.z);
-                let end = (start.as_vec3() + branch_dir * branch_len as f32).as_ivec3();
+                let start = VoxelPos::new(ivec3(surface.x, surface.y + branch_h as i32, surface.z));
+                let end = VoxelPos::new((start.as_vec3() + branch_dir * branch_len as f32).as_ivec3());
 
                 out.place_line(start, end, trunk_voxel);
                 out.place_disc(end, 4.0, 1, leaf_voxel);
@@ -411,28 +406,28 @@ pub fn build_feature(surface: IVec3, feature: Feature) -> BuiltFeature {
             let mut y = height;
             let mut r: i32 = 1;
             while y > offset {
-                let c = surface + IVec3::Y * y;
+                let c = VoxelPos::new(*surface + IVec3::Y * y);
                 out.place_disc(c, r as f32 - 0.1, 1, leaf_voxel);
                 r += 1;
                 y -= 2;
             }
-            let top = surface + ivec3(0, height - 1, 0);
+            let top = VoxelPos::new(*surface + ivec3(0, height - 1, 0));
             out.place_line(surface, top, trunk_voxel);
         }
         Feature::Cactus { voxel, height } => {
-            let pos = surface + IVec3::Y;
+            let pos = VoxelPos::new(*surface + IVec3::Y);
             let height = fastrand::u32(height) as i32;
             let splits = if height > 3 { fastrand::u32(0..4) } else { 0 };
 
-            out.place_line(pos, pos + IVec3::Y * height, voxel);
+            out.place_line(pos, VoxelPos::new(*pos + IVec3::Y * height), voxel);
             for _ in 0..splits {
                 let split_h = fastrand::i32(1..height);
                 let split_len = fastrand::i32(1..4);
                 let dir = rand_cardinal_dir();
 
-                out.set_voxel(pos + IVec3::Y * split_h + dir, voxel);
-                let branch_min = pos + IVec3::Y * split_h + dir * 2;
-                let branch_max = branch_min + IVec3::Y * split_len;
+                out.set_voxel(VoxelPos::new(*pos + IVec3::Y * split_h + dir), voxel);
+                let branch_min = VoxelPos::new(*pos + IVec3::Y * split_h + dir * 2);
+                let branch_max = VoxelPos::new(*branch_min + IVec3::Y * split_len);
                 out.place_line(branch_min, branch_max, voxel);
             }
         }
@@ -446,7 +441,7 @@ pub fn build_feature(surface: IVec3, feature: Feature) -> BuiltFeature {
             for y in 0..height {
                 let delta = 1.0 - (y as f32 / height as f32);
                 let w = (delta * width as f32).floor() as u32;
-                out.place_disc(surface + IVec3::Y * y, (w as f32 * 0.5) - 0.1, 1, voxel);
+                out.place_disc(VoxelPos::new(*surface + IVec3::Y * y), (w as f32 * 0.5) - 0.1, 1, voxel);
             }
         }
     }

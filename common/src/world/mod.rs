@@ -6,6 +6,126 @@ use glam::{uvec3, IVec3, UVec3, Vec3};
 pub type NodeAddr = u32;
 pub type NodeRange = std::ops::Range<NodeAddr>;
 
+/// The voxel-width of a chunk.
+pub const CHUNK_SIZE: u32 = 64;
+
+/// The depth in a Chunk's SVO where nodes are the same size as voxels.
+/// Derived from "2^(CHUNK_DEPTH) = CHUNK_SIZE"
+pub const CHUNK_DEPTH: u32 = 6;
+
+/// The maximum number of nodes a chunk could need to represent it's state.
+/// Derived from "1 + 2^3 + 4^3 + 8^3 + 16^3 + 32^3 + 64^3"
+pub const NODES_PER_CHUNK: u32 = 299_593;
+
+/// When adding a chunk to the world, this is the number of extra nodes the chunk makes room for.
+/// When a chunk needs to use more than this amount more of extra memory for storing nodes,
+/// The chunk will have to be re-located in memory.
+pub const CHUNK_INIT_FREE_MEM: u32 = 2048;
+
+pub const REGION_SIZE: u32 = 16;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, Hash)]
+pub struct GlobalPos<const SCALE: u32>(pub IVec3);
+impl<const SCALE: u32> GlobalPos<SCALE> {
+    #[inline(always)] pub const fn new(pos: IVec3) -> Self { Self(pos) }
+}
+impl<const SCALE: u32> std::ops::Deref for GlobalPos<SCALE> {
+    type Target = IVec3;
+    #[inline(always)] fn deref(&self) -> &Self::Target { &self.0 }
+}
+impl<const SCALE: u32> From<IVec3> for GlobalPos<SCALE> {
+    #[inline(always)] fn from(value: IVec3) -> Self { Self(value) }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, Hash)]
+pub struct LocalPos<const SCALE: u32, const CAP: u32>(pub UVec3);
+impl<const SCALE: u32, const CAP: u32> LocalPos<SCALE, CAP> {
+    #[inline(always)]
+    pub const fn new(pos: UVec3) -> Option<Self> {
+        if pos.x >= CAP || pos.y >= CAP || pos.z >= CAP {
+            None
+        } else {
+            Some(Self(pos))
+        }
+    }
+    #[inline(always)] pub const fn new_unchecked(pos: UVec3) -> Self { Self(pos) }
+    #[inline(always)] pub const fn center() -> Self { Self::new_unchecked(UVec3::splat(CAP / 2)) }
+}
+impl<const SCALE: u32, const CAP: u32> std::ops::Deref for LocalPos<SCALE, CAP> {
+    type Target = UVec3;
+    #[inline(always)] fn deref(&self) -> &Self::Target { &self.0 }
+}
+impl<const SCALE: u32, const CAP: u32> From<UVec3> for LocalPos<SCALE, CAP> {
+    #[inline(always)] fn from(value: UVec3) -> Self { Self(value) }
+}
+
+pub type VoxelPos = GlobalPos<1>;
+#[allow(non_snake_case)] // this is to mimic a constructor
+pub const fn VoxelPos(x: i32, y: i32, z: i32) -> VoxelPos { VoxelPos::new(IVec3::new(x, y, z)) }
+
+pub type ChunkPos = GlobalPos<CHUNK_SIZE>;
+#[allow(non_snake_case)] // this is to mimic a constructor
+pub const fn ChunkPos(x: i32, y: i32, z: i32) -> ChunkPos { ChunkPos::new(IVec3::new(x, y, z)) }
+
+pub type RegionPos = GlobalPos<REGION_SIZE>;
+#[allow(non_snake_case)] // this is to mimic a constructor
+pub const fn RegionPos(x: i32, y: i32, z: i32) -> RegionPos { RegionPos::new(IVec3::new(x, y, z)) }
+
+pub type VoxelPosInChunk = LocalPos<1, CHUNK_SIZE>;
+#[allow(non_snake_case)] // this is to mimic a constructor
+pub const fn VoxelPosInChunk(x: u32, y: u32, z: u32) -> Option<VoxelPosInChunk> { VoxelPosInChunk::new(UVec3::new(x, y, z)) }
+
+pub type ChunkPosInRegion = LocalPos<CHUNK_SIZE, REGION_SIZE>;
+#[allow(non_snake_case)] // this is to mimic a constructor
+pub const fn ChunkPosInRegion(x: u32, y: u32, z: u32) -> Option<ChunkPosInRegion> { ChunkPosInRegion::new(UVec3::new(x, y, z)) }
+
+impl VoxelPos {
+    #[inline(always)]
+    pub fn chunk(self) -> (ChunkPos, VoxelPosInChunk) {
+        let pos = self.0.div_euclid(IVec3::splat(CHUNK_SIZE as i32));
+        let in_chunk = (self.0 - pos * CHUNK_SIZE as i32).as_uvec3();
+        (ChunkPos::new(pos), VoxelPosInChunk::new_unchecked(in_chunk))
+    }
+}
+impl ChunkPos {
+    #[inline(always)]
+    pub fn region(self) -> (RegionPos, ChunkPosInRegion) {
+        let pos = self.0.div_euclid(IVec3::splat(REGION_SIZE as i32));
+        let in_chunk = (self.0 - pos * REGION_SIZE as i32).as_uvec3();
+        (RegionPos::new(pos), ChunkPosInRegion::new_unchecked(in_chunk))
+    }
+
+    #[inline(always)]
+    pub const fn min(self) -> VoxelPos {
+        VoxelPos(
+            self.0.x * CHUNK_SIZE as i32,
+            self.0.y * CHUNK_SIZE as i32,
+            self.0.z * CHUNK_SIZE as i32
+        )
+    }
+    #[inline(always)]
+    pub const fn max(self) -> VoxelPos {
+        VoxelPos(
+            self.0.x * CHUNK_SIZE as i32 + CHUNK_SIZE as i32 - 1,
+            self.0.y * CHUNK_SIZE as i32 + CHUNK_SIZE as i32 - 1,
+            self.0.z * CHUNK_SIZE as i32 + CHUNK_SIZE as i32 - 1
+        )
+    }
+}
+impl VoxelPosInChunk {
+    #[inline(always)]
+    pub fn global(self, chunk_pos: ChunkPos) -> VoxelPos {
+        VoxelPos::new((*chunk_pos * CHUNK_SIZE as i32) + self.as_ivec3())
+    }
+}
+impl ChunkPosInRegion {
+    #[inline(always)]
+    pub fn global(self, region_pos: RegionPos) -> ChunkPos {
+        ChunkPos::new((*region_pos * REGION_SIZE as i32) + self.as_ivec3())
+    }
+}
+
+
 #[derive(Debug, PartialEq)]
 pub enum SetVoxelErr {
     PosOutOfBounds,
@@ -23,42 +143,6 @@ impl Voxel {
     pub const fn as_data(self) -> u16 { self.0 }
     pub const fn from_data(byte: u16) -> Self { Self(byte) }
     pub const fn is_empty(self) -> bool { self.0 == 0 }
-}
-
-/// The voxel-width of a chunk.
-pub const CHUNK_SIZE: u32 = 64;
-
-/// The depth in a Chunk's SVO where nodes are the same size as voxels.
-/// Derived from "2^(CHUNK_DEPTH) = CHUNK_SIZE"
-pub const CHUNK_DEPTH: u32 = 6;
-
-/// The maximum number of nodes a chunk could need to represent it's state.
-/// Derived from "1 + 2^3 + 4^3 + 8^3 + 16^3 + 32^3 + 64^3"
-pub const NODES_PER_CHUNK: u32 = 299_593;
-
-/// When adding a chunk to the world, this is the number of extra nodes the chunk makes room for.
-/// When a chunk needs to use more than this amount more of extra memory for storing nodes,
-/// The chunk will have to be re-located in memory.
-pub const CHUNK_INIT_FREE_MEM: u32 = 2048;
-
-#[inline(always)]
-pub fn world_to_chunk_pos(pos: IVec3) -> IVec3 {
-    pos.div_euclid(IVec3::splat(CHUNK_SIZE as i32))
-}
-
-#[inline(always)]
-pub fn world_to_inchunk_pos(pos: IVec3) -> UVec3 {
-    (pos - (world_to_chunk_pos(pos) * CHUNK_SIZE as i32)).as_uvec3()
-}
-
-#[inline(always)]
-pub fn chunk_to_world_pos(pos: IVec3) -> IVec3 {
-    pos * CHUNK_SIZE as i32
-}
-
-#[inline(always)]
-pub fn inchunk_to_world_pos(chunk: IVec3, pos: UVec3) -> IVec3 {
-    (chunk * CHUNK_SIZE as i32) + pos.as_ivec3()
 }
 
 /// Represents a node in the sparse voxel octree (SVO) for each chunk.
