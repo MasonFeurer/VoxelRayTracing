@@ -1,6 +1,6 @@
 use std::mem::MaybeUninit;
 use crate::{GameState, Timers};
-use egui::{Align, Align2, Color32, Context, FontFamily, FontId, Id, Layout, Rect, Response, RichText, Sense, Stroke, StrokeKind, Ui, UiBuilder, Vec2};
+use egui::{Align, Align2, Color32, Context, FontFamily, FontId, Id, Layout, Rect, Response, RichText, Sense, Stroke, StrokeKind, Ui, UiBuilder, Vec2, Widget};
 use std::net::SocketAddr;
 use std::str::FromStr;
 use client::common::log::warn;
@@ -34,6 +34,7 @@ pub struct UiState {
     create_world_seed: String,
     join_world_address: String,
     selected_world: Option<String>,
+    set_world_size: u32,
 
     s2_open: bool,
     s3_open: bool,
@@ -46,6 +47,7 @@ impl Default for UiState {
             create_world_seed: String::new(),
             join_world_address: String::from("127.0.0.1:60000"),
             selected_world: None,
+            set_world_size: 0,
 
             s2_open: true,
             s3_open: true,
@@ -156,7 +158,15 @@ pub fn show_game_overlay(
         let (free, capacity) = game.world.chunk_alloc_status();
         let used = ((capacity - free) as f32 / capacity as f32) * 100.0;
         column(ui);
-        ui.heading(format!("width: {} chunks", game.world.size_in_chunks()));
+
+        let world_size = game.world.size_in_chunks();
+
+        ui.heading(format!("world size: {world_size} chunks"));
+        egui::Slider::new(&mut state.set_world_size, 10..=50).ui(ui);
+        if ui.button("apply").clicked() && state.set_world_size != world_size {
+            game.world.resize(state.set_world_size);
+        }
+
         ui.heading(format!(
             "chunks: {}/{}",
             game.world.populated_count(),

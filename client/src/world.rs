@@ -47,20 +47,57 @@ pub struct ChunkGrid {
     size_in_chunks: u32,
 }
 impl ChunkGrid {
+    pub fn new(center: ChunkPos, size_in_chunks: u32) -> Self {
+        let volume = (size_in_chunks * size_in_chunks * size_in_chunks) as usize;
+        let chunks = vec![<Option<Chunk>>::None; volume].into_boxed_slice();
+        let min = ChunkPos::new(*center - IVec3::splat(size_in_chunks as i32 / 2));
+
+        Self { min, chunks, size_in_chunks }
+    }
+
+    pub fn resize(&mut self, size_in_chunks: u32) {
+        if size_in_chunks == self.size_in_chunks {
+            return;
+        }
+
+        // create a new grid
+        let mut new_grid = Self::new(self.center_chunk(), size_in_chunks);
+
+        // copy chunk data from the old grid to the new grid
+        for x in 0..self.size_in_chunks {
+            for y in 0..self.size_in_chunks {
+                for z in 0..self.size_in_chunks {
+                    let local_pos = uvec3(x, y, z);
+                    let idx = Self::local_pos_to_idx(local_pos, self.size_in_chunks);
+
+                    let Some(new_local_pos) = new_grid.local_pos_for(self.unlocal_pos_for(local_pos)) else {
+                        continue;
+                    };
+                    let new_idx = Self::local_pos_to_idx(new_local_pos, size_in_chunks);
+                    let Some(new_chunk) = new_grid.chunks.get_mut(new_idx) else {
+                        continue;
+                    };
+                    let Some(chunk) = self.chunks[idx].clone() else {
+                        continue;
+                    };
+                    *new_chunk = Some(chunk);
+                }
+            }
+        }
+        *self = new_grid;
+    }
+
+    #[inline(always)] pub fn center_chunk(&self) -> ChunkPos {
+        ChunkPos::new(*self.min + IVec3::splat(self.size_in_chunks as i32 / 2))
+    }
+
     #[inline(always)]
     const fn local_pos_to_idx(pos: UVec3, grid_size: u32) -> usize {
         (pos.x + pos.y * grid_size + pos.z * grid_size * grid_size) as usize
     }
 
-    pub fn new(min: ChunkPos, size_in_chunks: u32) -> Self {
-        let volume = (size_in_chunks * size_in_chunks * size_in_chunks) as usize;
-        let chunks = vec![<Option<Chunk>>::None; volume].into_boxed_slice();
-
-        Self { min, chunks, size_in_chunks }
-    }
-
-    pub fn local_pos_for(&self, pos: ChunkPos) -> Option<UVec3> {
-        if pos.cmplt(*self.min).any() {
+    #[inline(always)] pub fn local_pos_for(&self, pos: ChunkPos) -> Option<UVec3> {
+        if pos.cmplt(*self.min).any() || pos.cmpge(*self.max_chunk()).any() {
             None
         } else {
             Some((*pos - *self.min).as_uvec3())
@@ -232,11 +269,11 @@ impl std::ops::DerefMut for ClientWorld {
     fn deref_mut(&mut self) -> &mut ChunkGrid { &mut self.chunks }
 }
 impl ClientWorld {
-    pub fn new(min_chunk: ChunkPos, max_nodes: u32, size: u32) -> Self {
+    pub fn new(center: ChunkPos, max_nodes: u32, size: u32) -> Self {
         let mut nodes = vec![Node::EMPTY; max_nodes as usize].into_boxed_slice();
         nodes[0] = Node::new(Voxel::EMPTY); // 0 = air
         Self {
-            chunks: ChunkGrid::new(min_chunk, size),
+            chunks: ChunkGrid::new(center, size),
             nodes,
             chunk_alloc: ChunkAlloc::new(max_nodes),
         }

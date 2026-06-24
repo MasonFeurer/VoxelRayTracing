@@ -85,7 +85,7 @@ impl ChunkBuilder {
                 } else {
                     gen.generate_chunk(&mut node_buffer, pos, &mut built_features)
                 };
-                send.send((pos, chunk, built_features.clone())).unwrap();
+                _ = send.send((pos, chunk, built_features.clone()));
                 built_features.clear();
                 node_buffer.fill(Node::EMPTY);
             }

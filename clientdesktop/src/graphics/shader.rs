@@ -42,12 +42,6 @@ impl Buffers {
         let chunk_count = world_size * world_size * world_size;
         self.chunk_roots = ArrayBuffer::new(gpu, "chunk_roots", COPY_DST | STORAGE, chunk_count);
     }
-    pub fn resize_node_buffer(&mut self, gpu: &Gpu, max_nodes: u32) {
-        const COPY_DST: BufferUsages = BufferUsages::COPY_DST;
-        const STORAGE: BufferUsages = BufferUsages::STORAGE;
-
-        self.nodes = ArrayBuffer::new(gpu, "nodes", COPY_DST | STORAGE, max_nodes);
-    }
 }
 
 pub const RESULT_TEX_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
@@ -94,6 +88,10 @@ impl<T> ArrayBuffer<T> {
             mapped_at_creation: false,
         });
         Self(handle, size, std::marker::PhantomData)
+    }
+
+    pub fn size(&self) -> u32 {
+        self.1
     }
 
     pub fn write(&self, gpu: &Gpu, offset: u64, items: &[T]) {
@@ -316,7 +314,7 @@ impl PixelShader {
         buffers: &Buffers,
     ) -> BindGroup {
         gpu.device.create_bind_group(&BindGroupDescriptor {
-            label: Some("#raytracer.bind-broup"),
+            label: Some("#raytracer.bind-group"),
             layout,
             entries: &bind_group_entries!(
                 0 => BindingResource::TextureView(&output_tex.view),

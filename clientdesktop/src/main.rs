@@ -7,7 +7,7 @@ use crate::input::{InputState, Key};
 use graphics::{CamData, Crosshair, Egui, Gpu, GpuResources, Settings, WorldData};
 
 use client::common::resources::{Resources, Stylepack};
-use client::common::world::{ChunkPos, Node, Voxel, VoxelPos};
+use client::common::world::{Node, Voxel, VoxelPos};
 use client::net::ServerConn;
 use client::player::PlayerInput;
 use client::world::ClientWorld;
@@ -180,14 +180,16 @@ impl AppState {
     }
 
     pub fn join_game(&mut self, addr: SocketAddr) {
-        let world = ClientWorld::new(ChunkPos(0, 0, 0), self.max_nodes, 30);
         let server = match ServerConn::establish(addr, &self.username) {
             Ok(v) => v,
             Err(e) => {
                 self.join_game_err = Some(format!("{e:?}"));
+                error!("Failed to join game: {e:?}");
                 return;
             }
         };
+        let player_chunk = VoxelPos::new(server.player_pos.as_ivec3()).chunk().0;
+        let world = ClientWorld::new(player_chunk, self.max_nodes, 30);
 
         let game = GameState::new(self.username.clone(), world, server);
 
@@ -229,6 +231,7 @@ impl AppState {
                 return;
             }
         };
+        std::thread::sleep(Duration::from_millis(500));
 
         self.join_game(addr);
         self.server_program = Some(program);
@@ -360,21 +363,21 @@ impl AppState {
             if input.key_pressed(&Key::F2) {
                 self.settings.show_step_count = 1 - self.settings.show_step_count;
             }
-            let window = self.window.as_ref().unwrap();
-            if input.key_pressed(&Key::KeyT) {
-                self.chat_open = !self.chat_open;
-            }
-            if input.key_pressed(&Key::F11) {
-                window.set_fullscreen(match window.fullscreen() {
-                    Some(_) => None,
-                    None => Some(Fullscreen::Borderless(None)),
-                });
-            }
             if input.key_pressed(&Key::F9) {
                 self.freeze_world_anchor = !self.freeze_world_anchor;
             }
         }
 
+        if input.key_pressed(&Key::KeyT) {
+            self.chat_open = !self.chat_open;
+        }
+        if input.key_pressed(&Key::F11) {
+            let window = self.window.as_ref().unwrap();
+            window.set_fullscreen(match window.fullscreen() {
+                Some(_) => None,
+                None => Some(Fullscreen::Borderless(None)),
+            });
+        }
         if input.key_pressed(&Key::Escape) && self.game.is_some() {
             if self.ui_state.page_is_open() {
                 self.ui_state.close_page();
@@ -409,11 +412,11 @@ impl AppState {
 
         // ----- RENDER GAME -----
         if let Some(game) = self.game.as_ref() {
-            let gpu_res = self.gpu_res.as_ref().unwrap();
+            let gpu_res = self.gpu_res.as_mut().unwrap();
             let result_tex_size = gpu_res.result_texture.size();
 
             // --- Update buffers ---
-            let buffers = &gpu_res.buffers;
+            let buffers = &mut gpu_res.buffers;
             buffers.settings.write(&gpu, &self.settings);
             buffers
                 .screen_size
@@ -426,6 +429,12 @@ impl AppState {
                 result_tex_size.as_vec2(),
             );
             buffers.cam_data.write(&gpu, &cam_data);
+
+            if buffers.chunk_roots.size() < game.world.chunk_count() as u32 {
+                info!("Resizing GPU chunk buffer");
+                buffers.resize_chunk_buffer(gpu, game.world.size_in_chunks());
+                gpu_res.ray_tracer.recreate_bind_group(gpu, &gpu_res.result_texture, buffers);
+            }
             buffers.chunk_roots.write(gpu, 0, &game.world.chunk_roots());
             buffers
                 .world_data

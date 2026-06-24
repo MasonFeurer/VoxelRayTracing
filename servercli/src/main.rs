@@ -122,7 +122,9 @@ impl WorldFs {
             let mut new_region = RegionFile::default();
             for chunk_pos in dirty_chunks {
                 let global_pos = chunk_pos.global(*region_pos);
-                let chunk = world.chunks.get(&global_pos).unwrap();
+                let Some(chunk) = world.chunks.get(&global_pos) else {
+                    continue;
+                };
 
                 new_region.append_chunk(*chunk_pos, &chunk.nodes);
                 region.header.chunks.remove(&chunk_pos.to_array());
