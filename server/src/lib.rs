@@ -10,7 +10,7 @@ pub use common;
 
 use common::net::{ClientCmd, ServerCmd};
 use common::server::PlayerInfo;
-use common::world::{ChunkPos, Node, NodeAlloc, NODES_PER_CHUNK};
+use common::world::{ChunkPos, Node, NodeAlloc, Voxel, NODES_PER_CHUNK};
 use glam::{vec3, Vec3};
 use net::ClientConn;
 use std::collections::{HashMap, HashSet};
@@ -78,7 +78,7 @@ impl ChunkBuilder {
         let done_copy = Arc::clone(&done);
         std::thread::spawn(move || {
             let mut built_features = Vec::new();
-            let mut node_buffer = vec![Node::EMPTY; NODES_PER_CHUNK as usize];
+            let mut node_buffer = vec![Node::EMPTY; Voxel::MAX_VALUE as usize];
             for pos in chunks {
                 let chunk = if let Some(chunk) = fs.read_chunk(pos) {
                     chunk

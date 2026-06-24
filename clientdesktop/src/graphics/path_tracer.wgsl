@@ -329,6 +329,6 @@ fn update(@builtin(global_invocation_id) inv_id: vec3<u32>) {
     
     let ray = create_ray_from_screen(screen_pos);
     let color = ray_color(&rng, ray);
-    
+
     textureStore(output_texture_, screen_pos, vec4(color, 1.0));
 }

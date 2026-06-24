@@ -343,7 +343,7 @@ pub fn spawn_cli(shutdown: Arc<AtomicBool>) -> Receiver<CliCmd> {
             _ = std::io::stdin().read_line(&mut cmd_buf);
             _ = cmd_buf.pop(); // remove the new-line character
             match cmd_buf.as_str() {
-                "stop" => {
+                "stop" | "" => {
                     shutdown.store(true, Ordering::Relaxed);
                     _ = send.send(CliCmd::Stop);
                     break;
@@ -351,7 +351,7 @@ pub fn spawn_cli(shutdown: Arc<AtomicBool>) -> Receiver<CliCmd> {
                 "players" => _ = send.send(CliCmd::GetPlayers),
                 "world" => _ = send.send(CliCmd::ShowWorldSummary),
                 "loadchunk" => _ = send.send(CliCmd::LoadChunk),
-                _ => println!("Error: Unrecognized command!"),
+                v => println!("Error: Unrecognized command : \"{v}\""),
             }
             std::thread::sleep(Duration::from_millis(100));
         }

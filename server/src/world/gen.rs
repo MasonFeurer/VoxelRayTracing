@@ -5,6 +5,7 @@ use common::world::noise::{Map, MappedNoise, RawNoise};
 use common::world::{ChunkPos, Node, NodeAlloc, Svo, Voxel, VoxelPos, VoxelPosInChunk, CHUNK_DEPTH, CHUNK_SIZE};
 use glam::{ivec3, uvec3, vec2, IVec3, Vec3};
 use std::collections::HashMap;
+use common::log::info;
 
 fn randf32(range: std::ops::Range<f32>) -> f32 {
     let size = range.end - range.start;

@@ -279,7 +279,14 @@ impl AppState {
                     return;
                 }
             };
-            for (_pos, root, node_count) in rs.updated_chunks {
+            for (_pos, mut root, mut node_count) in rs.updated_chunks {
+                if root % 2 == 1 {
+                    root -= 1;
+                    node_count += 1;
+                }
+                if node_count % 2 == 1 {
+                    node_count += 1;
+                }
                 let nodes = &game.world.nodes()[root as usize..root as usize + node_count];
                 self.gpu_res.as_ref().unwrap().buffers.nodes.write(
                     &self.gpu.as_ref().unwrap(),
@@ -347,7 +354,14 @@ impl AppState {
                 }
             }
 
-            for (root, node_count) in updated_chunks {
+            for (mut root, mut node_count) in updated_chunks {
+                if root % 2 == 1 {
+                    root -= 1;
+                    node_count += 1;
+                }
+                if node_count % 2 == 1 {
+                    node_count += 1;
+                }
                 let nodes = &game.world.nodes()[root as usize..root as usize + node_count];
                 self.gpu_res.as_ref().unwrap().buffers.nodes.write(
                     &self.gpu.as_ref().unwrap(),
@@ -365,6 +379,9 @@ impl AppState {
             }
             if input.key_pressed(&Key::F9) {
                 self.freeze_world_anchor = !self.freeze_world_anchor;
+            }
+            if input.key_pressed(&Key::F3) {
+                self.gpu_res.as_ref().unwrap().buffers.nodes.write(self.gpu.as_ref().unwrap(), 0, game.world.nodes());
             }
         }
 
@@ -598,6 +615,9 @@ impl ApplicationHandler for AppState {
 
         self.max_nodes = gpu.device.limits().max_storage_buffer_binding_size
             / size_of::<Node>() as u32;
+        if self.max_nodes % 2 == 1 {
+            self.max_nodes -= 1;
+        }
         info!("max nodes: {}", self.max_nodes);
 
         let win_aspect = win_size.x as f32 / win_size.y as f32;

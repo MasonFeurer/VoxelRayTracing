@@ -36,16 +36,18 @@ struct Material {
 @group(0) @binding(7) var<storage, read> chunk_roots_: array<u32>;
 
 fn get_node(idx: u32) -> u32 {
-    return nodes_[idx];
+    let pair = nodes_[idx >> 1];
+    let shift = (idx & 1) * 16;
+    return (pair >> shift) & 0x0000FFFFu;
 }
 fn node_is_split(node: u32) -> bool {
-    return bool(node >> 31u); // only MSB
+    return bool(node >> 15u); // only MSB
 }
 fn node_voxel(node: u32) -> u32 {
-    return node & 0x7FFFFFFFu; // all except MSB
+    return node & 0x00007FFFu; // all except MSB
 }
 fn node_child_idx(node: u32) -> u32 {
-    return node & 0x7FFFFFFFu; // all except MSB
+    return node & 0x00007FFFu; // all except MSB
 }
 
 struct Ray {
@@ -77,8 +79,8 @@ fn find_chunk_node(
     min: vec3<f32>,
     root: u32,
 ) -> FoundNode {
-    var center = min + vec3(64.0 / 2.0);
-    var size = 64.0;
+    var center = min + vec3(32.0 / 2.0);
+    var size = 32.0;
     var idx: u32 = 0;
     var depth: u32 = 0u;
 
@@ -113,8 +115,8 @@ fn find_chunk_node(
 
 fn find_node(pos: vec3<f32>, max_depth: u32) -> FoundNode {
     let world_chunk_w = world_.size_in_chunks;
-    let chunk_coords = vec3<i32>(floor(pos / 64.0));
-    let min = vec3<f32>(chunk_coords * 64);
+    let chunk_coords = vec3<i32>(floor(pos / 32.0));
+    let min = vec3<f32>(chunk_coords * 32);
     let chunk_idx = u32(chunk_coords.x)
         + u32(chunk_coords.y) * world_chunk_w
         + u32(chunk_coords.z) * world_chunk_w * world_chunk_w;
@@ -218,7 +220,7 @@ fn ray_world(start_ray: Ray) -> HitResult {
     while iter_count < 500u {
         iter_count += 1u;
         
-        let found_node = find_node(ray_pos, 6u); // the most child one
+        let found_node = find_node(ray_pos, 5u); // the most child one
         voxel = node_voxel(get_node(found_node.root + found_node.idx)); // just voxel - most time air
         
         let is_liquid = voxel_mats[voxel].is_liquid == 1u;

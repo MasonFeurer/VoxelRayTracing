@@ -7,15 +7,15 @@ pub type NodeAddr = u32;
 pub type NodeRange = std::ops::Range<NodeAddr>;
 
 /// The voxel-width of a chunk.
-pub const CHUNK_SIZE: u32 = 64;
+pub const CHUNK_SIZE: u32 = 32;
 
 /// The depth in a Chunk's SVO where nodes are the same size as voxels.
 /// Derived from "2^(CHUNK_DEPTH) = CHUNK_SIZE"
-pub const CHUNK_DEPTH: u32 = 6;
+pub const CHUNK_DEPTH: u32 = 5;
 
 /// The maximum number of nodes a chunk could need to represent it's state.
-/// Derived from "1 + 2^3 + 4^3 + 8^3 + 16^3 + 32^3 + 64^3"
-pub const NODES_PER_CHUNK: u32 = 299_593;
+/// Derived from "1 + 2^3 + 4^3 + 8^3 + 16^3 + 32^3"
+pub const NODES_PER_CHUNK: u32 = 37449;
 
 /// When adding a chunk to the world, this is the number of extra nodes the chunk makes room for.
 /// When a chunk needs to use more than this amount more of extra memory for storing nodes,
@@ -136,9 +136,11 @@ pub enum SetVoxelErr {
 
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+///  The first byte is ignored.
 pub struct Voxel(u16);
 impl Voxel {
     pub const EMPTY: Self = Self(0);
+    pub const MAX_VALUE: u16 = u16::MAX / 2;
     
     pub const fn as_data(self) -> u16 { self.0 }
     pub const fn from_data(byte: u16) -> Self { Self(byte) }
@@ -148,47 +150,46 @@ impl Voxel {
 /// Represents a node in the sparse voxel octree (SVO) for each chunk.
 ///
 /// # States
-/// ## 0_______________xxxxxxxxxxxxxxxx
+/// ## 0xxxxxxxxxxxxxxx
 /// Entire node is occupied by voxel `x`.
 ///
-/// ## 1yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+/// ## 1yyyyyyyyyyyyyyy
 /// Node splits into 8 nodes of half-size at `y`.
 #[repr(transparent)]
 #[derive(Clone, Copy, Encode, Decode, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct Node(u32);
+pub struct Node(u16);
 impl Node {
     pub const EMPTY: Self = Self::new(Voxel::EMPTY);
-    pub const MAX_VOXEL: u16 = u16::MAX;
     
-    const SPLIT_MASK: u32 = 0x8000_0000;
-    const DATA_MASK: u32 = 0x7FFF_FFFF;
+    const SPLIT_MASK: u16 = 0x8000;
+    const DATA_MASK: u16 = 0x7FFF;
 
-    pub const fn new(vox: Voxel) -> Self {
-        Self((vox.as_data() as u32) & Self::DATA_MASK)
+    #[inline(always)] pub const fn new(vox: Voxel) -> Self {
+        Self(vox.as_data() & Self::DATA_MASK)
     }
-    pub const fn new_split(child_idx: u32) -> Self {
+    #[inline(always)] pub const fn new_split(child_idx: u16) -> Self {
         Self(child_idx | Self::SPLIT_MASK)
     }
 
-    pub const fn voxel(self) -> Voxel {
-        Voxel::from_data((self.0 & 0xFFFF) as u16)
+    #[inline(always)] pub const fn voxel(self) -> Voxel {
+        Voxel::from_data(self.0 & Self::DATA_MASK)
     }
-    pub const fn set_voxel(&mut self, voxel: Voxel) {
-        self.0 = (self.0 & Self::SPLIT_MASK) | voxel.as_data() as u32;
-    }
-
-    pub const fn is_split(self) -> bool {
-        (self.0 >> 31) != 0
-    }
-    pub const fn set_split(&mut self, split: bool) {
-        self.0 = (self.0 & Self::DATA_MASK) | ((split as u32) << 31);
+    #[inline(always)] pub const fn set_voxel(&mut self, voxel: Voxel) {
+        self.0 = (self.0 & Self::SPLIT_MASK) | (voxel.as_data() & Self::DATA_MASK);
     }
 
-    pub const fn child_idx(self) -> u32 {
+    #[inline(always)] pub const fn is_split(self) -> bool {
+        (self.0 & Self::SPLIT_MASK) != 0
+    }
+    #[inline(always)] pub const fn set_split(&mut self, split: bool) {
+        self.0 = (self.0 & Self::DATA_MASK) | ((split as u16) << 15);
+    }
+
+    #[inline(always)] pub const fn child_idx(self) -> u16 {
         self.0 & Self::DATA_MASK
     }
-    pub const fn set_child_idx(&mut self, idx: u32) {
-        self.0 = (self.0 & Self::SPLIT_MASK) | idx;
+    #[inline(always)] pub const fn set_child_idx(&mut self, idx: u16) {
+        self.0 = (self.0 & Self::SPLIT_MASK) | (idx & Self::DATA_MASK);
     }
 }
 
@@ -197,7 +198,7 @@ impl std::fmt::Debug for Node {
         #[derive(Debug)]
         #[allow(dead_code)] // Fields used by #derive Debug
         enum NodeEnum {
-            Split(u32),
+            Split(u16),
             Voxel(u16),
         }
         let e = if self.is_split() {
@@ -355,7 +356,7 @@ impl Svo {
                 (node_in.center.z >= center.z) as u32,
             );
             let child_idx = (gt.x << 0) | (gt.y << 1) | (gt.z << 2);
-            idx = node.child_idx() + child_idx;
+            idx = node.child_idx() as u32 + child_idx;
             let child_dir = gt.as_ivec3() * 2 - IVec3::ONE;
             center += Vec3::splat(size as f32) * 0.5 * child_dir.as_vec3();
             depth += 1;
@@ -386,7 +387,7 @@ impl Svo {
                 (pos.z as f32 >= center.z) as u32,
             );
             let child_idx = (gt.x << 0) | (gt.y << 1) | (gt.z << 2);
-            idx = node.child_idx() + child_idx;
+            idx = node.child_idx() as u32 + child_idx;
             let child_dir = gt.as_ivec3() * 2 - IVec3::ONE;
             center += Vec3::splat(size as f32) * 0.5 * child_dir.as_vec3();
             depth += 1;
@@ -412,10 +413,12 @@ impl Svo {
         // the SVO doesn't go to the desired depth, so we must split until it does
         while node.depth < target_depth {
             let first_child = alloc.next().ok_or(SetVoxelErr::OutOfMemory)?;
+            assert!(first_child < Voxel::MAX_VALUE as u32);
+
             nodes[first_child as usize..(first_child as usize + 8)]
                 .copy_from_slice(&[Node::new(parent_voxel); 8]);
 
-            nodes[node.idx as usize] = Node::new_split(first_child);
+            nodes[node.idx as usize] = Node::new_split(first_child as u16);
             node.size /= 2;
 
             let gt = uvec3(
@@ -446,7 +449,7 @@ impl Svo {
             let idx = nodes[parent_idx as usize].child_idx();
             let child_nodes = &nodes[idx as usize..idx as usize + 8];
             if nodes_are_eq(&child_nodes) {
-                alloc.free(idx);
+                alloc.free(idx as u32);
                 nodes[parent_idx as usize] = Node::new(voxel);
             } else {
                 break;

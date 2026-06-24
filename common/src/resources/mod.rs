@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use crate::world::noise::Map;
-use crate::world::{Node, Voxel};
+use crate::world::Voxel;
 
 pub mod loader;
 
@@ -214,7 +214,7 @@ pub struct VoxelPack {
 }
 impl VoxelPack {
     pub fn new(voxels: Vec<VoxelData>) -> Self {
-        assert!(voxels.len() < Node::MAX_VOXEL as usize);
+        assert!(voxels.len() < Voxel::MAX_VALUE as usize);
         Self { voxels }
     }
 

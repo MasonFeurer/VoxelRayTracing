@@ -4,11 +4,36 @@ use client::common::world::Node;
 use glam::UVec2;
 use wgpu::*;
 
+pub struct NodeBuffer(ArrayBuffer<u32>);
+impl NodeBuffer {
+    pub fn new(gpu: &Gpu, label: &str, usage: BufferUsages, mut size: u32) -> Self {
+        if size % 2 == 1 {
+            size -= 1;
+        }
+
+        let inner = ArrayBuffer::new(gpu, label, usage, size >> 1);
+        Self(inner)
+    }
+
+    pub fn size(&self) -> u32 {
+        self.0.size() * 2
+    }
+
+    pub fn write(&self, gpu: &Gpu, offset: u64, items: &[Node]) {
+        assert_eq!(items.len() % 2, 0);
+        assert_eq!(offset % 2, 0);
+
+        let num_ints = items.len() >> 1;
+        let ints = unsafe { std::slice::from_raw_parts(items.as_ptr() as *const u32, num_ints) };
+        self.0.write(gpu, offset >> 1, ints)
+    }
+}
+
 pub struct Buffers {
     pub cam_data: SimpleBuffer<CamData>,
     pub settings: SimpleBuffer<Settings>,
     pub world_data: SimpleBuffer<WorldData>,
-    pub nodes: ArrayBuffer<Node>,
+    pub nodes: NodeBuffer,
     pub voxel_materials: SimpleBuffer<[Material; 256]>,
     pub chunk_roots: ArrayBuffer<NodeAddr>,
 
@@ -26,7 +51,7 @@ impl Buffers {
             cam_data: SimpleBuffer::new(gpu, "cam_data", COPY_DST | UNIFORM),
             settings: SimpleBuffer::new(gpu, "settings", COPY_DST | UNIFORM),
             world_data: SimpleBuffer::new(gpu, "world_data", COPY_DST | UNIFORM),
-            nodes: ArrayBuffer::new(gpu, "nodes", COPY_DST | STORAGE, max_nodes),
+            nodes: NodeBuffer::new(gpu, "nodes", COPY_DST | STORAGE, max_nodes),
             voxel_materials: SimpleBuffer::new(gpu, "voxel_mats", COPY_DST | STORAGE),
             chunk_roots: ArrayBuffer::new(gpu, "chunk_roots", COPY_DST | STORAGE, chunk_count),
 
@@ -322,7 +347,7 @@ impl PixelShader {
                 2 => buffers.settings.0.as_entire_binding(),
                 3 => buffers.voxel_materials.0.as_entire_binding(),
                 5 => buffers.world_data.0.as_entire_binding(),
-                6 => buffers.nodes.0.as_entire_binding(),
+                6 => buffers.nodes.0.0.as_entire_binding(),
                 7 => buffers.chunk_roots.0.as_entire_binding(),
             ),
         })
