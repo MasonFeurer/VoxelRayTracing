@@ -10,8 +10,8 @@ pub use common;
 
 use common::net::{ClientCmd, ServerCmd};
 use common::server::PlayerInfo;
-use common::world::{ChunkPos, Node, NodeAlloc, Voxel, NODES_PER_CHUNK};
-use glam::{vec3, Vec3};
+use common::world::{ChunkPos, Node, NodeAlloc, Voxel};
+use glam::{IVec3, Vec3};
 use net::ClientConn;
 use std::collections::{HashMap, HashSet};
 use std::net::{SocketAddr, TcpListener};
@@ -187,11 +187,14 @@ impl ServerState {
         self.new_clients_recv = Some(receiver);
         let kill = Arc::clone(&self.kill);
 
-        let client_start_y = self.world.gen.terrain_h_at(0, 0) as f32 + 10.0;
-        let client_start_pos = vec3(0.0, client_start_y, 0.0);
+        // self.world.
+
+        // TODO find a place closest to the world's origin that is above sea level for the player to spawn.
+
+        let spawn = self.world.gen.find_land_near(0, 0).unwrap_or(IVec3::ZERO.into());
 
         std::thread::spawn(move || {
-            connect_clients_blocking(listener, sender, kill, client_start_pos, voxel_pack)
+            connect_clients_blocking(listener, sender, kill, spawn.as_vec3(), voxel_pack)
         });
         Ok(())
     }

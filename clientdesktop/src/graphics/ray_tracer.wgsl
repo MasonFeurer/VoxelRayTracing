@@ -283,6 +283,9 @@ fn ray_world(start_ray: Ray) -> HitResult {
         );
         
         if any(ray_pos < world_min) | any(ray_pos >= world_max) {
+            if dist_entered_water != -1.0 {
+                result.water_dist += total_len - dist_entered_water;
+            }
             return result;
         } // out of bounds
     } // return not air OR max steps already !!!!!!!!!!!

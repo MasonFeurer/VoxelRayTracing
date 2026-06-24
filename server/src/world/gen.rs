@@ -5,7 +5,6 @@ use common::world::noise::{Map, MappedNoise, RawNoise};
 use common::world::{ChunkPos, Node, NodeAlloc, Svo, Voxel, VoxelPos, VoxelPosInChunk, CHUNK_DEPTH, CHUNK_SIZE};
 use glam::{ivec3, uvec3, vec2, IVec3, Vec3};
 use std::collections::HashMap;
-use common::log::info;
 
 fn randf32(range: std::ops::Range<f32>) -> f32 {
     let size = range.end - range.start;
@@ -78,7 +77,7 @@ fn value_gen_from_src(src: &Source, seed: &mut i64) -> ValueGen {
 }
 
 pub struct WorldGen {
-    // (only usd in the constructor to generate the following noise generators)
+    // (only used in the constructor to generate the following noise generators)
     pub seed: i64,
 
     pub features: WorldFeatures,
@@ -118,6 +117,23 @@ impl WorldGen {
     #[inline(always)]
     pub fn terrain_h_at(&self, x: i32, z: i32) -> i32 {
         self.height_map.eval(x as f32, z as f32) as i32
+    }
+    
+    pub fn find_land_near(&self, x: i32, z: i32) -> Option<VoxelPos> {
+        let search_gap = 10;
+        let search_steps =  100;
+        for x in (x - search_steps)..(x + search_steps) {
+            for z in (z - search_steps)..(z + search_steps) {
+                let xx = x * search_gap;
+                let zz = z * search_gap;
+                
+                let h = self.terrain_h_at(xx, zz);
+                if h > self.sea_level {
+                    return Some(VoxelPos(xx, h, zz));
+                }
+            }
+        }
+        None
     }
 
     pub fn biome_at(&self, x: i32, z: i32) -> &Biome {

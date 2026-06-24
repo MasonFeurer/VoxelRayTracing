@@ -380,9 +380,6 @@ impl AppState {
             if input.key_pressed(&Key::F9) {
                 self.freeze_world_anchor = !self.freeze_world_anchor;
             }
-            if input.key_pressed(&Key::F3) {
-                self.gpu_res.as_ref().unwrap().buffers.nodes.write(self.gpu.as_ref().unwrap(), 0, game.world.nodes());
-            }
         }
 
         if input.key_pressed(&Key::KeyT) {

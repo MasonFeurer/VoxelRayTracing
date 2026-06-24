@@ -9,7 +9,7 @@ RawWorldPreset (
 	height: ComplexNoise (
 		freq: Map ( freq: 0.0001, scale: 7.0, offset: 0.0 ),
         scale: Map ( freq: 0.003, scale: 40.0, offset: 0.0 ),
-        base: Map ( freq: 0.003, scale: 2.5, offset: 1.0 ),
+        base: Map ( freq: 0.003, scale: 2.5, offset: 0.0 ),
         layers: [
             // small terrain bumps
         	Map ( freq: 0.12, scale: 4.0, offset: 0.0 ),
@@ -17,6 +17,8 @@ RawWorldPreset (
         	Map ( freq: 0.01, scale: 30.0, offset: 0.0 ),
         	// mountains
         	Map ( freq: 0.001, scale: 70.0, offset: 0.0 ),
+        	// islands
+        	Map ( freq: 0.0005, scale: -200.0, offset: 70.0 ),
         ]
 	),
 	sea_level: 80,
