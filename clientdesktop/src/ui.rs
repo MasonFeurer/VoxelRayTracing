@@ -162,7 +162,7 @@ pub fn show_game_overlay(
         let world_size = game.world.size_in_chunks();
 
         ui.heading(format!("world size: {world_size} chunks"));
-        egui::Slider::new(&mut state.set_world_size, 10..=50).ui(ui);
+        egui::Slider::new(&mut state.set_world_size, 10..=80).ui(ui);
         if ui.button("apply").clicked() && state.set_world_size != world_size {
             game.world.resize(state.set_world_size);
         }
@@ -272,8 +272,7 @@ fn group<T>(ui: &mut Ui, id: impl Into<Id>, h: f32, align: Align, selected: bool
     val
 }
 
-pub fn show_ui_state(ctx: &Context, state: &mut UiState, resources: &Resources, crosshair: &mut Crosshair) -> Option<UiResponse> {
-
+pub fn show_ui_state(ctx: &Context, state: &mut UiState, resources: &Resources, crosshair: &mut Crosshair, join_game_err: Option<&str>) -> Option<UiResponse> {
     egui::Area::new("some".into()).movable(false).show(ctx, |ui| {
         let rect = Rect::from_center_size(
             (screen_size(ui.ctx()) * 0.5).to_pos2(),
@@ -288,7 +287,7 @@ pub fn show_ui_state(ctx: &Context, state: &mut UiState, resources: &Resources, 
                 Page::Options => show_options(ui, state, resources),
                 Page::MyWorlds => show_my_worlds(ui, state, resources),
                 Page::CreateWorld => show_create_world(ui, state, resources),
-                Page::JoinWorld => show_join_world(ui, state),
+                Page::JoinWorld => show_join_world(ui, state, join_game_err),
                 Page::Visuals => show_visuals(ui, state, crosshair),
                 Page::Controls => show_controls(ui, state),
             })
@@ -424,8 +423,6 @@ fn show_my_worlds(ui: &mut Ui, state: &mut UiState, resources: &Resources) -> Ui
     rs
 }
 
-
-
 fn show_create_world(ui: &mut Ui, state: &mut UiState, resources: &Resources) -> UiResponse {
     let mut rs = UiResponse::default();
 
@@ -440,8 +437,6 @@ fn show_create_world(ui: &mut Ui, state: &mut UiState, resources: &Resources) ->
     );
     ui.place(rect, edit);
     ui.add_space(ROW_H * 1.5);
-
-    // ui.text_edit_singleline(&mut state.create_world_name);
 
     comment(ui, &format!("Stored at {}", path.display()), Color32::WHITE);
     if !is_valid {
@@ -477,7 +472,7 @@ fn show_create_world(ui: &mut Ui, state: &mut UiState, resources: &Resources) ->
     rs
 }
 
-fn show_join_world(ui: &mut Ui, state: &mut UiState) -> UiResponse {
+fn show_join_world(ui: &mut Ui, state: &mut UiState, join_game_err: Option<&str>) -> UiResponse {
     let mut rs = UiResponse::default();
 
     let font = FontId::new(ROW_H * 0.8, FontFamily::Proportional);
@@ -492,6 +487,15 @@ fn show_join_world(ui: &mut Ui, state: &mut UiState) -> UiResponse {
     let addr = SocketAddr::from_str(&state.join_world_address);
     if addr.is_err() {
         comment(ui, "Invalid address - should be in the format: 127.0.0.1:60000", Color32::RED);
+    }
+    if let Some(err) = join_game_err {
+        let mut lines = err.lines();
+        comment(ui, &format!("Failed to connect : {}", lines.next().unwrap()), Color32::RED);
+        for line in lines {
+            if !line.is_empty() {
+                comment(ui, &line, Color32::RED);
+            }
+        }
     }
 
     let [back, join] = show_buttons_enabled(ui, ["Back", "Join"], [true, addr.is_ok()]);

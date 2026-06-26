@@ -4,39 +4,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug)]
-pub enum ErrType {
+pub enum LoaderErr {
     Ron(ron::error::SpannedError),
     FeatureNotFound(String),
     VoxelNotFound(String),
-}
-
-#[derive(Debug)]
-pub struct LoaderErr {
-    ty: ErrType,
-    context: Option<String>,
-}
-impl LoaderErr {
-    fn new(ty: ErrType) -> Self {
-        Self { ty, context: None }
-    }
-
-    fn ron(err: ron::error::SpannedError) -> Self {
-        Self::new(ErrType::Ron(err))
-    }
-    fn voxel_nf(name: &str) -> Self {
-        Self::new(ErrType::VoxelNotFound(String::from(name)))
-    }
-    fn feature_nf(name: &str) -> Self {
-        Self::new(ErrType::FeatureNotFound(String::from(name)))
-    }
-
-    pub fn context(mut self, c: &str) -> Self {
-        self.context = Some(String::from(c));
-        self
-    }
-    pub fn ty(&self) -> &ErrType {
-        &self.ty
-    }
 }
 impl std::fmt::Display for LoaderErr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -44,6 +15,29 @@ impl std::fmt::Display for LoaderErr {
     }
 }
 impl std::error::Error for LoaderErr {}
+trait LoaderErrImpl: Sized {
+    type Return;
+    fn anyhow(self) -> Self::Return;
+    fn context(self, msg: impl Into<String>) -> Self::Return;
+}
+impl LoaderErrImpl for LoaderErr {
+    type Return = anyhow::Error;
+    fn anyhow(self) -> anyhow::Error {
+        anyhow::anyhow!("{}", self)
+    }
+    fn context(self, msg: impl Into<String>) -> anyhow::Error {
+        self.anyhow().context(msg.into())
+    }
+}
+impl<T> LoaderErrImpl for Result<T, LoaderErr> {
+    type Return = Result<T, anyhow::Error>;
+    fn anyhow(self) -> Result<T, anyhow::Error> {
+        self.map_err(LoaderErr::anyhow)
+    }
+    fn context(self, msg: impl Into<String>) -> Result<T, anyhow::Error> {
+        self.map_err(|e| e.context(msg))
+    }
+}
 
 #[derive(Deserialize, Debug)]
 pub struct RawMeta {
@@ -116,13 +110,13 @@ impl RawFeature {
             } => Feature::Tree {
                 trunk_voxel: voxels
                     .by_name(trunk_voxel)
-                    .ok_or(LoaderErr::voxel_nf(&trunk_voxel))?,
+                    .ok_or(LoaderErr::VoxelNotFound(trunk_voxel.clone()))?,
                 branch_voxel: voxels
                     .by_name(branch_voxel)
-                    .ok_or(LoaderErr::voxel_nf(&branch_voxel))?,
+                    .ok_or(LoaderErr::VoxelNotFound(branch_voxel.clone()))?,
                 leaf_voxel: voxels
                     .by_name(leaf_voxel)
-                    .ok_or(LoaderErr::voxel_nf(&leaf_voxel))?,
+                    .ok_or(LoaderErr::VoxelNotFound(leaf_voxel.clone()))?,
                 height: height.0..height.1,
                 leaf_decay: *leaf_decay,
                 branch_count: branch_count.0..branch_count.1,
@@ -137,10 +131,10 @@ impl RawFeature {
             } => Feature::CanopyTree {
                 trunk_voxel: voxels
                     .by_name(trunk_voxel)
-                    .ok_or(LoaderErr::voxel_nf(&trunk_voxel))?,
+                    .ok_or(LoaderErr::VoxelNotFound(trunk_voxel.clone()))?,
                 leaf_voxel: voxels
                     .by_name(leaf_voxel)
-                    .ok_or(LoaderErr::voxel_nf(&leaf_voxel))?,
+                    .ok_or(LoaderErr::VoxelNotFound(leaf_voxel.clone()))?,
                 height: height.0..height.1,
                 slope_offset: slope_offset.0..slope_offset.1,
             },
@@ -152,15 +146,15 @@ impl RawFeature {
             } => Feature::Evergreen {
                 trunk_voxel: voxels
                     .by_name(trunk_voxel)
-                    .ok_or(LoaderErr::voxel_nf(&trunk_voxel))?,
+                    .ok_or(LoaderErr::VoxelNotFound(trunk_voxel.clone()))?,
                 leaf_voxel: voxels
                     .by_name(leaf_voxel)
-                    .ok_or(LoaderErr::voxel_nf(&leaf_voxel))?,
+                    .ok_or(LoaderErr::VoxelNotFound(leaf_voxel.clone()))?,
                 height: height.0..height.1,
                 bottom_branch: bottom_branch.0..bottom_branch.1,
             },
             Self::Cactus { voxel, height } => Feature::Cactus {
-                voxel: voxels.by_name(voxel).ok_or(LoaderErr::voxel_nf(&voxel))?,
+                voxel: voxels.by_name(voxel).ok_or(LoaderErr::VoxelNotFound(voxel.clone()))?,
                 height: height.0..height.1,
             },
             Self::Spike {
@@ -168,7 +162,7 @@ impl RawFeature {
                 height,
                 width,
             } => Feature::Spike {
-                voxel: voxels.by_name(voxel).ok_or(LoaderErr::voxel_nf(&voxel))?,
+                voxel: voxels.by_name(voxel).ok_or(LoaderErr::VoxelNotFound(voxel.clone()))?,
                 height: height.0..height.1,
                 width: width.0..width.1,
             },
@@ -195,14 +189,14 @@ impl RawBiome {
             layers.extend(&vec![
                 voxels
                     .by_name(name)
-                    .ok_or(LoaderErr::voxel_nf(&name))?;
+                    .ok_or(LoaderErr::VoxelNotFound(name.clone()))?;
                 self.layers[idx].depth as usize
             ])
         }
         for feature in &self.features {
             _ = features
                 .get(feature)
-                .ok_or(LoaderErr::feature_nf(&feature))?;
+                .ok_or(LoaderErr::FeatureNotFound(feature.clone()))?;
         }
 
         Ok(Biome {
@@ -234,17 +228,19 @@ impl RawWorldPreset {
         &self,
         voxels: &VoxelPack,
         features: &WorldFeatures,
-    ) -> Result<WorldPreset, LoaderErr> {
-        let ctx = format!("Constructing WorldPreset {:?}", self.name);
+    ) -> anyhow::Result<WorldPreset> {
         let mut biomes = Vec::with_capacity(self.biomes.len());
         for biome in &self.biomes {
             biomes.push(
                 biome
                     .construct(voxels, features)
-                    .map_err(|e| e.context(&format!("Constructing biome {:?}", biome.name)))
-                    .map_err(|e| e.context(&ctx))?,
+                    .context(&format!("Failed to construct biome {:?}", biome.name))?
             );
         }
+        let earth = voxels.by_name(&self.earth).ok_or(
+            LoaderErr::VoxelNotFound(self.earth.clone())
+                .context("Failed to load 'earth' field")
+        )?;
         Ok(WorldPreset {
             name: self.name.clone(),
             temp: self.temp.clone(),
@@ -252,15 +248,10 @@ impl RawWorldPreset {
             weirdness: self.weirdness.clone(),
             height: self.height.clone(),
             sea_level: self.sea_level,
-            earth: voxels.by_name(&self.earth).ok_or(
-                LoaderErr::voxel_nf(&self.earth)
-                    .context("`earth` field")
-                    .context(&ctx),
-            )?,
+            earth,
             water: voxels.by_name(&self.water).ok_or(
-                LoaderErr::voxel_nf(&self.water)
-                    .context("`water` field")
-                    .context(&ctx),
+                LoaderErr::VoxelNotFound(self.water.clone())
+                    .context("Failed to load 'water' field")
             )?,
             biome_lookup: self.biome_lookup.clone(),
             biomes,
@@ -272,27 +263,27 @@ pub fn parse_world_presets(
     src: &str,
     voxels: &VoxelPack,
     features: &WorldFeatures,
-) -> Result<Vec<WorldPreset>, LoaderErr> {
+) -> anyhow::Result<Vec<WorldPreset>> {
     let parsed: Vec<RawWorldPreset> = ron::de::from_str(src)
-        .map_err(LoaderErr::ron)
-        .map_err(|e| e.context("world_presets file"))?;
+        .map_err(LoaderErr::Ron)
+        .context("Failed to parse RON")?;
     let mut constructs = Vec::with_capacity(parsed.len());
     for idx in 0..parsed.len() {
         constructs.push(parsed[idx].construct(voxels, features)?);
     }
     Ok(constructs)
 }
-pub fn parse_world_features(src: &str, voxels: &VoxelPack) -> Result<WorldFeatures, LoaderErr> {
+pub fn parse_world_features<'a>(src: &str, voxels: &VoxelPack) -> anyhow::Result<WorldFeatures> {
     let parsed: HashMap<String, RawFeature> = ron::de::from_str(src)
-        .map_err(LoaderErr::ron)
-        .map_err(|e| e.context("world_features file"))?;
+        .map_err(LoaderErr::Ron)
+        .context("failed to parse RON")?;
     let mut compiled = HashMap::with_capacity(parsed.len());
     for (id, feature) in parsed {
         compiled.insert(
-            id,
+            id.clone(),
             feature
                 .construct(voxels)
-                .map_err(|e| e.context("world_features file"))?,
+                .context(&format!("Failed to construct feature {id:?}"))?
         );
     }
     Ok(WorldFeatures(compiled))
@@ -300,33 +291,28 @@ pub fn parse_world_features(src: &str, voxels: &VoxelPack) -> Result<WorldFeatur
 
 pub fn parse_meta(src: &str) -> Result<RawMeta, LoaderErr> {
     let parsed: RawMeta = ron::de::from_str(src)
-        .map_err(LoaderErr::ron)
-        .map_err(|e| e.context("(voxel/style)pack neta file"))?;
+        .map_err(LoaderErr::Ron)?;
     Ok(parsed)
 }
 pub fn parse_world_meta(src: &str) -> Result<RawWorldMeta, LoaderErr> {
     let parsed: RawWorldMeta = ron::de::from_str(src)
-        .map_err(LoaderErr::ron)
-        .map_err(|e| e.context("world meta file"))?;
+        .map_err(LoaderErr::Ron)?;
     Ok(parsed)
 }
 
 pub fn parse_voxelpack(src: &str) -> Result<VoxelPack, LoaderErr> {
     let parsed: Vec<VoxelData> = ron::de::from_str(src)
-        .map_err(LoaderErr::ron)
-        .map_err(|e| e.context("voxelpack file"))?;
+        .map_err(LoaderErr::Ron)?;
     Ok(VoxelPack::new(parsed))
 }
 
 pub fn parse_voxel_stylepack(src: &str) -> Result<VoxelStylepack, LoaderErr> {
     let parsed: Vec<(String, VoxelStyle)> = ron::de::from_str(src)
-        .map_err(LoaderErr::ron)
-        .map_err(|e| e.context("stylepack file"))?;
+        .map_err(LoaderErr::Ron)?;
     let mut styles = HashMap::with_capacity(parsed.len());
 
     for (vox_name, style) in parsed {
         styles.insert(vox_name, style);
     }
-
     Ok(VoxelStylepack { styles })
 }

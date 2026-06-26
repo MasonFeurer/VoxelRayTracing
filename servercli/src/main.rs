@@ -2,7 +2,8 @@
 A native application that uses blockworld-server to create a server and provides an interface through the cmdline.
 */
 use std::collections::{HashMap, HashSet};
-use anyhow::Context;
+use std::io::Write;
+use anyhow::{anyhow, Context};
 use server::common::resources::Datapack;
 use server::{world::ServerWorld, ServerState};
 use std::net::SocketAddr;
@@ -76,15 +77,9 @@ pub struct ChunkCache {
     chunks: HashMap<ChunkPos, ServerChunk>,
 }
 impl ChunkCache {
-    pub fn get(&self, pos: ChunkPos) -> Option<&ServerChunk> {
-        self.chunks.get(&pos)
-    }
-    pub fn insert(&mut self, pos: ChunkPos, chunk: ServerChunk) {
-        self.chunks.insert(pos, chunk);
-    }
-    pub fn remove(&mut self, pos: ChunkPos) {
-        self.chunks.remove(&pos);
-    }
+    pub fn get(&self, pos: ChunkPos) -> Option<&ServerChunk> { self.chunks.get(&pos) }
+    pub fn insert(&mut self, pos: ChunkPos, chunk: ServerChunk) { self.chunks.insert(pos, chunk); }
+    pub fn remove(&mut self, pos: ChunkPos) { self.chunks.remove(&pos); }
 }
 
 pub struct WorldFs {
@@ -93,7 +88,6 @@ pub struct WorldFs {
     pub available_chunks: HashSet<ChunkPos>,
 
     cache: RwLock<ChunkCache>,
-    //                         region_pos,   pos_in_region
     dirty_chunks: RwLock<HashMap<RegionPos, HashSet<ChunkPosInRegion>>>,
 }
 impl WorldFs {
@@ -143,6 +137,10 @@ impl WorldFs {
         let region_dir = world_folder.join("regions");
 
         let mut available_chunks = HashSet::new();
+
+        if !region_dir.exists() {
+            std::fs::create_dir_all(&region_dir)?;
+        }
         for file in std::fs::read_dir(region_dir)?.filter_map(|e| {
             match e {
                 Err(e) => {
@@ -228,32 +226,34 @@ fn main() -> anyhow::Result<()> {
     let mut args = std::env::args();
     _ = args.next(); // First arg is always the path to this program.
 
-    let res_folder = args.next().expect(&format!(
-        "Missing cmdline arg \"datapack_folder\"\nUsage: {usage}"
-    ));
-    let world_folder = args.next().expect(&format!(
-        "Missing cmdline arg \"world_folder\"\nUsage: {usage}"
-    ));
+    let res_folder = args.next().with_context(||
+        format!("Missing cmdline arg \"datapack_folder\"\nUsage: {usage}")
+    )?;
+    let world_folder = args.next().with_context(||
+        format!("Missing cmdline arg \"world_folder\"\nUsage: {usage}")
+    )?;
     let world_folder_path = PathBuf::from(&world_folder);
 
-    let port = args
-        .next()
-        .with_context(|| format!("Missing cmdline arg \"port\"\nUsage: {usage}"))?;
-    let port: u16 = port
-        .parse()
-        .with_context(|| format!("Invalid cmdline arg \"port\"\nUsage: {usage}"))?;
+    let port = args.next().with_context(||
+        format!("Missing cmdline arg \"port\"\nUsage: {usage}")
+    )?;
+    let port: u16 = port.parse().with_context(||
+        format!("Invalid cmdline arg \"port\"\nUsage: {usage}")
+    )?;
 
     let address = SocketAddr::new("127.0.0.1".parse()?, port);
 
     info!("Opening world {world_folder:?}...\n");
 
-    let world_meta: RawWorldMeta = ron::de::from_str(&std::fs::read_to_string(world_folder_path.join("meta.ron"))?)?;
+    let world_meta: RawWorldMeta = ron::de::from_str(
+        &std::fs::read_to_string(world_folder_path.join("meta.ron"))
+            .with_context(|| "Failed to load meta.ron from disk")?
+    ).with_context(|| "Failed to parse meta.ron")?;
     let world_fs = Arc::new(WorldFs::open(world_folder_path)?);
-
 
     info!("Loading resources from {res_folder:?}...\n");
 
-    let datapack = Datapack::load_from(&res_folder).context("Failed to load resources")?;
+    let datapack = Datapack::load_from(&res_folder).context(format!("Failed to load datapack from {res_folder:?}"))?;
 
     let world = ServerWorld::new(
         &datapack.world_presets[0],
@@ -278,42 +278,37 @@ fn main() -> anyhow::Result<()> {
         server.update_world();
 
         match cli_cmds.try_recv() {
-            Ok(CliCmd::GetPlayers) => {
-                if server.clients.len() == 0 {
-                    println!("No players online!");
-                }
+            Ok(CliCmd::PlayerInfo) => {
+                println!("there are {} players connected:", server.clients.len());
                 for (id, client) in &server.clients {
                     println!(
-                        "{id:x} - {:?} | ({:.2}, {:.2}, {:.2}) | {:?}",
+                        "  {:?}-{id:x} ({:?}) : ({:.2}, {:.2}, {:.2})",
+                        client.address(),
                         client.name,
                         client.pos.x,
                         client.pos.y,
                         client.pos.z,
-                        client.address()
                     );
                 }
             }
-            Ok(CliCmd::LoadChunk) => {}
-            Ok(CliCmd::ShowWorldSummary) => {
-                println!("--- World ---");
-                println!("chunk count: {}", server.world.chunks.len());
-                let mut lowest_chunk_space = u32::MAX;
+            Ok(CliCmd::WorldInfo) => {
+                let dirty_chunks = world_fs.dirty_chunks.read().map_err(|_| anyhow!("poisoned"))?.len();
+
                 let mut used_space = 0;
                 let mut allocated_space = 0;
                 for (_pos, chunk) in &server.world.chunks {
                     let space = chunk.node_alloc.range.end;
                     allocated_space += space;
                     used_space += chunk.node_alloc.total_used_mem();
-                    if space < lowest_chunk_space {
-                        lowest_chunk_space = space;
-                    }
                 }
-                println!("allocated space: {allocated_space}");
+                println!("Server world info:");
+                println!("  loaded chunks: {}", server.world.chunks.len());
+                println!("  total space allocated: {allocated_space} Nodes");
                 println!(
-                    "used space: {used_space} (%{})",
+                    "  total space used: {used_space} (%{})",
                     (used_space as f32 / allocated_space as f32) * 100.0
                 );
-                println!("least allocated by chunk: {lowest_chunk_space}");
+                println!("  dirty chunks: {dirty_chunks}");
             }
             Ok(CliCmd::Stop) => break,
             Err(_) => {}
@@ -328,10 +323,9 @@ fn main() -> anyhow::Result<()> {
 }
 
 pub enum CliCmd {
-    GetPlayers,
-    ShowWorldSummary,
+    PlayerInfo,
+    WorldInfo,
     Stop,
-    LoadChunk,
 }
 
 pub fn spawn_cli(shutdown: Arc<AtomicBool>) -> Receiver<CliCmd> {
@@ -339,22 +333,28 @@ pub fn spawn_cli(shutdown: Arc<AtomicBool>) -> Receiver<CliCmd> {
 
     std::thread::spawn(move || {
         loop {
+            print!("\n> ");
+            std::io::stdout().flush().unwrap();
+
             let mut cmd_buf = String::new();
-            _ = std::io::stdin().read_line(&mut cmd_buf);
-            _ = cmd_buf.pop(); // remove the new-line character
+            if matches!(std::io::stdin().read_line(&mut cmd_buf), Ok(0)) {
+                // end of input (would be caused by the program being stopped)
+                break;
+            }
+            // remove the new-line character
+            if cmd_buf.pop().is_none() {
+                break;
+            }
             match cmd_buf.as_str() {
-                "stop" | "" => {
-                    shutdown.store(true, Ordering::Relaxed);
-                    _ = send.send(CliCmd::Stop);
-                    break;
-                }
-                "players" => _ = send.send(CliCmd::GetPlayers),
-                "world" => _ = send.send(CliCmd::ShowWorldSummary),
-                "loadchunk" => _ = send.send(CliCmd::LoadChunk),
+                "stop" => break,
+                "players" => _ = send.send(CliCmd::PlayerInfo),
+                "world" => _ = send.send(CliCmd::WorldInfo),
                 v => println!("Error: Unrecognized command : \"{v}\""),
             }
             std::thread::sleep(Duration::from_millis(100));
         }
+        shutdown.store(true, Ordering::Relaxed);
+        _ = send.send(CliCmd::Stop);
     });
     recv
 }

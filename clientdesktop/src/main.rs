@@ -231,7 +231,7 @@ impl AppState {
                 return;
             }
         };
-        std::thread::sleep(Duration::from_millis(500));
+        std::thread::sleep(Duration::from_millis(1000));
 
         self.join_game(addr);
         self.server_program = Some(program);
@@ -380,6 +380,9 @@ impl AppState {
             if input.key_pressed(&Key::F9) {
                 self.freeze_world_anchor = !self.freeze_world_anchor;
             }
+            if input.key_pressed(&Key::F7) && input.key_down(&Key::ShiftLeft) {
+                panic!("This was an intentional panic for debug purposes, triggered by the user of the app");
+            }
         }
 
         if input.key_pressed(&Key::KeyT) {
@@ -492,7 +495,13 @@ impl AppState {
                     })
                 }
                 if self.ui_state.page_is_open() {
-                    let rs = ui::show_ui_state(ctx, &mut self.ui_state, &self.resources, &mut self.crosshair).unwrap();
+                    let rs = ui::show_ui_state(
+                        ctx,
+                        &mut self.ui_state,
+                        &self.resources,
+                        &mut self.crosshair,
+                        self.join_game_err.as_ref().map(String::as_str)
+                    ).unwrap();
                     if let Some(world) = rs.host_new_world {
                         create_world = Some(world.clone());
                         host_world = Some(world);
@@ -586,10 +595,14 @@ impl AppState {
             self.host_game(addr, &path, &info.name);
         }
         if quit_game {
-            self.game = None;
             if let Some(program) = self.server_program.take() {
                 if let Err(e)  = program.shutdown() {
                     warn!("Failed to shutdown server: {e:?}");
+                }
+            }
+            if let Some(mut game) = self.game.take() {
+                if let Err(err) = game.disconnect() {
+                    warn!("Failed to disconnect from server: {err:?}");
                 }
             }
             self.ui_state.clear_pages();

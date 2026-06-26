@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use crate::world::noise::Map;
 use crate::world::Voxel;
@@ -83,17 +84,17 @@ pub struct Datapack {
 }
 impl Datapack {
     pub fn load_from(dir: impl AsRef<Path>) -> anyhow::Result<Self> {
-        let meta = std::fs::read_to_string(dir.as_ref().join("meta.ron"))?;
-        let meta = loader::parse_meta(&meta)?;
+        let meta = std::fs::read_to_string(dir.as_ref().join("meta.ron")).context("Failed to read meta.ron")?;
+        let meta = loader::parse_meta(&meta).context("Failed to parse meta.ron")?;
 
-        let voxels = std::fs::read_to_string(dir.as_ref().join("voxels.ron"))?;
-        let voxels = loader::parse_voxelpack(&voxels)?;
+        let voxels = std::fs::read_to_string(dir.as_ref().join("voxels.ron")).context("Failed to read voxels.ron")?;
+        let voxels = loader::parse_voxelpack(&voxels).context("Failed to parse voxels.ron")?;
 
-        let world_features = std::fs::read_to_string(dir.as_ref().join("world_features.ron"))?;
-        let world_features = loader::parse_world_features(&world_features, &voxels)?;
+        let world_features = std::fs::read_to_string(dir.as_ref().join("world_features.ron")).context("Failed to read world_features.ron")?;
+        let world_features = loader::parse_world_features(&world_features, &voxels).context("Failed to parse world_features.ron")?;
 
-        let world_presets = std::fs::read_to_string(dir.as_ref().join("world_gen.ron"))?;
-        let world_presets = loader::parse_world_presets(&world_presets, &voxels, &world_features)?;
+        let world_presets = std::fs::read_to_string(dir.as_ref().join("world_gen.ron")).context("Failed to read world_gen.ron")?;
+        let world_presets = loader::parse_world_presets(&world_presets, &voxels, &world_features).context("Failed to parse world_gen.ron")?;
 
         Ok(Self {
             path: dir.as_ref().to_owned(),

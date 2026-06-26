@@ -331,7 +331,6 @@ dependencies = [
  "anyhow",
  "bincode",
  "blockworld-server",
- "fastrand",
  "glam",
  "ron",
 ]
