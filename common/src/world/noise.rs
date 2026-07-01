@@ -31,7 +31,7 @@ impl RawNoise {
     }
 
     // Will return a value from 0.0 to 1.0
-    pub fn sample(&self, pos: Vec2) -> f32 {
+    #[inline(always)] pub fn sample(&self, pos: Vec2) -> f32 {
         let val = perlin_2d((pos.x as f64, pos.y as f64).into(), &*self.table);
         // val is -1.0 ..= 1.0, we need it to be 0.0 .. 1.0
         ((val + 1.0) * 0.5).clamp(0.0, 1.0) as f32
@@ -56,7 +56,7 @@ impl MappedNoise {
     }
 
     // Will return a value from 0.0 to 1.0, multiplied by `self.scale`, added to `self.offset`
-    pub fn sample(&self, pos: Vec2) -> f32 {
+    #[inline(always)] pub fn sample(&self, pos: Vec2) -> f32 {
         self.raw.sample(pos * self.map.freq) * self.map.scale + self.map.offset
     }
 }

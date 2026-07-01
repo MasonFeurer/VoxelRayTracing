@@ -51,7 +51,7 @@ pub fn main() {
         Ok(v) => v,
         Err(e) => {
             let dir = app_save_dir();
-            error!("Failed to load resources from {dir:?}: {e}. Hint: you may need to run blockworld-installer to setup the game config directory.");
+            error!("Failed to load resources from {dir:?}: {e}. \nHint: you may need to run blockworld-installer to setup the game config directory.");
             std::process::exit(1);
         }
     };

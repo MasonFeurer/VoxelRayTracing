@@ -22,6 +22,7 @@ enum ValueGen {
     },
 }
 impl ValueGen {
+    #[inline(always)]
     fn eval(&self, x: f32, z: f32) -> f32 {
         match self {
             Self::Constant(v) => *v,
@@ -82,7 +83,7 @@ pub struct WorldGen {
 
     pub features: WorldFeatures,
     pub biomes: Vec<Biome>,
-    pub biome_lookup: [[u32; 20]; 4],
+    pub biome_lookup: [[u32; 20]; 8],
     pub earth: Voxel,
     pub water: Voxel,
     pub sea_level: i32,
@@ -141,10 +142,13 @@ impl WorldGen {
         let temp = self.temp_map.eval(x as f32, z as f32);
         // 0.0f..1.0f
         let humidity = self.humidity_map.eval(x as f32, z as f32);
+        // 0.0f..1.0f
+        let weird = self.weird_map.eval(x as f32, z as f32);
 
         let temp_idx = ((temp * 20.0).floor() as usize).min(19);
+        let weird_idx = (weird.round() as usize).min(1) * 4;
         let humidity_idx = ((humidity * 4.0).floor() as usize).min(3);
-        let biome_idx = self.biome_lookup[humidity_idx][temp_idx];
+        let biome_idx = self.biome_lookup[humidity_idx + weird_idx][temp_idx];
         &self.biomes[biome_idx as usize]
     }
 
@@ -460,6 +464,9 @@ pub fn build_feature(surface: VoxelPos, feature: Feature) -> BuiltFeature {
                 let w = (delta * width as f32).floor() as u32;
                 out.place_disc(VoxelPos::new(*surface + IVec3::Y * y), (w as f32 * 0.5) - 0.1, 1, voxel);
             }
+        }
+        Feature::Lake { voxel, size, depth } => {
+            println!("TODO: lake");
         }
     }
     out

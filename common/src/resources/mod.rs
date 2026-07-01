@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use anyhow::Context;
+use log::warn;
 use serde::{Deserialize, Serialize};
 use crate::world::noise::Map;
 use crate::world::Voxel;
@@ -24,19 +25,31 @@ impl<'a> Resources {
         let mut worlds = Vec::new();
 
         for pack_folder in std::fs::read_dir(&data_folder.as_ref().join("datapacks"))? {
-            let pack_folder = pack_folder?.path();
-            let datapack = Datapack::load_from(pack_folder)?;
-            datapacks.insert(datapack.name.clone(), datapack);
+            let Ok(pack_folder) = pack_folder.map(|e| e.path()) else { continue };
+            match Datapack::load_from(&pack_folder) {
+                Ok(pack) => _ = datapacks.insert(pack.name.clone(), pack),
+                Err(e) => {
+                    warn!("Failed to load stylepack {:?}: {}", pack_folder.display(), e);
+                }
+            }
         }
         for pack_folder in std::fs::read_dir(&data_folder.as_ref().join("stylepacks"))? {
-            let pack_folder = pack_folder?.path();
-            let stylepack = Stylepack::load_from(pack_folder)?;
-            stylepacks.insert(stylepack.name.clone(), stylepack);
+            let Ok(pack_folder) = pack_folder.map(|e| e.path()) else { continue };
+            match Stylepack::load_from(&pack_folder) {
+                Ok(pack) => _ = stylepacks.insert(pack.name.clone(), pack),
+                Err(e) => {
+                    warn!("Failed to load stylepack {:?}: {}", pack_folder.display(), e);
+                }
+            }
         }
         for world_folder in std::fs::read_dir(&data_folder.as_ref().join("worlds"))? {
-            let world_folder = world_folder?.path();
-            let world = WorldInfo::load_from(world_folder)?;
-            worlds.push(world);
+            let Ok(world_folder) = world_folder.map(|e| e.path()) else { continue };
+            match WorldInfo::load_from(&world_folder) {
+                Ok(world) => worlds.push(world),
+                Err(e) => {
+                    warn!("Failed to load world {:?}: {}", world_folder.display(), e);
+                }
+            }
         }
 
         Ok(Self { path: data_folder.as_ref().to_owned(), datapacks, stylepacks, worlds })
@@ -139,7 +152,7 @@ pub struct WorldPreset {
     pub earth: Voxel,
     pub water: Voxel,
 
-    pub biome_lookup: [[u32; 20]; 4],
+    pub biome_lookup: [[u32; 20]; 8],
     pub biomes: Vec<Biome>,
 }
 
@@ -185,6 +198,11 @@ pub enum Feature {
         height: std::ops::Range<u32>,
         width: std::ops::Range<u32>,
     },
+    Lake {
+        voxel: Voxel,
+        size: std::ops::Range<u32>,
+        depth: std::ops::Range<u32>,
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -256,18 +274,32 @@ pub enum VoxelState {
     Liquid,
     Gas,
 }
+impl Default for VoxelState {
+    fn default() -> Self {
+        Self::Solid
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum VoxelAttr {
+    Color,
+    
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoxelData {
-    pub state: VoxelState,
     pub name: String,
+    #[serde(default)]
+    pub state: VoxelState,
+    #[serde(default)]
+    pub attrs: Option<VoxelAttr>,
 }
 impl VoxelData {
-    pub fn is_solid(&self) -> bool {
-        self.state == VoxelState::Solid
+    pub const fn is_solid(&self) -> bool {
+        matches!(self.state, VoxelState::Solid)
     }
-    pub fn is_air(&self) -> bool {
-        self.state == VoxelState::Gas
+    pub const fn is_air(&self) -> bool {
+        matches!(self.state, VoxelState::Gas)
     }
 }
 

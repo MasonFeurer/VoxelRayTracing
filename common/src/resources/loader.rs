@@ -8,6 +8,7 @@ pub enum LoaderErr {
     Ron(ron::error::SpannedError),
     FeatureNotFound(String),
     VoxelNotFound(String),
+    DuplicateVoxel(String),
 }
 impl std::fmt::Display for LoaderErr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -94,6 +95,11 @@ enum RawFeature {
         height: (u32, u32),
         width: (u32, u32),
     },
+    Lake {
+        voxel: String,
+        size: (u32, u32),
+        depth: (u32, u32),
+    }
 }
 impl RawFeature {
     pub fn construct(&self, voxels: &VoxelPack) -> Result<Feature, LoaderErr> {
@@ -166,6 +172,15 @@ impl RawFeature {
                 height: height.0..height.1,
                 width: width.0..width.1,
             },
+            Self::Lake {
+                voxel,
+                size,
+                depth,
+            } => Feature::Lake {
+                voxel: voxels.by_name(voxel).ok_or(LoaderErr::VoxelNotFound(voxel.clone()))?,
+                size: size.0..size.1,
+                depth: depth.0..depth.1,
+            },
         })
     }
 }
@@ -220,7 +235,7 @@ struct RawWorldPreset {
     sea_level: i32,
     earth: String,
     water: String,
-    biome_lookup: [[u32; 20]; 4],
+    biome_lookup: [[u32; 20]; 8],
     biomes: Vec<RawBiome>,
 }
 impl RawWorldPreset {
@@ -303,6 +318,11 @@ pub fn parse_world_meta(src: &str) -> Result<RawWorldMeta, LoaderErr> {
 pub fn parse_voxelpack(src: &str) -> Result<VoxelPack, LoaderErr> {
     let parsed: Vec<VoxelData> = ron::de::from_str(src)
         .map_err(LoaderErr::Ron)?;
+    for (idx, vox) in parsed.iter().enumerate() {
+        if parsed.iter().enumerate().any(|(i, v)| i != idx && v.name == vox.name) {
+            return Err(LoaderErr::DuplicateVoxel(vox.name.clone()));
+        }
+    }
     Ok(VoxelPack::new(parsed))
 }
 
@@ -312,6 +332,9 @@ pub fn parse_voxel_stylepack(src: &str) -> Result<VoxelStylepack, LoaderErr> {
     let mut styles = HashMap::with_capacity(parsed.len());
 
     for (vox_name, style) in parsed {
+        if styles.contains_key(&vox_name) {
+            return Err(LoaderErr::DuplicateVoxel(vox_name.clone()));
+        }
         styles.insert(vox_name, style);
     }
     Ok(VoxelStylepack { styles })

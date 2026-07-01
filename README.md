@@ -7,7 +7,7 @@ This project has the goal of creating an easy-to-use, "realistic" looking, small
 ![Screenshot](./pictures/ss-2026-04-23_2.png)
 
 # World
-The world is organized into a grid of chunks 64x64x64 voxels in volume.
+The world is organized into a grid of chunks 32x32x32 voxels in volume.
 Each chunk stores its voxels as an SVO (Sparse Voxel Octree) to optimize storage and rendering.
 
 # Rendering
