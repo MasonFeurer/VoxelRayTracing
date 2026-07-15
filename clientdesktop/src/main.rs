@@ -2,32 +2,32 @@ pub mod graphics;
 pub mod input;
 pub mod ui;
 
-use std::io::Write;
 use crate::input::{InputState, Key};
 use graphics::{CamData, Crosshair, Egui, Gpu, GpuResources, Settings, WorldData};
+use std::io::Write;
 
+use crate::graphics::Material;
+use crate::ui::{Page, UiState};
+use client::common::log::{error, info, warn};
+use client::common::math::cast_ray;
+use client::common::resources::loader::RawWorldMeta;
 use client::common::resources::{Resources, Stylepack};
 use client::common::world::{Node, Voxel, VoxelPos};
 use client::net::ServerConn;
 use client::player::PlayerInput;
 use client::world::ClientWorld;
 use client::GameState;
+use egui::Visuals;
 use glam::{uvec2, UVec2};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::Child;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use egui::Visuals;
 use winit::application::ApplicationHandler;
 use winit::event::*;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{CursorGrabMode, Fullscreen, Window, WindowAttributes, WindowId};
-use client::common::log::{error, info, warn};
-use client::common::math::cast_ray;
-use client::common::resources::loader::RawWorldMeta;
-use crate::graphics::Material;
-use crate::ui::{Page, UiState};
 
 pub fn local_server_addr() -> SocketAddr {
     SocketAddr::new("127.0.0.1".parse().unwrap(), 60_000)
@@ -71,7 +71,11 @@ struct ServerProgram {
     thread: Child,
 }
 impl ServerProgram {
-    fn host(path: impl AsRef<Path>, data_path: impl AsRef<Path>, world_path: impl AsRef<Path>) -> Result<Self, String> {
+    fn host(
+        path: impl AsRef<Path>,
+        data_path: impl AsRef<Path>,
+        world_path: impl AsRef<Path>,
+    ) -> Result<Self, String> {
         let thread = std::process::Command::new(&format!("{}", path.as_ref().display()))
             .stdout(std::io::stdout())
             .stderr(std::io::stderr())
@@ -135,7 +139,10 @@ pub struct AppState {
 }
 impl AppState {
     pub fn active_stylepack(&self) -> Option<&Stylepack> {
-        self.active_stylepack.as_ref().map(|name| self.resources.stylepacks.get(name)).flatten()
+        self.active_stylepack
+            .as_ref()
+            .map(|name| self.resources.stylepacks.get(name))
+            .flatten()
     }
 
     pub fn should_hide_cursor(&self) -> bool {
@@ -478,7 +485,13 @@ impl AppState {
                             .default_pos(egui::pos2(0.0, 0.0))
                             .movable(true)
                             .show(ctx, |ui| {
-                                ui::show_game_overlay(ui, self.current_voxel, &mut self.ui_state, game, &self.timers);
+                                ui::show_game_overlay(
+                                    ui,
+                                    self.current_voxel,
+                                    &mut self.ui_state,
+                                    game,
+                                    &self.timers,
+                                );
                             })
                     }
                 } else {
@@ -507,7 +520,9 @@ impl AppState {
                         host_world = Some(world);
                     }
                     if let Some(world_name) = rs.host_world {
-                        if let Some(info) = self.resources.worlds.iter().find(|w| w.name == world_name) {
+                        if let Some(info) =
+                            self.resources.worlds.iter().find(|w| w.name == world_name)
+                        {
                             host_world = Some(info.clone());
                         }
                     }
@@ -596,7 +611,7 @@ impl AppState {
         }
         if quit_game {
             if let Some(program) = self.server_program.take() {
-                if let Err(e)  = program.shutdown() {
+                if let Err(e) = program.shutdown() {
                     warn!("Failed to shutdown server: {e:?}");
                 }
             }

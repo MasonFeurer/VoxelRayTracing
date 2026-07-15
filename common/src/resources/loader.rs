@@ -279,12 +279,19 @@ pub fn parse_world_presets(
     voxels: &VoxelPack,
     features: &WorldFeatures,
 ) -> anyhow::Result<Vec<WorldPreset>> {
-    let parsed: Vec<RawWorldPreset> = ron::de::from_str(src)
-        .map_err(LoaderErr::Ron)
-        .context("Failed to parse RON")?;
+    use anyhow::Context;
+
+    let parsed: Vec<RawWorldPreset> = anyhow::Context::context(
+        ron::de::from_str(src).map_err(LoaderErr::Ron),
+        "Failed to parse RON",
+    )?;
     let mut constructs = Vec::with_capacity(parsed.len());
     for idx in 0..parsed.len() {
-        constructs.push(parsed[idx].construct(voxels, features)?);
+        constructs.push(
+            parsed[idx]
+                .construct(voxels, features)
+                .context(format!("Failed to construct WorldGen {}", parsed[idx].name))?,
+        );
     }
     Ok(constructs)
 }

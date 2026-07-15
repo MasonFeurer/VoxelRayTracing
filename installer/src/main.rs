@@ -34,8 +34,12 @@ fn main() {
 
     std::process::Command::new("cargo").arg("build").arg("--release").arg("--bin").arg("blockworld-server-cli").status().unwrap();
     println!("Done building server-cli");
-
-    std::fs::copy("target/release/blockworld-server-cli", &path.join("blockworld-server-cli")).unwrap();
+    
+    #[cfg(target_os = "windows")]
+    let exe = "target/release/blockworld-server-cli.exe";
+    #[cfg(not(target_os = "windows"))]
+    let exe = "target/release/blockworld-server-cli";
+    std::fs::copy(exe, &path.join("blockworld-server-cli")).unwrap();
 
     println!("Done setting everything up!");
     println!("You can now run blockworld-client-desktop to play!");
