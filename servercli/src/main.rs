@@ -5,17 +5,19 @@ use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use anyhow::{anyhow, Context};
 use server::common::resources::Datapack;
-use server::{world::ServerWorld, ServerState};
+use server::{world::ServerWorld, ClientId, ServerState};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use bincode::{Decode, Encode};
-use glam::UVec3;
+use glam::{UVec3, Vec3};
 use server::common::env_logger;
 use server::common::log::{info, warn};
+use server::common::net::ClientCmd;
 use server::common::resources::loader::RawWorldMeta;
 use server::common::world::{ChunkPos, ChunkPosInRegion, Node, NodeAlloc, NodeRange, RegionPos};
 use server::world::{ServerChunk, WorldFsExt};
@@ -278,6 +280,12 @@ fn main() -> anyhow::Result<()> {
         server.update_world();
 
         match cli_cmds.try_recv() {
+            Ok(CliCmd::Tp(id, pos)) => {
+                let client = server.clients.get_mut(&id).unwrap();
+
+                client.pos = pos;
+                client.send_cmd(ClientCmd::GiveNewPos(pos));
+            }
             Ok(CliCmd::PlayerInfo) => {
                 println!("there are {} players connected:", server.clients.len());
                 for (id, client) in &server.clients {
@@ -326,6 +334,7 @@ pub enum CliCmd {
     PlayerInfo,
     WorldInfo,
     Stop,
+    Tp(ClientId, Vec3)
 }
 
 pub fn spawn_cli(shutdown: Arc<AtomicBool>) -> Receiver<CliCmd> {
@@ -345,10 +354,18 @@ pub fn spawn_cli(shutdown: Arc<AtomicBool>) -> Receiver<CliCmd> {
             if cmd_buf.pop().is_none() {
                 break;
             }
-            match cmd_buf.as_str() {
+            let parts: Vec<_> = cmd_buf.split_whitespace().collect();
+            match parts[0] {
                 "stop" => break,
                 "players" => _ = send.send(CliCmd::PlayerInfo),
                 "world" => _ = send.send(CliCmd::WorldInfo),
+                "tp" => {
+                    let client_id = ClientId::from_str_radix(&parts[1], 16).unwrap();
+                    let x = f32::from_str(parts[2]).unwrap();
+                    let y = f32::from_str(parts[3]).unwrap();
+                    let z = f32::from_str(parts[4]).unwrap();
+                    _ = send.send(CliCmd::Tp(client_id, Vec3::new(x, y, z)));
+                }
                 v => println!("Error: Unrecognized command : \"{v}\""),
             }
             std::thread::sleep(Duration::from_millis(100));

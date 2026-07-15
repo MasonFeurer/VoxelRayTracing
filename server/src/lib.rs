@@ -187,10 +187,6 @@ impl ServerState {
         self.new_clients_recv = Some(receiver);
         let kill = Arc::clone(&self.kill);
 
-        // self.world.
-
-        // TODO find a place closest to the world's origin that is above sea level for the player to spawn.
-
         let spawn = self.world.gen.find_land_near(0, 0).unwrap_or(IVec3::ZERO.into());
 
         std::thread::spawn(move || {
@@ -278,7 +274,7 @@ impl ServerState {
                 info!("Received disconnect notice from client {:?}", client.name);
             }
             ServerCmd::GetPlayersList => {
-                client.send_cmd(ClientCmd::PlayersList(player_list.to_vec()));
+                client.send_cmd(ClientCmd::GivePlayersList(player_list.to_vec()));
             }
             ServerCmd::UpdateMyPlayerPos(new_pos) => {
                 client.pos = new_pos;

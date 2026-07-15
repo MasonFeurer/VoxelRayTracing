@@ -123,11 +123,23 @@ impl WorldGen {
     pub fn find_land_near(&self, x: i32, z: i32) -> Option<VoxelPos> {
         let search_gap = 10;
         let search_steps =  100;
-        for x in (x - search_steps)..(x + search_steps) {
-            for z in (z - search_steps)..(z + search_steps) {
+
+        for x in x..(x + search_steps) {
+            for z in z..(z + search_steps) {
                 let xx = x * search_gap;
                 let zz = z * search_gap;
                 
+                let h = self.terrain_h_at(xx, zz);
+                if h > self.sea_level {
+                    return Some(VoxelPos(xx, h, zz));
+                }
+            }
+        }
+        for x in (x - search_steps)..x {
+            for z in (z - search_steps)..z {
+                let xx = x * search_gap;
+                let zz = z * search_gap;
+
                 let h = self.terrain_h_at(xx, zz);
                 if h > self.sea_level {
                     return Some(VoxelPos(xx, h, zz));
@@ -309,17 +321,14 @@ impl BuiltFeature {
         }
     }
 
-    pub fn place_sphere(&mut self, center: VoxelPos, r: u32, v: Voxel) {
-        let pos_center = center.as_vec3() + Vec3::splat(0.5);
-        let min = *center - IVec3::splat(r as i32);
-        let max = *center + IVec3::splat(r as i32);
-        let r_sq = r as f32 * r as f32;
-
+    fn fill_region_by_radius(&mut self, center: Vec3, r: f32, bounds: [IVec3; 2], v: Voxel) {
+        let r_sq = r * r;
+        let [min, max] = bounds;
         for x in min.x..=max.x {
             for y in min.y..=max.y {
                 for z in min.z..=max.z {
                     let block_center = ivec3(x, y, z).as_vec3() + Vec3::splat(0.5);
-                    let dist_sq = (block_center - pos_center).length_squared();
+                    let dist_sq = (block_center - center).length_squared();
 
                     if dist_sq >= r_sq {
                         continue;
@@ -330,25 +339,18 @@ impl BuiltFeature {
         }
     }
 
+    pub fn place_sphere(&mut self, center: VoxelPos, r: f32, v: Voxel) {
+        let pos_center = center.as_vec3() + Vec3::splat(0.5);
+        let min = *center - IVec3::splat(r as i32);
+        let max = *center + IVec3::splat(r as i32);
+        self.fill_region_by_radius(pos_center, r, [min, max], v);
+    }
+
     pub fn place_disc(&mut self, center: VoxelPos, r: f32, height: u32, v: Voxel) {
         let pos_center = center.as_vec3() + Vec3::splat(0.5);
         let min = *center - ivec3(r as i32, 0, r as i32);
         let max = *center + ivec3(r as i32, height as i32 - 1, r as i32);
-        let r_sq = r * r;
-
-        for x in min.x..=max.x {
-            for y in min.y..=max.y {
-                for z in min.z..=max.z {
-                    let block_center = ivec3(x, y, z).as_vec3() + Vec3::splat(0.5);
-                    let dist_sq = (block_center - pos_center).length_squared();
-
-                    if dist_sq >= r_sq {
-                        continue;
-                    }
-                    self.set_voxel(VoxelPos(x, y, z), v);
-                }
-            }
-        }
+        self.fill_region_by_radius(pos_center, r, [min, max], v);
     }
 }
 
@@ -372,7 +374,7 @@ pub fn build_feature(surface: VoxelPos, feature: Feature) -> BuiltFeature {
                 ..=8 => 0,
                 _ => fastrand::u32(branch_count),
             };
-            out.place_sphere(top, 5, leaf_voxel);
+            out.place_sphere(top, 5.0, leaf_voxel);
 
             for _ in 0..branch_count {
                 let branch_h = (randf32(branch_height.clone()) * height as f32) as u32;
@@ -382,7 +384,7 @@ pub fn build_feature(surface: VoxelPos, feature: Feature) -> BuiltFeature {
                 let start = VoxelPos(surface.x, surface.y + branch_h as i32, surface.z);
                 let end = VoxelPos::new((start.as_vec3() + branch_dir * branch_len as f32).as_ivec3());
 
-                out.place_sphere(end, 3, leaf_voxel);
+                out.place_sphere(end, 3.0, leaf_voxel);
                 out.place_line(start, end, branch_voxel);
             }
             out.place_line(surface, top, trunk_voxel);
@@ -466,7 +468,19 @@ pub fn build_feature(surface: VoxelPos, feature: Feature) -> BuiltFeature {
             }
         }
         Feature::Lake { voxel, size, depth } => {
-            println!("TODO: lake");
+            let size = fastrand::u32(size);
+            let depth = fastrand::u32(depth);
+            let r = size as f32 * 0.5 - 0.1;
+
+            let bury = 3;
+
+            for y in 0..depth as i32 {
+                let pos = *surface + IVec3::Y * (-y - bury);
+                out.place_disc(pos.into(), r - y as f32 * 0.5, 1, voxel);
+            }
+            for y in -2..bury {
+                out.place_disc(VoxelPos::from(*surface - IVec3::Y * y), r, 1, Voxel::EMPTY);
+            }
         }
     }
     out

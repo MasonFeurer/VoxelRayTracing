@@ -48,7 +48,8 @@ pub enum ClientCmd<'a> {
     HandshakeDenied,
 
     Kick(String),
-    PlayersList(Vec<PlayerInfo>),
+    GivePlayersList(Vec<PlayerInfo>),
     GiveVoxelData(u32, VoxelPos, Voxel),
     GiveChunkData(ChunkPos, Cow<'a, [Node]>, NodeAlloc),
+    GiveNewPos(Vec3),
 }

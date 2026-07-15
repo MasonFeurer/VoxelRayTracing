@@ -1,0 +1,250 @@
+[
+RawWorldPreset (
+	name: "Standard World Gen",
+	
+	temp: ComplexNoise (
+		freq: Map ( scale: 0.0, freq: 0.0, offset: 0.0 ),
+		scale: Map ( scale: 0.0, freq: 0.0, offset: 0.0 ),
+		base: Map ( scale: 0.0, freq: 0.0, offset: 0.0 ),
+		layers: [
+			Map ( scale: 0.80, freq: 0.0002, offset: 0.0 ),
+			Map ( scale: 0.10, freq: 0.001, offset: 0.0 ),
+			Map ( scale: 0.10, freq: 0.001, offset: 0.0 ),
+		]
+	),
+	humidity: ComplexNoise (
+		freq: Map ( scale: 0.0, freq: 0.0, offset: 0.0 ),
+		scale: Map ( scale: 0.0, freq: 0.0, offset: 0.0 ),
+		base: Map ( scale: 0.0, freq: 0.0, offset: 0.0 ),
+		layers: [
+			Map ( scale: 0.80, freq: 0.00012, offset: 0.0 ),
+			Map ( scale: 0.10, freq: 0.001, offset: 0.0 ),
+			Map ( scale: 0.10, freq: 0.001, offset: 0.0 ),
+		]
+	),
+	weirdness: ComplexNoise (
+		freq: Map ( scale: 0.0, freq: 0.0, offset: 1.0 ),
+		scale: Map ( scale: 0.0, freq: 0.0, offset: 1.0 ),
+		base: Map ( scale: 2.0, freq: 0.00005, offset: -1.0 ),
+		layers: []
+	),
+	
+	height: ComplexNoise (
+		freq: Map ( freq: 0.0, scale: 0.0, offset: 0.5 ),
+        scale: Map ( freq: 0.003, scale: 40.0, offset: 0.0 ),
+        base: Map ( freq: 0.003, scale: 2.5, offset: 0.0 ),
+        layers: [
+            // small terrain bumps
+        	Map ( freq: 0.11, scale: 4.0, offset: 0.0 ),
+        	// hills
+        	Map ( freq: 0.01, scale: 30.0, offset: 0.0 ),
+        	// mountains
+        	Map ( freq: 0.001, scale: 70.0, offset: 0.0 ),
+        	// islands
+        	Map ( freq: 0.00025, scale: -480.0, offset: 200.0 ),
+        ]
+	),
+	sea_level: 70,
+	
+	biome_lookup: (
+		(00, 00, 00, 01, 01, 01, 04, 04, 04, 04, 04, 04, 04, 04, 07, 08, 08, 08, 08, 08),
+		(00, 00, 00, 01, 01, 01, 04, 04, 04, 04, 04, 04, 04, 04, 07, 08, 08, 08, 08, 08),
+		(00, 00, 00, 02, 02, 02, 05, 05, 05, 05, 05, 05, 05, 05, 07, 08, 08, 08, 08, 08),
+		(00, 00, 00, 03, 03, 03, 06, 06, 06, 06, 06, 06, 06, 06, 06, 06, 06, 06, 06, 06),
+		
+		(00, 00, 00, 09, 09, 09, 04, 04, 04, 04, 04, 04, 04, 04, 14, 08, 08, 08, 08, 08),
+		(00, 00, 00, 09, 09, 09, 04, 04, 04, 04, 04, 04, 04, 04, 07, 08, 08, 08, 08, 08),
+		(00, 00, 00, 10, 10, 10, 13, 13, 13, 13, 13, 13, 13, 13, 07, 15, 15, 15, 15, 15),
+		(00, 00, 00, 11, 11, 12, 06, 06, 06, 06, 06, 06, 06, 06, 06, 15, 15, 15, 15, 15),
+	),
+	
+	earth: "slate",
+	layers: [
+		RawEarthLayer ( voxel: "limestone", range: (-10, 500) ),
+	],
+	water: "water",
+	biomes: [
+		RawBiome (
+			name: "Arctic Desert",
+			vegetation: Map ( freq: 1.0, scale: 0.0, offset: 0.0 ),
+			layers: [
+				RawLayer ( voxel: "snow", depth: 5 ),
+				RawLayer ( voxel: "dirt", depth: 3 ),
+			],
+			features: [],
+		),
+		RawBiome (
+			name: "Snowy Plains",
+			vegetation: Map ( freq: 0.02, scale: 0.1, offset: 0.0 ),
+			layers: [
+				RawLayer ( voxel: "snow", depth: 1 ),
+				RawLayer ( voxel: "dirt", depth: 3 ),
+			],
+			features: ["evergreen"],
+		),
+		RawBiome (
+			vegetation: Map ( freq: 0.02, scale: 0.4, offset: 0.0 ),
+			name: "Tundra",
+			layers: [
+				RawLayer ( voxel: "snow", depth: 2 ),
+				RawLayer ( voxel: "dirt", depth: 3 ),
+			],
+			features: ["evergreen", "mega_evergreen", "ice_spike", "frozen_oak_tree"],
+		),
+		RawBiome (
+			vegetation: Map ( freq: 0.02, scale: 0.4, offset: 0.0 ),
+			name: "Frozen Forest",
+			layers: [
+				RawLayer ( voxel: "snow", depth: 2 ),
+				RawLayer ( voxel: "dirt", depth: 3 ),
+			],
+			features: ["evergreen", "mega_evergreen", "ice_spike", "frozen_oak_tree"],
+		),
+		RawBiome (
+			name: "Plains",
+			vegetation: Map ( freq: 0.02, scale: 0.04, offset: 0.0 ),
+			layers: [
+				RawLayer ( voxel: "grass", depth: 1 ),
+				RawLayer ( voxel: "dirt", depth: 4 ),
+			],
+			features: ["oak_tree", "oak_tree", "oak_tree"],
+		),
+		RawBiome (
+			name: "Forest",
+			vegetation: Map ( freq: 0.02, scale: 0.5, offset: 0.0 ),
+			layers: [
+				RawLayer ( voxel: "grass", depth: 1 ),
+				RawLayer ( voxel: "dirt", depth: 5 ),
+			],
+			features: ["oak_tree", "birch_tree"],
+		),
+		RawBiome (
+			name: "Rain Forest",
+			vegetation: Map ( freq: 0.02, scale: 1.0, offset: 0.0 ),
+			layers: [
+				RawLayer ( voxel: "moist_grass", depth: 2 ),
+				RawLayer ( voxel: "dirt", depth: 5 ),
+			],
+			features: ["jungle_tree", "jungle_tree", "mega_jungle_tree", "stub_jungle_tree", "oak_tree"],
+		),
+		RawBiome (
+			name: "Savannah",
+			vegetation: Map ( freq: 0.02, scale: 0.2, offset: 0.0 ),
+			layers: [
+				RawLayer ( voxel: "dry_grass", depth: 1 ),
+				RawLayer ( voxel: "dirt", depth: 4 ),
+			],
+			features: ["acacia_tree"],
+		),
+		RawBiome (
+			name: "Desert",
+			vegetation: Map ( freq: 0.02, scale: 0.6, offset: 0.0 ),
+			layers: [
+				RawLayer ( voxel: "sand", depth: 7 ),
+				RawLayer ( voxel: "sandstone", depth: 5 ),
+			],
+			features: ["cactus", "cactus", "cactus", "dead_tree"],
+		),
+		
+		RawBiome (
+			name: "Dead Plains",
+			vegetation: Map ( freq: 0.02, scale: 0.6, offset: 0.0 ),
+			layers: [
+				RawLayer ( voxel: "dead_grass", depth: 1 ),
+				RawLayer ( voxel: "dirt", depth: 4 ),
+			],
+			features: ["dead_tree"],
+		),
+		RawBiome (
+			name: "Weird Tundra",
+			vegetation: Map ( freq: 0.02, scale: 0.6, offset: 0.0 ),
+			layers: [
+				RawLayer ( voxel: "dirt", depth: 1 ),
+			],
+			features: [],
+		),
+		RawBiome (
+			name: "Frozen In Time",
+			vegetation: Map ( freq: 0.02, scale: 0.6, offset: 0.0 ),
+			layers: [
+				RawLayer ( voxel: "ice", depth: 1 ),
+				RawLayer ( voxel: "dead_grass", depth: 1 ),
+				RawLayer ( voxel: "dirt", depth: 4 ),
+			],
+			features: ["frozen_oak_tree", "ice_spike"],
+		),
+		RawBiome (
+			name: "Frozen Jungle",
+			vegetation: Map ( freq: 0.02, scale: 0.6, offset: 0.0 ),
+			layers: [
+				RawLayer ( voxel: "snow", depth: 1 ),
+				RawLayer ( voxel: "dead_grass", depth: 1 ),
+				RawLayer ( voxel: "dirt", depth: 4 ),
+			],
+			features: ["frozen_jungle_tree", "frozen_mega_jungle_tree", "frozen_oak_tree", "ice_spike"],
+		),
+		RawBiome (
+			name: "Mega Forest",
+			vegetation: Map ( freq: 0.02, scale: 0.6, offset: 0.0 ),
+			layers: [
+				RawLayer ( voxel: "moist_grass", depth: 1 ),
+				RawLayer ( voxel: "dirt", depth: 5 ),
+			],
+			features: [],
+		),
+		RawBiome (
+			name: "Hot Rocks",
+			vegetation: Map ( freq: 0.02, scale: 0.6, offset: 0.0 ),
+			layers: [
+				RawLayer ( voxel: "limestone", depth: 1 ),
+				RawLayer ( voxel: "basalt", depth: 4 ),
+			],
+			features: ["lava_pocket", "dead_tree"],
+		),
+		RawBiome (
+			name: "Mesa",
+			vegetation: Map ( freq: 0.02, scale: 0.6, offset: 0.0 ),
+			layers: [
+				RawLayer ( voxel: "redsand", depth: 6 ),
+			],
+			features: ["dead_tree"],
+		),
+	]
+),
+RawWorldPreset (
+	name: "Superflat",
+	
+	temp: Value(70.0),
+	humidity: Value(20.0),
+	weirdness: Value(0.0),
+	
+	height: Value(12),
+	sea_level: 10,
+	
+	biome_lookup: (
+		(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		
+		(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+	),
+	
+	earth: "limestone",
+	water: "water",
+	biomes: [
+		RawBiome (
+			name: "Default",
+			vegetation: Map ( freq: 0.004, scale: 1.0, offset: 0.0 ),
+			layers: [
+				RawLayer ( voxel: "grass", depth: 1 ),
+				RawLayer ( voxel: "dirt", depth: 3 ),
+			],
+			features: ["oak_tree"],
+		)
+	]
+),
+]

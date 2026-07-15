@@ -1,9 +1,8 @@
-const FEATURES_RON: &str = include_str!("../../stdrespack/features.ron");
+const FEATURES_RON: &str = include_str!("../../stdrespack/world_features.ron");
 const META_RON: &str = include_str!("../../stdrespack/meta.ron");
-const VOXELPACK_RON: &str = include_str!("../../stdrespack/voxelpack.ron");
-const STYLEPACK_RON: &str = include_str!("../../stdrespack/voxelstylepack.ron");
-const WORLDPRESETS_RON: &str = include_str!("../../stdrespack/worldpresets.ron");
-// const WORLDMETA_RON: &str = include_str!("../../stdrespack/worldmeta.ron");
+const VOXELPACK_RON: &str = include_str!("../../stdrespack/voxels.ron");
+const STYLEPACK_RON: &str = include_str!("../../stdrespack/voxel_styles.ron");
+const WORLDPRESETS_RON: &str = include_str!("../../stdrespack/world_gen.ron");
 
 fn write(path: impl AsRef<std::path::Path>, contents: &str) -> Result<(), std::io::Error> {
     if !path.as_ref().exists() {

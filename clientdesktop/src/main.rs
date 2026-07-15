@@ -12,7 +12,7 @@ use client::common::log::{error, info, warn};
 use client::common::math::cast_ray;
 use client::common::resources::loader::RawWorldMeta;
 use client::common::resources::{Resources, Stylepack};
-use client::common::world::{Node, Voxel, VoxelPos};
+use client::common::world::{Node, NodeAddr, Voxel, VoxelPos};
 use client::net::ServerConn;
 use client::player::PlayerInput;
 use client::world::ClientWorld;
@@ -215,7 +215,7 @@ impl AppState {
             self.max_nodes,
             game.world.size_in_chunks(),
         );
-        gpu_res.buffers.nodes.write(&gpu, 0, game.world.nodes());
+        gpu_res.buffers.nodes.write(&gpu, game.world.nodes(), 0..game.world.nodes().len() as NodeAddr);
         if let Some(pack) = self.active_stylepack() {
             let mats = Material::construct_arr(&game.voxels, pack);
 
@@ -286,19 +286,11 @@ impl AppState {
                     return;
                 }
             };
-            for (_pos, mut root, mut node_count) in rs.updated_chunks {
-                if root % 2 == 1 {
-                    root -= 1;
-                    node_count += 1;
-                }
-                if node_count % 2 == 1 {
-                    node_count += 1;
-                }
-                let nodes = &game.world.nodes()[root as usize..root as usize + node_count];
+            for (_pos, root, node_count) in rs.updated_chunks {
                 self.gpu_res.as_ref().unwrap().buffers.nodes.write(
                     &self.gpu.as_ref().unwrap(),
-                    root as u64,
-                    nodes,
+                    game.world.nodes(),
+                    root..root + node_count
                 );
             }
         }
@@ -357,23 +349,15 @@ impl AppState {
             if let Some((pos, vox)) = set_vox {
                 match game.set_voxel(pos, vox) {
                     Err(err) => warn!("Failed to set voxel at {pos:?}: {err:?}"),
-                    Ok(chunk) => updated_chunks.push((chunk.range.start, chunk.range.len())),
+                    Ok(chunk) => updated_chunks.push((chunk.range.start, chunk.range.len() as NodeAddr)),
                 }
             }
 
-            for (mut root, mut node_count) in updated_chunks {
-                if root % 2 == 1 {
-                    root -= 1;
-                    node_count += 1;
-                }
-                if node_count % 2 == 1 {
-                    node_count += 1;
-                }
-                let nodes = &game.world.nodes()[root as usize..root as usize + node_count];
+            for (root, node_count) in updated_chunks {
                 self.gpu_res.as_ref().unwrap().buffers.nodes.write(
                     &self.gpu.as_ref().unwrap(),
-                    root as u64,
-                    nodes,
+                    game.world.nodes(),
+                    root..root + node_count
                 );
             }
 
@@ -659,7 +643,7 @@ impl ApplicationHandler for AppState {
                 self.max_nodes,
                 game.world.size_in_chunks(),
             );
-            gpu_res.buffers.nodes.write(&gpu, 0, game.world.nodes());
+            gpu_res.buffers.nodes.write(&gpu, game.world.nodes(), 0..game.world.nodes().len() as NodeAddr);
             self.gpu_res = Some(gpu_res);
         }
 

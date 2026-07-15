@@ -19,13 +19,24 @@ impl NodeBuffer {
         self.0.size() * 2
     }
 
-    pub fn write(&self, gpu: &Gpu, offset: u64, items: &[Node]) {
-        assert_eq!(items.len() % 2, 0);
-        assert_eq!(offset % 2, 0);
+    pub fn write(&self, gpu: &Gpu, src_nodes: &[Node], range: impl Into<std::ops::Range<NodeAddr>>) {
+        let range = range.into();
+        let mut root = range.start;
+        let mut count = range.end - root;
 
-        let num_ints = items.len() >> 1;
+        if root % 2 == 1 {
+            root -= 1;
+            count += 1;
+        }
+        if count % 2 == 1 {
+            count += 1;
+        }
+
+
+        let items = &src_nodes[root as usize..(root + count) as usize];
+        let num_ints = count as usize >> 1;
         let ints = unsafe { std::slice::from_raw_parts(items.as_ptr() as *const u32, num_ints) };
-        self.0.write(gpu, offset >> 1, ints)
+        self.0.write(gpu, (root as u64) >> 1, ints)
     }
 }
 

@@ -24,7 +24,7 @@ use crate::world::Chunk;
 #[derive(Default)]
 pub struct CmdResult {
     pub kicked: bool,
-    pub updated_chunks: Vec<(ChunkPos, NodeAddr, usize)>,
+    pub updated_chunks: Vec<(ChunkPos, NodeAddr, NodeAddr)>,
     pub received_oob_chunks: Vec<ChunkPos>,
 }
 
@@ -112,7 +112,7 @@ impl GameState {
             ClientCmd::GiveChunkData(pos, nodes, _node_alloc) => {
                 self.chunk_requests_sent.remove(&pos);
                 match self.world.create_chunk(pos, &nodes) {
-                    Ok(addr) => rs.updated_chunks.push((pos, addr, nodes.len())),
+                    Ok(addr) => rs.updated_chunks.push((pos, addr, nodes.len() as NodeAddr)),
                     Err(SetVoxelErr::PosOutOfBounds) => rs.received_oob_chunks.push(pos),
                     Err(err) => warn!("Error constructing chunk at {pos:?}: {err:?}"),
                 };
@@ -121,8 +121,14 @@ impl GameState {
                 rs.kicked = true;
                 info!("We've been kicked : {reason:?}");
             }
-            ClientCmd::PlayersList(_list) => {}
-            _ => {}
+            ClientCmd::GiveNewPos(pos) => {
+                self.player.pos = pos;
+                info!("Server changed our position to {pos:?}");
+            }
+            ClientCmd::GivePlayersList(_) => {}
+            ClientCmd::HandshakeAccepted(_, _) => {}
+            ClientCmd::HandshakeDenied => {}
+            ClientCmd::GiveVoxelData(_, _, _) => {}
         }
     }
     // will process commands from the server until the given timeout duration has passed
